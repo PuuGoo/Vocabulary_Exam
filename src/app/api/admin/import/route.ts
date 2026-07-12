@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { normalizeText } from "@/lib/text";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,7 @@ type Row = Record<string, string>;
 function normalizeRow(raw: Record<string, unknown>): Row {
   const out: Row = {};
   for (const [k, v] of Object.entries(raw)) {
-    out[k.trim().toLowerCase()] = String(v ?? "").trim();
+    out[k.trim().toLowerCase()] = normalizeText(String(v ?? "").trim());
   }
   return out;
 }
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest) {
   const file = form.get("file") as File | null;
   const target = String(form.get("target") || "");
   const newSetName = String(form.get("newSetName") || "").trim();
+  const classIdRaw = form.get("classId");
+  const classId = classIdRaw && String(classIdRaw).trim() !== "" ? Number(classIdRaw) : null;
 
   if (!file) return NextResponse.json({ error: "Vui lòng chọn file để nhập." }, { status: 400 });
 
@@ -62,8 +65,8 @@ export async function POST(req: NextRequest) {
 
   if (target === "__new_vocab" || target === "__new_verb") {
     setType = target === "__new_verb" ? "irregular_verb" : "ielts_vocab";
-    const name = newSetName || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
-    const [set] = await db.insert(vocabSets).values({ name, type: setType, createdBy: session.userId }).returning();
+    const name = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
+    const [set] = await db.insert(vocabSets).values({ name, type: setType, classId, createdBy: session.userId }).returning();
     setId = set.id;
   } else {
     const setIdNum = Number(target);

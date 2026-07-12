@@ -17,6 +17,8 @@ export async function GET() {
       mode: attempts.mode,
       score: attempts.score,
       total: attempts.total,
+      timed: attempts.timed,
+      durationSeconds: attempts.durationSeconds,
       createdAt: attempts.createdAt,
       username: users.username,
       displayName: users.displayName,

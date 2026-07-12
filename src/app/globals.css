@@ -22,3 +22,8 @@ input:focus, select:focus, textarea:focus {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #ddd4bd; border-radius: 8px; }
+
+@media print {
+  body { background: #fff !important; }
+  .shadow-sm, .shadow-lg { box-shadow: none !important; }
+}

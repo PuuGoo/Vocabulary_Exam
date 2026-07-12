@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 
-type SetSummary = { id: number; name: string; type: string; count: number };
+type SetSummary = { id: number; name: string; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
   id: number;
   meaning: string;
@@ -16,24 +16,36 @@ type Word = {
   wtype?: string | null;
 };
 type SetDetail = SetSummary & { words: Word[] };
+type ClassOpt = { id: number; name: string };
 
 export default function AdminSetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
+  const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [showNewForm, setShowNewForm] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb">("ielts_vocab");
+  const [newClassId, setNewClassId] = useState<string>("");
   const [detail, setDetail] = useState<SetDetail | null>(null);
   const [showAddWord, setShowAddWord] = useState(false);
   const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "" });
+  const [editingWordId, setEditingWordId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "" });
 
   async function loadSets() {
     const res = await fetch("/api/sets");
     const data = await res.json();
     setSets(data.sets || []);
   }
+  async function loadClasses() {
+    const res = await fetch("/api/admin/classes");
+    if (!res.ok) return;
+    const data = await res.json();
+    setClassesOpt((data.classes || []).map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })));
+  }
 
   useEffect(() => {
     loadSets();
+    loadClasses();
   }, []);
 
   async function createSet() {
@@ -41,13 +53,26 @@ export default function AdminSetsPage() {
     const res = await fetch("/api/sets", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName.trim(), type: newType }),
+      body: JSON.stringify({ name: newName.trim(), type: newType, classId: newClassId ? Number(newClassId) : null }),
     });
     if (!res.ok) return toast("Không thể tạo bộ từ vựng.");
     toast("Đã tạo bộ từ vựng!");
     setNewName("");
+    setNewClassId("");
     setShowNewForm(false);
     loadSets();
+  }
+
+  async function changeSetClass(setId: number, classId: string) {
+    const res = await fetch(`/api/sets/${setId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ classId: classId ? Number(classId) : null }),
+    });
+    if (!res.ok) return toast("Không thể cập nhật lớp.");
+    toast("Đã cập nhật phạm vi hiển thị.");
+    loadSets();
+    if (detail?.id === setId) openDetail(setId);
   }
 
   async function deleteSet(id: number) {
@@ -63,6 +88,7 @@ export default function AdminSetsPage() {
     const data = await res.json();
     setDetail(data.set);
     setShowAddWord(false);
+    setEditingWordId(null);
   }
 
   async function saveWord() {
@@ -92,6 +118,43 @@ export default function AdminSetsPage() {
     await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
     openDetail(detail.id);
     loadSets();
+  }
+
+  function startEditWord(w: Word) {
+    setEditingWordId(w.id);
+    setEditForm({
+      meaning: w.meaning || "",
+      v1: w.v1 || "",
+      v2: w.v2 || "",
+      v3: w.v3 || "",
+      term: w.term || "",
+      example: w.example || "",
+      wtype: w.wtype || "",
+    });
+  }
+
+  function cancelEditWord() {
+    setEditingWordId(null);
+  }
+
+  async function saveEditWord() {
+    if (!detail || editingWordId === null) return;
+    const isVerb = detail.type === "irregular_verb";
+    const body = isVerb
+      ? { meaning: editForm.meaning, v1: editForm.v1, v2: editForm.v2, v3: editForm.v3 }
+      : { term: editForm.term, meaning: editForm.meaning, example: editForm.example, wtype: editForm.wtype };
+    const res = await fetch(`/api/admin/words/${editingWordId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return toast(err.error || "Không thể lưu thay đổi.");
+    }
+    toast("Đã lưu thay đổi.");
+    setEditingWordId(null);
+    openDetail(detail.id);
   }
 
   return (
@@ -126,6 +189,15 @@ export default function AdminSetsPage() {
             <option value="ielts_vocab">Từ vựng IELTS (từ — nghĩa — ví dụ)</option>
             <option value="irregular_verb">Động từ bất quy tắc (nghĩa — V1 — V2 — V3)</option>
           </select>
+          <label className={cx.label}>Phạm vi hiển thị</label>
+          <select className={cx.input} value={newClassId} onChange={(e) => setNewClassId(e.target.value)}>
+            <option value="">Công khai — mọi học sinh đều thấy</option>
+            {classesOpt.map((c) => (
+              <option key={c.id} value={c.id}>
+                Chỉ lớp: {c.name}
+              </option>
+            ))}
+          </select>
           <div className="flex gap-2.5">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={createSet}>
               Tạo bộ từ (rỗng)
@@ -147,13 +219,32 @@ export default function AdminSetsPage() {
             <div>
               <div className="font-semibold">{s.name}</div>
               <div className="text-[0.78rem] text-muted mt-0.5">
-                {s.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {s.count} mục
+                {s.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {s.count} mục ·{" "}
+                {s.className ? <span className={cx.badgeGold}>Lớp: {s.className}</span> : <span className={cx.badgeBlue}>Công khai</span>}
               </div>
             </div>
-            <div className="flex gap-2.5">
+            <div className="flex gap-2.5 flex-wrap">
               <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => openDetail(s.id)}>
                 Xem / Sửa
               </button>
+              <a
+                href={`/quiz/${s.id}?mode=fill`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${cx.btn} ${cx.btnGhost}`}
+              >
+                🧪 Xem thử {s.type === "ielts_vocab" ? "(điền từ)" : "bài kiểm tra"}
+              </a>
+              {s.type === "ielts_vocab" && (
+                <a
+                  href={`/quiz/${s.id}?mode=mc`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${cx.btn} ${cx.btnGhost}`}
+                >
+                  🧪 Xem thử (trắc nghiệm)
+                </a>
+              )}
               <button className={`${cx.btn} ${cx.btnDanger}`} onClick={() => deleteSet(s.id)}>
                 Xoá
               </button>
@@ -167,6 +258,21 @@ export default function AdminSetsPage() {
           <h2 className={cx.h2}>{detail.name}</h2>
           <div className={cx.desc}>
             {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {detail.words.length} mục
+          </div>
+          <div className="mb-3 max-w-xs">
+            <label className={cx.label}>Phạm vi hiển thị</label>
+            <select
+              className={cx.input}
+              value={detail.classId ?? ""}
+              onChange={(e) => changeSetClass(detail.id, e.target.value)}
+            >
+              <option value="">Công khai — mọi học sinh đều thấy</option>
+              {classesOpt.map((c) => (
+                <option key={c.id} value={c.id}>
+                  Chỉ lớp: {c.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex gap-2.5 mb-3">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
@@ -226,7 +332,7 @@ export default function AdminSetsPage() {
             </div>
           )}
 
-          <div className="max-h-[360px] overflow-auto">
+          <div style={{ maxHeight: 360, overflow: "auto" }}>
             <table className={cx.table}>
               <thead>
                 <tr>
@@ -250,30 +356,91 @@ export default function AdminSetsPage() {
                 </tr>
               </thead>
               <tbody>
-                {detail.words.map((w) => (
-                  <tr key={w.id}>
-                    {detail.type === "irregular_verb" ? (
-                      <>
-                        <td className={cx.td}>{w.meaning}</td>
-                        <td className={cx.td}>{w.v1}</td>
-                        <td className={cx.td}>{w.v2}</td>
-                        <td className={cx.td}>{w.v3}</td>
-                      </>
-                    ) : (
-                      <>
-                        <td className={cx.td}>{w.term}</td>
-                        <td className={cx.td}>{w.meaning}</td>
-                        <td className={cx.td}>{w.example}</td>
-                        <td className={cx.td}>{w.wtype}</td>
-                      </>
-                    )}
-                    <td className={cx.td}>
-                      <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
-                        Xoá
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {detail.words.map((w) =>
+                  editingWordId === w.id ? (
+                    <tr key={w.id} className="bg-goldpale/40">
+                      <td className={cx.td} colSpan={detail.type === "irregular_verb" ? 5 : 5}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
+                          {detail.type === "irregular_verb" ? (
+                            <>
+                              <div>
+                                <label className={cx.label}>Nghĩa</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>V1</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.v1} onChange={(e) => setEditForm({ ...editForm, v1: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>V2</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.v2} onChange={(e) => setEditForm({ ...editForm, v2: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>V3</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.v3} onChange={(e) => setEditForm({ ...editForm, v3: e.target.value })} />
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <div>
+                                <label className={cx.label}>Từ</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.term} onChange={(e) => setEditForm({ ...editForm, term: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>Nghĩa</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>Ví dụ</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.example} onChange={(e) => setEditForm({ ...editForm, example: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>Loại từ</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.wtype} onChange={(e) => setEditForm({ ...editForm, wtype: e.target.value })} />
+                              </div>
+                            </>
+                          )}
+                          <div className="md:col-span-2 flex gap-2">
+                            <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} onClick={saveEditWord}>
+                              Lưu
+                            </button>
+                            <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={cancelEditWord}>
+                              Huỷ
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={w.id}>
+                      {detail.type === "irregular_verb" ? (
+                        <>
+                          <td className={cx.td}>{w.meaning}</td>
+                          <td className={cx.td}>{w.v1}</td>
+                          <td className={cx.td}>{w.v2}</td>
+                          <td className={cx.td}>{w.v3}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className={cx.td}>{w.term}</td>
+                          <td className={cx.td}>{w.meaning}</td>
+                          <td className={cx.td}>{w.example}</td>
+                          <td className={cx.td}>{w.wtype}</td>
+                        </>
+                      )}
+                      <td className={cx.td}>
+                        <div className="flex gap-1.5">
+                          <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
+                            Sửa
+                          </button>
+                          <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
+                            Xoá
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                )}
               </tbody>
             </table>
           </div>

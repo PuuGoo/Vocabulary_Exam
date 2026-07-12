@@ -42,6 +42,18 @@ export default function AdminUsersPage() {
     load();
   }
 
+  async function generateResetLink(id: number) {
+    const res = await fetch(`/api/admin/users/${id}/reset-link`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) return toast(data.error || "Không thể tạo link.");
+    try {
+      await navigator.clipboard.writeText(data.resetUrl);
+      toast("Đã sao chép link đặt lại mật khẩu — gửi cho học sinh (Zalo/email...). Link hết hạn sau 1 giờ.");
+    } catch {
+      prompt("Sao chép link đặt lại mật khẩu (hết hạn sau 1 giờ):", data.resetUrl);
+    }
+  }
+
   return (
     <div className={cx.panel}>
       <h2 className={cx.h2}>Quản lý người dùng</h2>
@@ -90,11 +102,16 @@ export default function AdminUsersPage() {
                 <span className={u.role === "admin" ? cx.badgeGold : cx.badgeBlue}>{u.role === "admin" ? "Admin" : "Học sinh"}</span>
               </td>
               <td className={cx.td}>
-                {u.username !== "admin" && (
-                  <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteUser(u.id)}>
-                    Xoá
+                <div className="flex gap-1.5 flex-wrap">
+                  <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => generateResetLink(u.id)}>
+                    Tạo link đặt lại mật khẩu
                   </button>
-                )}
+                  {u.username !== "admin" && (
+                    <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteUser(u.id)}>
+                      Xoá
+                    </button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}

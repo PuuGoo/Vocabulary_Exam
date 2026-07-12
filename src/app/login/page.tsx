@@ -77,6 +77,12 @@ function LoginForm() {
           </button>
         </form>
 
+        <div className="text-[0.82rem] mt-3 text-muted">
+          <Link href="/forgot-password" className="text-golddark font-medium hover:underline">
+            Quên mật khẩu?
+          </Link>
+        </div>
+
         <div className="text-[0.82rem] mt-4 text-muted">
           Chưa có tài khoản?{" "}
           <Link href="/register" className="text-golddark font-medium hover:underline">

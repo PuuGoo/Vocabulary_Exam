@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { attempts } from "@/db/schema";
+import { attempts, mistakes } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export async function GET() {
@@ -23,6 +23,9 @@ const schema = z.object({
   mode: z.enum(["fill", "mc"]),
   score: z.number().int().min(0),
   total: z.number().int().min(0),
+  durationSeconds: z.number().int().min(0).optional(),
+  timed: z.boolean().optional(),
+  wrongWordIds: z.array(z.number().int()).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -33,9 +36,24 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
 
+  const { wrongWordIds, ...attemptData } = parsed.data;
+
   const [row] = await db
     .insert(attempts)
-    .values({ userId: session.userId, ...parsed.data })
+    .values({ userId: session.userId, ...attemptData })
     .returning();
+
+  if (wrongWordIds && wrongWordIds.length > 0) {
+    for (const wordId of wrongWordIds) {
+      await db
+        .insert(mistakes)
+        .values({ userId: session.userId, wordId, setId: parsed.data.setId, timesWrong: 1, lastWrongAt: new Date() })
+        .onConflictDoUpdate({
+          target: [mistakes.userId, mistakes.wordId],
+          set: { timesWrong: sql`${mistakes.timesWrong} + 1`, lastWrongAt: new Date() },
+        });
+    }
+  }
+
   return NextResponse.json({ result: row });
 }

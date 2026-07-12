@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { normalizeText } from "@/lib/text";
 
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
@@ -32,7 +33,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (set.type === "irregular_verb") {
     const parsed = verbSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Vui lòng điền đầy đủ nghĩa, V1, V2, V3." }, { status: 400 });
-    const [w] = await db.insert(words).values({ setId, ...parsed.data }).returning();
+    const [w] = await db
+      .insert(words)
+      .values({
+        setId,
+        meaning: normalizeText(parsed.data.meaning),
+        v1: normalizeText(parsed.data.v1),
+        v2: normalizeText(parsed.data.v2),
+        v3: normalizeText(parsed.data.v3),
+      })
+      .returning();
     return NextResponse.json({ word: w });
   } else {
     const parsed = vocabSchema.safeParse(body);
@@ -41,10 +51,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .insert(words)
       .values({
         setId,
-        meaning: parsed.data.meaning,
-        term: parsed.data.term,
-        example: parsed.data.example || "",
-        wtype: parsed.data.wtype || "",
+        meaning: normalizeText(parsed.data.meaning),
+        term: normalizeText(parsed.data.term),
+        example: normalizeText(parsed.data.example || ""),
+        wtype: normalizeText(parsed.data.wtype || ""),
       })
       .returning();
     return NextResponse.json({ word: w });

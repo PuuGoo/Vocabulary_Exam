@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { cx } from "@/components/ui";
+import SpeakButton from "@/components/SpeakButton";
 
 type Word = {
   id: number;
@@ -34,6 +35,11 @@ function shuffle<T>(arr: T[]): T[] {
   }
   return a;
 }
+function fmtClock(totalSeconds: number) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
 
 export default function QuizPlayerPage() {
   return (
@@ -48,13 +54,24 @@ function QuizPlayerInner() {
   const search = useSearchParams();
   const router = useRouter();
   const mode = (search.get("mode") as "fill" | "mc") || "fill";
+  const timedMode = search.get("timed") === "1";
+  const minutes = Number(search.get("minutes") || 15);
 
   const [set, setSet] = useState<SetDetail | null>(null);
   const [group, setGroup] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Record<string, string>>>({});
   const [mcOptions, setMcOptions] = useState<Record<number, string[]>>({});
+
+  // normal (per-group) grading
   const [checked, setChecked] = useState(false);
   const [groupScore, setGroupScore] = useState<{ score: number; total: number } | null>(null);
+
+  // timed mode grading (whole-set, single submit)
+  const [secondsLeft, setSecondsLeft] = useState(minutes * 60);
+  const [timedSubmitted, setTimedSubmitted] = useState(false);
+  const [timedScore, setTimedScore] = useState<{ score: number; total: number } | null>(null);
+  const startedAtRef = useRef<number>(Date.now());
+  const submittedRef = useRef(false);
 
   useEffect(() => {
     fetch(`/api/sets/${params.setId}`)
@@ -66,6 +83,7 @@ function QuizPlayerInner() {
   const start = group * GROUP_SIZE;
   const end = set ? Math.min(start + GROUP_SIZE, set.words.length) : 0;
   const isVerb = set?.type === "irregular_verb";
+  const effectiveChecked = timedMode ? timedSubmitted : checked;
 
   const currentWords = useMemo(() => (set ? set.words.slice(start, end) : []), [set, start, end]);
 
@@ -87,6 +105,18 @@ function QuizPlayerInner() {
     });
   }, [set, currentWords, isVerb, mode]);
 
+  // countdown timer for timed mode
+  useEffect(() => {
+    if (!timedMode || !set || timedSubmitted) return;
+    if (secondsLeft <= 0) {
+      submitTimed();
+      return;
+    }
+    const t = setTimeout(() => setSecondsLeft((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timedMode, set, secondsLeft, timedSubmitted]);
+
   function setAnswer(wordId: number, part: string, value: string) {
     setAnswers((prev) => ({ ...prev, [wordId]: { ...prev[wordId], [part]: value } }));
   }
@@ -103,8 +133,43 @@ function QuizPlayerInner() {
 
   function goGroup(g: number) {
     setGroup(g);
-    setChecked(false);
-    setGroupScore(null);
+    if (!timedMode) {
+      setChecked(false);
+      setGroupScore(null);
+    }
+  }
+
+  function isWordCorrect(w: Word): boolean {
+    if (isVerb) {
+      const a = answers[w.id] || {};
+      return checkMatch(a.v1, w.v1) && checkMatch(a.v2, w.v2) && checkMatch(a.v3, w.v3);
+    } else if (mode === "fill") {
+      return checkMatch(answers[w.id]?.term, w.term);
+    } else {
+      return answers[w.id]?.mc === w.meaning;
+    }
+  }
+
+  async function postResult(score: number, total: number, durationSeconds?: number) {
+    if (!set) return;
+    const wrongWordIds = set.words
+      .slice(timedMode ? 0 : start, timedMode ? set.words.length : end)
+      .filter((w) => !isWordCorrect(w))
+      .map((w) => w.id);
+    await fetch("/api/results", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        setId: set.id,
+        setName: set.name,
+        mode,
+        score,
+        total,
+        timed: timedMode,
+        durationSeconds,
+        wrongWordIds,
+      }),
+    });
   }
 
   async function grade() {
@@ -113,13 +178,12 @@ function QuizPlayerInner() {
     let total = 0;
     for (const w of currentWords) {
       if (isVerb) {
-        const a = answers[w.id] || {};
         total += 3;
+        const a = answers[w.id] || {};
         correct += (checkMatch(a.v1, w.v1) ? 1 : 0) + (checkMatch(a.v2, w.v2) ? 1 : 0) + (checkMatch(a.v3, w.v3) ? 1 : 0);
       } else if (mode === "fill") {
-        const a = answers[w.id] || {};
         total += 1;
-        correct += checkMatch(a.term, w.term) ? 1 : 0;
+        correct += checkMatch(answers[w.id]?.term, w.term) ? 1 : 0;
       } else {
         total += 1;
         correct += answers[w.id]?.mc === w.meaning ? 1 : 0;
@@ -127,12 +191,31 @@ function QuizPlayerInner() {
     }
     setChecked(true);
     setGroupScore({ score: correct, total });
+    await postResult(correct, total);
+  }
 
-    await fetch("/api/results", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ setId: set.id, setName: set.name, mode, score: correct, total }),
-    });
+  async function submitTimed() {
+    if (!set || submittedRef.current) return;
+    submittedRef.current = true;
+    let correct = 0;
+    let total = 0;
+    for (const w of set.words) {
+      if (isVerb) {
+        total += 3;
+        const a = answers[w.id] || {};
+        correct += (checkMatch(a.v1, w.v1) ? 1 : 0) + (checkMatch(a.v2, w.v2) ? 1 : 0) + (checkMatch(a.v3, w.v3) ? 1 : 0);
+      } else if (mode === "fill") {
+        total += 1;
+        correct += checkMatch(answers[w.id]?.term, w.term) ? 1 : 0;
+      } else {
+        total += 1;
+        correct += answers[w.id]?.mc === w.meaning ? 1 : 0;
+      }
+    }
+    const durationSeconds = Math.round((Date.now() - startedAtRef.current) / 1000);
+    setTimedSubmitted(true);
+    setTimedScore({ score: correct, total });
+    await postResult(correct, total, durationSeconds);
   }
 
   if (!set) return <div className={cx.panel}><div className={cx.empty}>Đang tải bài kiểm tra...</div></div>;
@@ -140,11 +223,30 @@ function QuizPlayerInner() {
   return (
     <div className={cx.panel}>
       <div className="flex justify-between items-center mb-2.5 flex-wrap gap-2">
-        <h2 className={cx.h2}>{set.name}</h2>
+        <h2 className={cx.h2}>
+          {set.name} {timedMode && <span className={cx.badgeGold}>Thi thử có tính giờ</span>}
+        </h2>
         <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>
           ← Chọn bộ khác
         </button>
       </div>
+
+      {timedMode && (
+        <div className="flex items-center justify-between gap-3 flex-wrap bg-goldpale rounded-lg px-4 py-3 mb-4">
+          <div className="font-serif text-lg">
+            ⏱ Thời gian còn lại: <span className={secondsLeft <= 60 ? "text-bad font-bold" : "font-bold"}>{fmtClock(secondsLeft)}</span>
+          </div>
+          {!timedSubmitted ? (
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={submitTimed}>
+              Nộp bài thi
+            </button>
+          ) : (
+            <div className="font-serif text-lg">
+              Kết quả: <b>{timedScore?.score}</b>/{timedScore?.total}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 justify-center mb-4">
         {Array.from({ length: totalGroups }).map((_, g) => {
@@ -180,26 +282,26 @@ function QuizPlayerInner() {
                   <div className="flex gap-2 flex-wrap">
                     {(["v1", "v2", "v3"] as const).map((part) => {
                       const val = answers[w.id]?.[part] || "";
-                      const ok = checked ? checkMatch(val, w[part]) : null;
+                      const ok = effectiveChecked ? checkMatch(val, w[part]) : null;
                       return (
                         <div key={part} className="flex flex-col flex-1 min-w-[100px]">
                           <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">{part.toUpperCase()}</span>
                           <input
                             type="text"
-                            disabled={checked}
+                            disabled={effectiveChecked}
                             value={val}
                             onChange={(e) => setAnswer(w.id, part, e.target.value)}
                             className={`${cx.input} !mb-0 ${
-                              checked ? (ok ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
+                              effectiveChecked ? (ok ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
                             }`}
                           />
                         </div>
                       );
                     })}
                   </div>
-                  {checked && (
-                    <div className="mt-2 text-[0.84rem]">
-                      {checkMatch(answers[w.id]?.v1, w.v1) && checkMatch(answers[w.id]?.v2, w.v2) && checkMatch(answers[w.id]?.v3, w.v3) ? (
+                  {effectiveChecked && (
+                    <div className="mt-2 text-[0.84rem] flex items-center gap-2 flex-wrap">
+                      {isWordCorrect(w) ? (
                         <span className="text-ok">✔ Chính xác cả 3.</span>
                       ) : (
                         <>
@@ -207,6 +309,7 @@ function QuizPlayerInner() {
                           <span className="text-muted">
                             {w.v1} — {w.v2} — {w.v3}
                           </span>
+                          <SpeakButton text={w.v1 || ""} />
                         </>
                       )}
                     </div>
@@ -219,42 +322,47 @@ function QuizPlayerInner() {
                     <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">TỪ TIẾNG ANH</span>
                     <input
                       type="text"
-                      disabled={checked}
+                      disabled={effectiveChecked}
                       value={answers[w.id]?.term || ""}
                       onChange={(e) => setAnswer(w.id, "term", e.target.value)}
                       className={`${cx.input} !mb-0 ${
-                        checked ? (checkMatch(answers[w.id]?.term, w.term) ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
+                        effectiveChecked ? (checkMatch(answers[w.id]?.term, w.term) ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
                       }`}
                     />
                   </div>
-                  {checked && (
-                    <div className="mt-2 text-[0.84rem]">
+                  {effectiveChecked && (
+                    <div className="mt-2 text-[0.84rem] flex items-center gap-2">
                       {checkMatch(answers[w.id]?.term, w.term) ? (
                         <span className="text-ok">✔ Chính xác.</span>
                       ) : (
                         <>
                           <span className="text-bad">✘ Đáp án đúng:</span> <span className="text-muted">{w.term}</span>
+                          <SpeakButton text={w.term || ""} />
                         </>
                       )}
+                      {w.example && <span className="text-muted italic">VD: {w.example}</span>}
                     </div>
                   )}
                 </>
               ) : (
                 <>
-                  <div className="font-bold mb-2">{w.term}</div>
+                  <div className="font-bold mb-2 flex items-center gap-2">
+                    {w.term}
+                    <SpeakButton text={w.term || ""} />
+                  </div>
                   <div className="flex flex-col gap-1.5 mt-1">
                     {(mcOptions[w.id] || []).map((opt) => {
                       const chosen = answers[w.id]?.mc === opt;
                       let cls = "border-line bg-white";
                       if (chosen) cls = "border-gold bg-goldpale font-semibold";
-                      if (checked) {
+                      if (effectiveChecked) {
                         if (opt === w.meaning) cls = "border-ok bg-okbg text-ok";
                         else if (chosen) cls = "border-bad bg-badbg text-bad";
                       }
                       return (
                         <div
                           key={opt}
-                          onClick={() => !checked && setAnswer(w.id, "mc", opt)}
+                          onClick={() => !effectiveChecked && setAnswer(w.id, "mc", opt)}
                           className={`border rounded-lg px-2.5 py-2 cursor-pointer text-[0.88rem] ${cls}`}
                         >
                           {opt}
@@ -269,7 +377,7 @@ function QuizPlayerInner() {
         ))}
       </div>
 
-      {checked && groupScore && (
+      {!timedMode && checked && groupScore && (
         <div className="flex justify-center my-4">
           <div className="w-[110px] h-[110px] rounded-full border-[3px] border-dashed border-golddark flex flex-col items-center justify-center -rotate-[8deg] text-golddark font-serif text-center leading-tight">
             <div className="text-2xl font-bold">
@@ -280,14 +388,16 @@ function QuizPlayerInner() {
         </div>
       )}
 
-      <div className="flex gap-2.5 justify-center mt-3.5 flex-wrap">
-        <button className={`${cx.btn} ${cx.btnGold}`} disabled={checked} onClick={grade}>
-          Kiểm tra đáp án
-        </button>
-        <button className={`${cx.btn} ${cx.btnGhost}`} onClick={resetGroup}>
-          Làm lại nhóm này
-        </button>
-      </div>
+      {!timedMode && (
+        <div className="flex gap-2.5 justify-center mt-3.5 flex-wrap">
+          <button className={`${cx.btn} ${cx.btnGold}`} disabled={checked} onClick={grade}>
+            Kiểm tra đáp án
+          </button>
+          <button className={`${cx.btn} ${cx.btnGhost}`} onClick={resetGroup}>
+            Làm lại nhóm này
+          </button>
+        </div>
+      )}
       <div className="flex justify-between mt-3.5">
         <button className={`${cx.btn} ${cx.btnGhost}`} disabled={group === 0} onClick={() => goGroup(group - 1)}>
           ◀ Nhóm trước

@@ -5,6 +5,8 @@ import ToastHost from "@/components/Toast";
 
 const TABS = [
   { href: "/study", label: "Chọn bộ từ & làm bài" },
+  { href: "/review", label: "Ôn từ sai" },
+  { href: "/leaderboard", label: "Bảng xếp hạng" },
   { href: "/history", label: "Lịch sử của tôi" },
 ];
 

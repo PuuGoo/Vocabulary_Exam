@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { getSession, hashPassword } from "@/lib/auth";
+import { normalizeText } from "@/lib/text";
 
 export async function GET() {
   const session = await getSession();
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     .values({
       username: parsed.data.username,
       passwordHash,
-      displayName: parsed.data.displayName,
+      displayName: normalizeText(parsed.data.displayName),
       role: parsed.data.role,
     })
     .returning();

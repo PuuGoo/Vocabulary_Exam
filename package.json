@@ -8,7 +8,8 @@
     "start": "next start",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "db:fix-encoding": "tsx src/db/fix-encoding.ts"
   },
   "dependencies": {
     "bcryptjs": "2.4.3",
@@ -16,6 +17,7 @@
     "drizzle-orm": "0.33.0",
     "jose": "^6.2.3",
     "next": "14.2.35",
+    "nodemailer": "^9.0.3",
     "papaparse": "5.4.1",
     "postgres": "3.4.4",
     "react": "18.3.1",
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@types/bcryptjs": "2.4.6",
     "@types/node": "20.16.11",
+    "@types/nodemailer": "^8.0.1",
     "@types/papaparse": "5.3.14",
     "@types/react": "18.3.11",
     "@types/react-dom": "18.3.0",

@@ -27,7 +27,7 @@ export default function AppShell({
 
   return (
     <div className="max-w-[1080px] mx-auto px-4 pt-[18px] pb-[60px]">
-      <div className="flex items-center justify-between bg-ink text-goldpale rounded px-5 py-3.5 mb-5 relative overflow-hidden">
+      <div className="flex items-center justify-between bg-ink text-goldpale rounded px-5 py-3.5 mb-5 relative overflow-hidden print:hidden">
         <div className="flex items-center gap-3">
           <div className="w-[38px] h-[38px] rounded-full border-2 border-gold flex items-center justify-center font-serif font-bold text-gold shrink-0">
             IV
@@ -44,6 +44,12 @@ export default function AppShell({
           <span className="bg-gold text-ink px-2.5 py-0.5 rounded-full text-[0.7rem] font-bold uppercase tracking-wide">
             {roleLabel}
           </span>
+          <Link
+            href="/settings"
+            className="bg-transparent border border-goldpale/40 text-goldpale px-3 py-1.5 rounded-md text-[0.8rem] hover:border-gold hover:text-gold"
+          >
+            Cài đặt
+          </Link>
           <button
             onClick={logout}
             className="bg-transparent border border-goldpale/40 text-goldpale px-3 py-1.5 rounded-md text-[0.8rem] hover:border-gold hover:text-gold"
@@ -53,7 +59,7 @@ export default function AppShell({
         </div>
       </div>
 
-      <div className="flex gap-1.5 flex-wrap mb-5">
+      <div className="flex gap-1.5 flex-wrap mb-5 print:hidden">
         {tabs.map((t) => {
           const active = pathname === t.href || pathname.startsWith(t.href + "/");
           return (

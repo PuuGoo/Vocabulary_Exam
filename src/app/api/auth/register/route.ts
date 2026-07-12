@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { hashPassword, signSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
+import { normalizeText } from "@/lib/text";
 
 const schema = z.object({
   username: z.string().trim().min(3, "Tên đăng nhập tối thiểu 3 ký tự").max(64),
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
     .values({
       username,
       passwordHash,
-      displayName: displayName || username,
+      displayName: normalizeText(displayName || username),
       role: "student",
     })
     .returning();

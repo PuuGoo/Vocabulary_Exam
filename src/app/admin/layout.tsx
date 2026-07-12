@@ -6,6 +6,7 @@ import ToastHost from "@/components/Toast";
 const TABS = [
   { href: "/admin/sets", label: "Bộ từ vựng" },
   { href: "/admin/import", label: "Nhập dữ liệu" },
+  { href: "/admin/classes", label: "Lớp học" },
   { href: "/admin/users", label: "Người dùng" },
   { href: "/admin/results", label: "Kết quả học sinh" },
 ];

@@ -5,11 +5,14 @@ import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 
 type SetSummary = { id: number; name: string; type: string; count: number };
+type ClassOpt = { id: number; name: string };
 
 export default function AdminImportPage() {
   const [sets, setSets] = useState<SetSummary[]>([]);
+  const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [target, setTarget] = useState("__new_vocab");
   const [newSetName, setNewSetName] = useState("");
+  const [classId, setClassId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -19,6 +22,9 @@ export default function AdminImportPage() {
     fetch("/api/sets")
       .then((r) => r.json())
       .then((d) => setSets(d.sets || []));
+    fetch("/api/admin/classes")
+      .then((r) => (r.ok ? r.json() : { classes: [] }))
+      .then((d) => setClassesOpt((d.classes || []).map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))));
   }, []);
 
   async function handlePickFile(f: File) {
@@ -49,6 +55,7 @@ export default function AdminImportPage() {
     form.append("file", file);
     form.append("target", target);
     form.append("newSetName", newSetName);
+    form.append("classId", classId);
     const res = await fetch("/api/admin/import", { method: "POST", body: form });
     setSubmitting(false);
     const data = await res.json();
@@ -93,6 +100,15 @@ export default function AdminImportPage() {
             value={newSetName}
             onChange={(e) => setNewSetName(e.target.value)}
           />
+          <label className={cx.label}>Phạm vi hiển thị</label>
+          <select className={cx.input} value={classId} onChange={(e) => setClassId(e.target.value)}>
+            <option value="">Công khai — mọi học sinh đều thấy</option>
+            {classesOpt.map((c) => (
+              <option key={c.id} value={c.id}>
+                Chỉ lớp: {c.name}
+              </option>
+            ))}
+          </select>
         </>
       )}
 

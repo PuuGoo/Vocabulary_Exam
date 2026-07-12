@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { normalizeText } from "@/lib/text";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -14,6 +16,28 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
   const wordList = await db.select().from(words).where(eq(words.setId, setId)).orderBy(words.id);
   return NextResponse.json({ set: { ...set, words: wordList } });
+}
+
+const patchSchema = z.object({
+  name: z.string().trim().min(1).max(256).optional(),
+  classId: z.number().int().nullable().optional(),
+});
+
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session || session.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const setId = Number(params.id);
+  const body = await req.json().catch(() => null);
+  const parsed = patchSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
+  if (Object.keys(parsed.data).length === 0) return NextResponse.json({ error: "Không có thay đổi." }, { status: 400 });
+  const patch = { ...parsed.data, ...(parsed.data.name ? { name: normalizeText(parsed.data.name) } : {}) };
+
+  await db.update(vocabSets).set(patch).where(eq(vocabSets.id, setId));
+  const updated = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
+  return NextResponse.json({ set: updated });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {

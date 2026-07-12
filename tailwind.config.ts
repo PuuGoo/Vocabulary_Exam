@@ -20,7 +20,10 @@ const config: Config = {
         badbg: "#fbeae6",
       },
       fontFamily: {
-        serif: ["Georgia", "Times New Roman", "serif"],
+        // NOTE: Georgia is intentionally excluded — it lacks proper precomposed
+        // glyphs for several Vietnamese diacritic combinations (ấ, ắ, ẫ, ậ, ẳ...),
+        // which caused the tone mark to render visually detached from the letter.
+        serif: ["Times New Roman", "Times", "serif"],
       },
       borderRadius: {
         DEFAULT: "10px",

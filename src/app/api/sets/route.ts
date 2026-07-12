@@ -1,26 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "drizzle-orm";
+import { sql, eq, or, isNull, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabSets, words } from "@/db/schema";
+import { vocabSets, words, classMembers, classes } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { normalizeText } from "@/lib/text";
 import { z } from "zod";
 
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const rows = await db
+  let classFilter;
+  if (session.role !== "admin") {
+    const memberships = await db
+      .select({ classId: classMembers.classId })
+      .from(classMembers)
+      .where(eq(classMembers.userId, session.userId));
+    const classIds = memberships.map((m) => m.classId);
+    classFilter = classIds.length > 0 ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+  }
+
+  const query = db
     .select({
       id: vocabSets.id,
       name: vocabSets.name,
       type: vocabSets.type,
+      classId: vocabSets.classId,
+      className: classes.name,
       createdAt: vocabSets.createdAt,
-      count: sql<number>`count(${words.id})::int`,
+      count: sql<number>`count(distinct ${words.id})::int`,
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
-    .groupBy(vocabSets.id)
+    .leftJoin(classes, eq(classes.id, vocabSets.classId))
+    .groupBy(vocabSets.id, classes.name)
     .orderBy(vocabSets.createdAt);
+
+  const rows = classFilter ? await query.where(classFilter) : await query;
 
   return NextResponse.json({ sets: rows });
 }
@@ -28,6 +44,7 @@ export async function GET() {
 const createSchema = z.object({
   name: z.string().trim().min(1).max(256),
   type: z.enum(["irregular_verb", "ielts_vocab"]),
+  classId: z.number().int().nullable().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -42,7 +59,12 @@ export async function POST(req: NextRequest) {
   }
   const [set] = await db
     .insert(vocabSets)
-    .values({ name: parsed.data.name, type: parsed.data.type, createdBy: session.userId })
+    .values({
+      name: normalizeText(parsed.data.name),
+      type: parsed.data.type,
+      classId: parsed.data.classId ?? null,
+      createdBy: session.userId,
+    })
     .returning();
   return NextResponse.json({ set });
 }
