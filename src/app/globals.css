@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body {
+  height: 100%;
+}
+body {
+  background-color: #f2eee1;
+  background-image:
+    linear-gradient(#f2eee1, #f2eee1),
+    repeating-linear-gradient(0deg, rgba(28,43,58,0.025) 0px, rgba(28,43,58,0.025) 1px, transparent 1px, transparent 26px);
+  color: #1c2b3a;
+}
+
+input[type="text"], input[type="password"], input[type="number"], select, textarea {
+  outline-offset: 1px;
+}
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid #a9812f;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #ddd4bd; border-radius: 8px; }

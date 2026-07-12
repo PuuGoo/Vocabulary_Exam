@@ -1,0 +1,39 @@
+{
+  "name": "ielts-vocab-check",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:seed": "tsx src/db/seed.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "dotenv": "^17.4.2",
+    "drizzle-orm": "0.33.0",
+    "jose": "^6.2.3",
+    "next": "14.2.35",
+    "papaparse": "5.4.1",
+    "postgres": "3.4.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "xlsx": "0.18.5",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "2.4.6",
+    "@types/node": "20.16.11",
+    "@types/papaparse": "5.3.14",
+    "@types/react": "18.3.11",
+    "@types/react-dom": "18.3.0",
+    "autoprefixer": "10.4.20",
+    "drizzle-kit": "0.24.2",
+    "postcss": "8.4.47",
+    "tailwindcss": "3.4.13",
+    "tsx": "4.19.1",
+    "typescript": "5.6.3"
+  }
+}
