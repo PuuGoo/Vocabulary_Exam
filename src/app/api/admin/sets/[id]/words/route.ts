@@ -11,12 +11,14 @@ const verbSchema = z.object({
   v1: z.string().trim().min(1),
   v2: z.string().trim().min(1),
   v3: z.string().trim().min(1),
+  ipa: z.string().trim().optional(),
 });
 const vocabSchema = z.object({
   term: z.string().trim().min(1),
   meaning: z.string().trim().min(1),
   example: z.string().trim().optional(),
   wtype: z.string().trim().optional(),
+  ipa: z.string().trim().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -41,6 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         v1: normalizeText(parsed.data.v1),
         v2: normalizeText(parsed.data.v2),
         v3: normalizeText(parsed.data.v3),
+        ipa: parsed.data.ipa ? normalizeText(parsed.data.ipa) : null,
       })
       .returning();
     return NextResponse.json({ word: w });
@@ -55,6 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         term: normalizeText(parsed.data.term),
         example: normalizeText(parsed.data.example || ""),
         wtype: normalizeText(parsed.data.wtype || ""),
+        ipa: parsed.data.ipa ? normalizeText(parsed.data.ipa) : null,
       })
       .returning();
     return NextResponse.json({ word: w });

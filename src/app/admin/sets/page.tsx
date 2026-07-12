@@ -14,6 +14,7 @@ type Word = {
   term?: string | null;
   example?: string | null;
   wtype?: string | null;
+  ipa?: string | null;
 };
 type SetDetail = SetSummary & { words: Word[] };
 type ClassOpt = { id: number; name: string };
@@ -27,9 +28,11 @@ export default function AdminSetsPage() {
   const [newClassId, setNewClassId] = useState<string>("");
   const [detail, setDetail] = useState<SetDetail | null>(null);
   const [showAddWord, setShowAddWord] = useState(false);
-  const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "" });
+  const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
   const [editingWordId, setEditingWordId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "" });
+  const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
+  const [fetchingIpaId, setFetchingIpaId] = useState<number | null>(null);
+  const [bulkIpaLoading, setBulkIpaLoading] = useState(false);
 
   async function loadSets() {
     const res = await fetch("/api/sets");
@@ -95,8 +98,8 @@ export default function AdminSetsPage() {
     if (!detail) return;
     const isVerb = detail.type === "irregular_verb";
     const body = isVerb
-      ? { meaning: wForm.meaning, v1: wForm.v1, v2: wForm.v2, v3: wForm.v3 }
-      : { term: wForm.term, meaning: wForm.meaning, example: wForm.example, wtype: wForm.wtype };
+      ? { meaning: wForm.meaning, v1: wForm.v1, v2: wForm.v2, v3: wForm.v3, ipa: wForm.ipa }
+      : { term: wForm.term, meaning: wForm.meaning, example: wForm.example, wtype: wForm.wtype, ipa: wForm.ipa };
     const res = await fetch(`/api/admin/sets/${detail.id}/words`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -107,7 +110,7 @@ export default function AdminSetsPage() {
       return toast(err.error || "Không thể thêm từ.");
     }
     toast("Đã thêm từ.");
-    setWForm({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "" });
+    setWForm({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
     setShowAddWord(false);
     openDetail(detail.id);
     loadSets();
@@ -130,6 +133,7 @@ export default function AdminSetsPage() {
       term: w.term || "",
       example: w.example || "",
       wtype: w.wtype || "",
+      ipa: w.ipa || "",
     });
   }
 
@@ -137,12 +141,41 @@ export default function AdminSetsPage() {
     setEditingWordId(null);
   }
 
+  async function fetchIpaForWord(wordId: number) {
+    setFetchingIpaId(wordId);
+    const res = await fetch(`/api/admin/words/${wordId}/fetch-ipa`, { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    setFetchingIpaId(null);
+    if (!res.ok) return toast(data.error || "Không lấy được phiên âm.");
+    toast(`Đã lấy phiên âm: ${data.ipa}`);
+    if (detail) openDetail(detail.id);
+  }
+
+  async function fetchIpaForSet(force: boolean) {
+    if (!detail) return;
+    setBulkIpaLoading(true);
+    const res = await fetch(`/api/admin/sets/${detail.id}/fetch-ipa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setBulkIpaLoading(false);
+    if (!res.ok) return toast(data.error || "Không thể lấy phiên âm cho cả bộ.");
+    if (data.errors && data.errors.length > 0) {
+      toast(`Đã lấy được ${data.updated}/${data.total} từ trước khi dừng: ${data.errors[0]}`);
+    } else {
+      toast(`Đã lấy phiên âm cho ${data.updated}/${data.total} từ.`);
+    }
+    openDetail(detail.id);
+  }
+
   async function saveEditWord() {
     if (!detail || editingWordId === null) return;
     const isVerb = detail.type === "irregular_verb";
     const body = isVerb
-      ? { meaning: editForm.meaning, v1: editForm.v1, v2: editForm.v2, v3: editForm.v3 }
-      : { term: editForm.term, meaning: editForm.meaning, example: editForm.example, wtype: editForm.wtype };
+      ? { meaning: editForm.meaning, v1: editForm.v1, v2: editForm.v2, v3: editForm.v3, ipa: editForm.ipa }
+      : { term: editForm.term, meaning: editForm.meaning, example: editForm.example, wtype: editForm.wtype, ipa: editForm.ipa };
     const res = await fetch(`/api/admin/words/${editingWordId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -228,6 +261,14 @@ export default function AdminSetsPage() {
                 Xem / Sửa
               </button>
               <a
+                href={`/learn/${s.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`${cx.btn} ${cx.btnGhost}`}
+              >
+                📖 Xem thử học bài
+              </a>
+              <a
                 href={`/quiz/${s.id}?mode=fill`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -274,9 +315,15 @@ export default function AdminSetsPage() {
               ))}
             </select>
           </div>
-          <div className="flex gap-2.5 mb-3">
+          <div className="flex gap-2.5 mb-3 flex-wrap">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
+            </button>
+            <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(false)}>
+              {bulkIpaLoading ? "Đang lấy phiên âm..." : "🔤 Lấy phiên âm còn thiếu (Gemini)"}
+            </button>
+            <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(true)}>
+              🔤 Lấy lại phiên âm cho tất cả
             </button>
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setDetail(null)}>
               Đóng
@@ -303,6 +350,10 @@ export default function AdminSetsPage() {
                     <label className={cx.label}>V3</label>
                     <input className={cx.input} value={wForm.v3} onChange={(e) => setWForm({ ...wForm, v3: e.target.value })} />
                   </div>
+                  <div>
+                    <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
+                    <input className={cx.input} placeholder="/əˈraɪz/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
+                  </div>
                 </>
               ) : (
                 <>
@@ -321,6 +372,10 @@ export default function AdminSetsPage() {
                   <div>
                     <label className={cx.label}>Loại từ (không bắt buộc)</label>
                     <input className={cx.input} placeholder="noun / verb / adj..." value={wForm.wtype} onChange={(e) => setWForm({ ...wForm, wtype: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
+                    <input className={cx.input} placeholder="/wɜːd/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
                   </div>
                 </>
               )}
@@ -342,6 +397,7 @@ export default function AdminSetsPage() {
                       <th className={cx.th}>V1</th>
                       <th className={cx.th}>V2</th>
                       <th className={cx.th}>V3</th>
+                      <th className={cx.th}>Phiên âm</th>
                       <th className={cx.th}></th>
                     </>
                   ) : (
@@ -350,6 +406,7 @@ export default function AdminSetsPage() {
                       <th className={cx.th}>Nghĩa</th>
                       <th className={cx.th}>Ví dụ</th>
                       <th className={cx.th}>Loại từ</th>
+                      <th className={cx.th}>Phiên âm</th>
                       <th className={cx.th}></th>
                     </>
                   )}
@@ -359,7 +416,7 @@ export default function AdminSetsPage() {
                 {detail.words.map((w) =>
                   editingWordId === w.id ? (
                     <tr key={w.id} className="bg-goldpale/40">
-                      <td className={cx.td} colSpan={detail.type === "irregular_verb" ? 5 : 5}>
+                      <td className={cx.td} colSpan={6}>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
                           {detail.type === "irregular_verb" ? (
                             <>
@@ -379,6 +436,10 @@ export default function AdminSetsPage() {
                                 <label className={cx.label}>V3</label>
                                 <input className={`${cx.input} !mb-0`} value={editForm.v3} onChange={(e) => setEditForm({ ...editForm, v3: e.target.value })} />
                               </div>
+                              <div>
+                                <label className={cx.label}>Phiên âm IPA</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
+                              </div>
                             </>
                           ) : (
                             <>
@@ -397,6 +458,10 @@ export default function AdminSetsPage() {
                               <div>
                                 <label className={cx.label}>Loại từ</label>
                                 <input className={`${cx.input} !mb-0`} value={editForm.wtype} onChange={(e) => setEditForm({ ...editForm, wtype: e.target.value })} />
+                              </div>
+                              <div>
+                                <label className={cx.label}>Phiên âm IPA</label>
+                                <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
                               </div>
                             </>
                           )}
@@ -428,6 +493,19 @@ export default function AdminSetsPage() {
                           <td className={cx.td}>{w.wtype}</td>
                         </>
                       )}
+                      <td className={cx.td}>
+                        {w.ipa ? (
+                          <span className="text-golddark">{w.ipa}</span>
+                        ) : (
+                          <button
+                            className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`}
+                            disabled={fetchingIpaId === w.id}
+                            onClick={() => fetchIpaForWord(w.id)}
+                          >
+                            {fetchingIpaId === w.id ? "..." : "🔤 Lấy"}
+                          </button>
+                        )}
+                      </td>
                       <td className={cx.td}>
                         <div className="flex gap-1.5">
                           <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>

@@ -15,6 +15,7 @@ type MistakeRow = {
   v1: string | null;
   v2: string | null;
   v3: string | null;
+  ipa: string | null;
   setId: number;
   setName: string;
   setType: "irregular_verb" | "ielts_vocab";
@@ -68,10 +69,11 @@ export default function ReviewPage() {
                     <>
                       <div className="font-bold">{r.meaning}</div>
                       {revealed[r.id] && (
-                        <div className="mt-1.5 flex items-center gap-2 text-[0.95rem]">
+                        <div className="mt-1.5 flex items-center gap-2 text-[0.95rem] flex-wrap">
                           <span>
                             {r.v1} — {r.v2} — {r.v3}
                           </span>
+                          {r.ipa && <span className="text-golddark">{r.ipa}</span>}
                           <SpeakButton text={r.v1 || ""} />
                         </div>
                       )}
@@ -80,8 +82,9 @@ export default function ReviewPage() {
                     <>
                       <div className="font-bold">{r.meaning}</div>
                       {revealed[r.id] && (
-                        <div className="mt-1.5 flex items-center gap-2 text-[0.95rem]">
+                        <div className="mt-1.5 flex items-center gap-2 text-[0.95rem] flex-wrap">
                           <span>{r.term}</span>
+                          {r.ipa && <span className="text-golddark">{r.ipa}</span>}
                           <SpeakButton text={r.term || ""} />
                         </div>
                       )}

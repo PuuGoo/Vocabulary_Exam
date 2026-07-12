@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
   for (const r of rows) {
     if (setType === "irregular_verb") {
       if (r.meaning && r.v1 && r.v2 && r.v3) {
-        toInsert.push({ setId, meaning: r.meaning, v1: r.v1, v2: r.v2, v3: r.v3 });
+        toInsert.push({ setId, meaning: r.meaning, v1: r.v1, v2: r.v2, v3: r.v3, ipa: r.ipa || null });
         added++;
       }
     } else {
@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
           term: r.term,
           example: r.example || "",
           wtype: r.wtype || r.type || "",
+          ipa: r.ipa || null,
         });
         added++;
       }

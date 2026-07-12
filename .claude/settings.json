@@ -1,0 +1,6 @@
+{
+  "env": {
+    "GEMINI_API_KEY": "sk-1b0bb3d806da58ad4b8481cc39e0cdc97d70e5cb60987533fb2d1a9991787de5",
+    "GEMINI_BASE_URL": "https://api.vilao.ai/v1"
+  }
+}

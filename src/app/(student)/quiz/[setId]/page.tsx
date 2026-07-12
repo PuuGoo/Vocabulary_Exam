@@ -14,6 +14,7 @@ type Word = {
   term?: string | null;
   example?: string | null;
   wtype?: string | null;
+  ipa?: string | null;
 };
 type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
 
@@ -309,6 +310,7 @@ function QuizPlayerInner() {
                           <span className="text-muted">
                             {w.v1} — {w.v2} — {w.v3}
                           </span>
+                          {w.ipa && <span className="text-golddark">{w.ipa}</span>}
                           <SpeakButton text={w.v1 || ""} />
                         </>
                       )}
@@ -337,6 +339,7 @@ function QuizPlayerInner() {
                       ) : (
                         <>
                           <span className="text-bad">✘ Đáp án đúng:</span> <span className="text-muted">{w.term}</span>
+                          {w.ipa && <span className="text-golddark">{w.ipa}</span>}
                           <SpeakButton text={w.term || ""} />
                         </>
                       )}
@@ -346,8 +349,9 @@ function QuizPlayerInner() {
                 </>
               ) : (
                 <>
-                  <div className="font-bold mb-2 flex items-center gap-2">
+                  <div className="font-bold mb-2 flex items-center gap-2 flex-wrap">
                     {w.term}
+                    {w.ipa && <span className="text-golddark text-[0.9rem] font-normal">{w.ipa}</span>}
                     <SpeakButton text={w.term || ""} />
                   </div>
                   <div className="flex flex-col gap-1.5 mt-1">

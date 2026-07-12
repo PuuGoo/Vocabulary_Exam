@@ -27,9 +27,14 @@ không dùng localStorage hay dữ liệu giả — mọi thứ đọc/ghi qua A
   - Nhập dữ liệu hàng loạt từ **.csv** hoặc **.xlsx**
   - **Lớp học**: tạo lớp, thêm/xoá học sinh; gán một bộ từ vựng riêng cho lớp cụ thể (chỉ học sinh trong lớp
     mới thấy) hoặc để công khai cho mọi học sinh
+  - **Phiên âm IPA tự động bằng Gemini**: bấm "🔤 Lấy phiên âm còn thiếu" để AI tự sinh phiên âm chuẩn quốc tế
+    cho từng từ (gộp nhiều từ trong 1 lần gọi để tiết kiệm quota), hoặc sửa tay từng từ nếu muốn khớp chính xác
+    với một nguồn cụ thể (VD Cambridge Dictionary)
   - Quản lý người dùng (tạo, phân quyền, xoá, cấp lại mật khẩu)
   - Xem tổng hợp kết quả làm bài của toàn bộ học sinh, **xuất Excel** hoặc **in/xuất PDF**
 - **Giao diện học sinh**
+  - **Học bài (flashcard)**: lật thẻ xem nghĩa ↔ đáp án (V1/V2/V3 hoặc từ tiếng Anh), nghe phát âm, tự đánh giá
+    "Đã nhớ" / "Chưa nhớ" cho từng thẻ, xáo trộn hoặc học lại từ đầu — không tính điểm, chỉ để ôn trước khi kiểm tra
   - Chọn bộ từ vựng, làm bài theo nhóm 10 từ
   - Hai loại bộ từ: Động từ bất quy tắc (điền V1/V2/V3) và Từ vựng IELTS (điền từ hoặc trắc nghiệm)
   - **Thi thử có tính giờ**: chọn số phút, đồng hồ đếm ngược, tự nộp bài khi hết giờ
@@ -156,6 +161,27 @@ Nên đặt Nginx/Caddy phía trước để có HTTPS (Let's Encrypt) và domai
 | `JWT_SECRET` | Có | Chuỗi bí mật ký JWT phiên đăng nhập — **phải đủ dài & ngẫu nhiên** trong production |
 | `NODE_ENV` | Không | `production` khi deploy thật (bật cookie `Secure`) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | Không | Cấu hình gửi email đặt lại mật khẩu. Nếu bỏ trống, tính năng "quên mật khẩu" vẫn hoạt động nhưng sẽ cần admin cấp link đặt lại thủ công (trang Người dùng → "Tạo link đặt lại mật khẩu") |
+| `GEMINI_API_KEY` | Không | Một API key Gemini duy nhất. Cho phép admin tự động lấy phiên âm IPA. Lấy miễn phí tại https://aistudio.google.com/apikey |
+| `GEMINI_API_KEYS` | Không | **Khuyến nghị nếu hay bị lỗi vượt hạn mức**: nhiều API key cách nhau bằng dấu phẩy, VD `key1,key2,key3`. Hệ thống tự động xoay vòng — khi key hiện tại bị giới hạn (429), lập tức chuyển sang key tiếp theo thay vì phải chờ. Nếu biến này được đặt, nó sẽ được ưu tiên dùng thay cho `GEMINI_API_KEY` |
+
+### Lấy Gemini API key (miễn phí) và xoay vòng nhiều key
+
+1. Vào https://aistudio.google.com/apikey, đăng nhập bằng tài khoản Google.
+2. Bấm **"Create API key"** → chọn hoặc tạo một Google Cloud project → copy API key.
+3. **Để tăng hạn mức**, lặp lại bước 2 với **các Google Cloud project khác nhau** (hoặc tài khoản Google khác) —
+   mỗi project có hạn mức miễn phí riêng, nên nhiều key từ nhiều project = nhiều hạn mức cộng lại. Nếu tạo
+   nhiều key nhưng cùng chung 1 project, hạn mức vẫn dùng chung và việc xoay vòng sẽ không giúp ích nhiều.
+4. Thêm vào `.env` (hoặc biến môi trường trên Vercel/Railway) — dùng `GEMINI_API_KEYS` nếu có từ 2 key trở lên:
+   ```
+   GEMINI_API_KEYS="AIzaSy_key_1,AIzaSy_key_2,AIzaSy_key_3"
+   ```
+   hoặc chỉ 1 key:
+   ```
+   GEMINI_API_KEY="AIzaSy..."
+   ```
+5. Redeploy. Vào **Admin → Bộ từ vựng → Xem/Sửa một bộ** → bấm **"🔤 Lấy phiên âm còn thiếu (Gemini)"**.
+
+Khi lấy phiên âm hàng loạt cho cả bộ, hệ thống vẫn nghỉ 3 giây giữa các lô 40 từ để hạn chế bị giới hạn dù đã xoay vòng key; nếu tất cả các key đều bị giới hạn cùng lúc, hệ thống tự đợi rồi thử lại (tối đa 2 lần) trước khi báo lỗi.
 
 ## Ghi chú bảo mật khi lên production
 

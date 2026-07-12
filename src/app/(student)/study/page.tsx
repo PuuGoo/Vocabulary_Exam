@@ -59,13 +59,16 @@ export default function StudyPage() {
                 </div>
               </div>
               <div className="flex gap-2.5 flex-wrap">
+                <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => router.push(`/learn/${s.id}`)}>
+                  📖 Học bài
+                </button>
                 {s.type === "irregular_verb" ? (
-                  <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => start(s.id, "fill")}>
+                  <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => start(s.id, "fill")}>
                     Điền V1/V2/V3
                   </button>
                 ) : (
                   <>
-                    <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => start(s.id, "fill")}>
+                    <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => start(s.id, "fill")}>
                       Điền từ tiếng Anh
                     </button>
                     <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => start(s.id, "mc")}>

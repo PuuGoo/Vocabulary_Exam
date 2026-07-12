@@ -23,6 +23,7 @@ const patchSchema = z.object({
   term: z.string().trim().optional(),
   example: z.string().trim().optional(),
   wtype: z.string().trim().optional(),
+  ipa: z.string().trim().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

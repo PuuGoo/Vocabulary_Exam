@@ -77,6 +77,7 @@ export const words = pgTable("words", {
   term: text("term"),
   example: text("example"),
   wtype: varchar("wtype", { length: 32 }),
+  ipa: varchar("ipa", { length: 128 }), // phonetic transcription, e.g. /wɜːrd/
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

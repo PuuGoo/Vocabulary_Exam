@@ -17,7 +17,8 @@ export default function ToastHost() {
       const detail = (e as CustomEvent<ToastEventDetail>).detail;
       setMessage(detail.message);
       clearTimeout(timer);
-      timer = setTimeout(() => setMessage(null), 2500);
+      const duration = Math.min(8000, Math.max(2500, detail.message.length * 60));
+      timer = setTimeout(() => setMessage(null), duration);
     }
     window.addEventListener("ivc-toast", onToast);
     return () => {
@@ -29,7 +30,7 @@ export default function ToastHost() {
   if (!message) return null;
 
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-ink text-white px-5 py-2.5 rounded-lg text-sm z-50 shadow-lg">
+    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-ink text-white px-5 py-2.5 rounded-lg text-sm z-50 shadow-lg max-w-[90vw] md:max-w-md text-center whitespace-pre-line">
       {message}
     </div>
   );
