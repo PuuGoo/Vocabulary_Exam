@@ -1,25 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import SpeakButton from "@/components/SpeakButton";
-
-type MistakeRow = {
-  id: number;
-  timesWrong: number;
-  lastWrongAt: string;
-  wordId: number;
-  meaning: string;
-  term: string | null;
-  v1: string | null;
-  v2: string | null;
-  v3: string | null;
-  ipa: string | null;
-  setId: number;
-  setName: string;
-  setType: "irregular_verb" | "ielts_vocab";
-};
+import { groupMistakesBySet, type MistakeRow } from "@/lib/reviewGroups";
 
 export default function ReviewPage() {
   const [rows, setRows] = useState<MistakeRow[] | null>(null);
@@ -41,62 +27,68 @@ export default function ReviewPage() {
     setRows((prev) => (prev ? prev.filter((r) => r.id !== id) : prev));
   }
 
+  const groups = rows ? groupMistakesBySet(rows) : [];
+
   return (
     <div className={cx.panel}>
       <h2 className={cx.h2}>Ôn từ sai</h2>
       <div className={cx.desc}>
-        Danh sách các từ bạn từng làm sai, xếp theo số lần sai nhiều nhất. Bấm vào thẻ để xem đáp án, hoặc đánh dấu
-        &quot;Đã thuộc&quot; để bỏ khỏi danh sách.
+        Danh sách các từ bạn từng làm sai, nhóm theo từng bộ từ vựng. Bấm vào thẻ để xem đáp án, đánh dấu
+        &quot;Đã thuộc&quot; để bỏ khỏi danh sách, hoặc làm lại bài kiểm tra chỉ với các từ đang sai của một bộ.
       </div>
 
       {rows === null ? (
         <div className={cx.empty}>Đang tải...</div>
-      ) : rows.length === 0 ? (
+      ) : groups.length === 0 ? (
         <div className={cx.empty}>Bạn chưa có từ nào cần ôn lại — làm tốt lắm! 🎉</div>
       ) : (
-        rows.map((r) => (
-          <div key={r.id} className="border border-line rounded-[10px] p-4 mb-3 bg-white">
-            <div className="flex justify-between items-start gap-3 flex-wrap">
-              <div className="flex-1 min-w-[200px]">
-                <div className="text-[0.72rem] text-muted mb-1">
-                  {r.setName} · Sai {r.timesWrong} lần
-                </div>
-                <div
-                  className="cursor-pointer"
-                  onClick={() => setRevealed((prev) => ({ ...prev, [r.id]: !prev[r.id] }))}
-                >
-                  {r.setType === "irregular_verb" ? (
-                    <>
+        groups.map((g) => (
+          <div key={g.setId} className="mb-5">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <h3 className="font-serif text-[1rem]">
+                {g.setName} <span className="text-muted text-[0.8rem] font-sans">— {g.items.length} từ sai</span>
+              </h3>
+              <div className="flex gap-2 flex-wrap">
+                <Link className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} href={`/quiz/${g.setId}?mode=fill&retest=1`}>
+                  Làm lại (Điền từ)
+                </Link>
+                {g.setType === "ielts_vocab" && (
+                  <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/quiz/${g.setId}?mode=mc&retest=1`}>
+                    Làm lại (Trắc nghiệm)
+                  </Link>
+                )}
+              </div>
+            </div>
+
+            {g.items.map((r) => (
+              <div key={r.id} className="border border-line rounded-[10px] p-4 mb-3 bg-white">
+                <div className="flex justify-between items-start gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="text-[0.72rem] text-muted mb-1">Sai {r.timesWrong} lần</div>
+                    <div className="cursor-pointer" onClick={() => setRevealed((prev) => ({ ...prev, [r.id]: !prev[r.id] }))}>
                       <div className="font-bold">{r.meaning}</div>
                       {revealed[r.id] && (
                         <div className="mt-1.5 flex items-center gap-2 text-[0.95rem] flex-wrap">
-                          <span>
-                            {r.v1} — {r.v2} — {r.v3}
-                          </span>
+                          {r.setType === "irregular_verb" ? (
+                            <span>
+                              {r.v1} — {r.v2} — {r.v3}
+                            </span>
+                          ) : (
+                            <span>{r.term}</span>
+                          )}
                           {r.ipa && <span className="text-golddark">{r.ipa}</span>}
-                          <SpeakButton text={r.v1 || ""} />
+                          <SpeakButton text={(r.setType === "irregular_verb" ? r.v1 : r.term) || ""} />
                         </div>
                       )}
-                    </>
-                  ) : (
-                    <>
-                      <div className="font-bold">{r.meaning}</div>
-                      {revealed[r.id] && (
-                        <div className="mt-1.5 flex items-center gap-2 text-[0.95rem] flex-wrap">
-                          <span>{r.term}</span>
-                          {r.ipa && <span className="text-golddark">{r.ipa}</span>}
-                          <SpeakButton text={r.term || ""} />
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {!revealed[r.id] && <div className="text-muted text-[0.8rem] mt-1">(Bấm để xem đáp án)</div>}
+                      {!revealed[r.id] && <div className="text-muted text-[0.8rem] mt-1">(Bấm để xem đáp án)</div>}
+                    </div>
+                  </div>
+                  <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => markLearned(r.id)}>
+                    ✓ Đã thuộc
+                  </button>
                 </div>
               </div>
-              <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => markLearned(r.id)}>
-                ✓ Đã thuộc
-              </button>
-            </div>
+            ))}
           </div>
         ))
       )}
