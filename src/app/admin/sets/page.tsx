@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
+import Modal from "@/components/Modal";
 
 type SetSummary = { id: number; name: string; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -331,60 +332,62 @@ export default function AdminSetsPage() {
           </div>
 
           {showAddWord && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-              {detail.type === "irregular_verb" ? (
-                <>
-                  <div>
-                    <label className={cx.label}>Nghĩa (tiếng Việt)</label>
-                    <input className={cx.input} value={wForm.meaning} onChange={(e) => setWForm({ ...wForm, meaning: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>V1</label>
-                    <input className={cx.input} value={wForm.v1} onChange={(e) => setWForm({ ...wForm, v1: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>V2</label>
-                    <input className={cx.input} value={wForm.v2} onChange={(e) => setWForm({ ...wForm, v2: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>V3</label>
-                    <input className={cx.input} value={wForm.v3} onChange={(e) => setWForm({ ...wForm, v3: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
-                    <input className={cx.input} placeholder="/əˈraɪz/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className={cx.label}>Từ / cụm từ tiếng Anh</label>
-                    <input className={cx.input} value={wForm.term} onChange={(e) => setWForm({ ...wForm, term: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>Nghĩa (tiếng Việt)</label>
-                    <input className={cx.input} value={wForm.meaning} onChange={(e) => setWForm({ ...wForm, meaning: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>Ví dụ (không bắt buộc)</label>
-                    <input className={cx.input} value={wForm.example} onChange={(e) => setWForm({ ...wForm, example: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>Loại từ (không bắt buộc)</label>
-                    <input className={cx.input} placeholder="noun / verb / adj..." value={wForm.wtype} onChange={(e) => setWForm({ ...wForm, wtype: e.target.value })} />
-                  </div>
-                  <div>
-                    <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
-                    <input className={cx.input} placeholder="/wɜːd/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
-                  </div>
-                </>
-              )}
-              <div className="md:col-span-2">
-                <button className={`${cx.btn} ${cx.btnGold}`} onClick={saveWord}>
-                  Lưu từ
-                </button>
+            <Modal title="Thêm từ mới" onClose={() => setShowAddWord(false)}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {detail.type === "irregular_verb" ? (
+                  <>
+                    <div>
+                      <label className={cx.label}>Nghĩa (tiếng Việt)</label>
+                      <input className={cx.input} value={wForm.meaning} onChange={(e) => setWForm({ ...wForm, meaning: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>V1</label>
+                      <input className={cx.input} value={wForm.v1} onChange={(e) => setWForm({ ...wForm, v1: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>V2</label>
+                      <input className={cx.input} value={wForm.v2} onChange={(e) => setWForm({ ...wForm, v2: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>V3</label>
+                      <input className={cx.input} value={wForm.v3} onChange={(e) => setWForm({ ...wForm, v3: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
+                      <input className={cx.input} placeholder="/əˈraɪz/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className={cx.label}>Từ / cụm từ tiếng Anh</label>
+                      <input className={cx.input} value={wForm.term} onChange={(e) => setWForm({ ...wForm, term: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Nghĩa (tiếng Việt)</label>
+                      <input className={cx.input} value={wForm.meaning} onChange={(e) => setWForm({ ...wForm, meaning: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Ví dụ (không bắt buộc)</label>
+                      <input className={cx.input} value={wForm.example} onChange={(e) => setWForm({ ...wForm, example: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Loại từ (không bắt buộc)</label>
+                      <input className={cx.input} placeholder="noun / verb / adj..." value={wForm.wtype} onChange={(e) => setWForm({ ...wForm, wtype: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
+                      <input className={cx.input} placeholder="/wɜːd/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
+                    </div>
+                  </>
+                )}
+                <div className="md:col-span-2">
+                  <button className={`${cx.btn} ${cx.btnGold}`} onClick={saveWord}>
+                    Lưu từ
+                  </button>
+                </div>
               </div>
-            </div>
+            </Modal>
           )}
 
           <div style={{ maxHeight: 360, overflow: "auto" }}>
@@ -413,115 +416,113 @@ export default function AdminSetsPage() {
                 </tr>
               </thead>
               <tbody>
-                {detail.words.map((w) =>
-                  editingWordId === w.id ? (
-                    <tr key={w.id} className="bg-goldpale/40">
-                      <td className={cx.td} colSpan={6}>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 py-2">
-                          {detail.type === "irregular_verb" ? (
-                            <>
-                              <div>
-                                <label className={cx.label}>Nghĩa</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>V1</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.v1} onChange={(e) => setEditForm({ ...editForm, v1: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>V2</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.v2} onChange={(e) => setEditForm({ ...editForm, v2: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>V3</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.v3} onChange={(e) => setEditForm({ ...editForm, v3: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>Phiên âm IPA</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div>
-                                <label className={cx.label}>Từ</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.term} onChange={(e) => setEditForm({ ...editForm, term: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>Nghĩa</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>Ví dụ</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.example} onChange={(e) => setEditForm({ ...editForm, example: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>Loại từ</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.wtype} onChange={(e) => setEditForm({ ...editForm, wtype: e.target.value })} />
-                              </div>
-                              <div>
-                                <label className={cx.label}>Phiên âm IPA</label>
-                                <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
-                              </div>
-                            </>
-                          )}
-                          <div className="md:col-span-2 flex gap-2">
-                            <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} onClick={saveEditWord}>
-                              Lưu
-                            </button>
-                            <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={cancelEditWord}>
-                              Huỷ
-                            </button>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    <tr key={w.id}>
-                      {detail.type === "irregular_verb" ? (
-                        <>
-                          <td className={cx.td}>{w.meaning}</td>
-                          <td className={cx.td}>{w.v1}</td>
-                          <td className={cx.td}>{w.v2}</td>
-                          <td className={cx.td}>{w.v3}</td>
-                        </>
+                {detail.words.map((w) => (
+                  <tr key={w.id}>
+                    {detail.type === "irregular_verb" ? (
+                      <>
+                        <td className={cx.td}>{w.meaning}</td>
+                        <td className={cx.td}>{w.v1}</td>
+                        <td className={cx.td}>{w.v2}</td>
+                        <td className={cx.td}>{w.v3}</td>
+                      </>
+                    ) : (
+                      <>
+                        <td className={cx.td}>{w.term}</td>
+                        <td className={cx.td}>{w.meaning}</td>
+                        <td className={cx.td}>{w.example}</td>
+                        <td className={cx.td}>{w.wtype}</td>
+                      </>
+                    )}
+                    <td className={cx.td}>
+                      {w.ipa ? (
+                        <span className="text-golddark">{w.ipa}</span>
                       ) : (
-                        <>
-                          <td className={cx.td}>{w.term}</td>
-                          <td className={cx.td}>{w.meaning}</td>
-                          <td className={cx.td}>{w.example}</td>
-                          <td className={cx.td}>{w.wtype}</td>
-                        </>
+                        <button
+                          className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`}
+                          disabled={fetchingIpaId === w.id}
+                          onClick={() => fetchIpaForWord(w.id)}
+                        >
+                          {fetchingIpaId === w.id ? "..." : "🔤 Lấy"}
+                        </button>
                       )}
-                      <td className={cx.td}>
-                        {w.ipa ? (
-                          <span className="text-golddark">{w.ipa}</span>
-                        ) : (
-                          <button
-                            className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`}
-                            disabled={fetchingIpaId === w.id}
-                            onClick={() => fetchIpaForWord(w.id)}
-                          >
-                            {fetchingIpaId === w.id ? "..." : "🔤 Lấy"}
-                          </button>
-                        )}
-                      </td>
-                      <td className={cx.td}>
-                        <div className="flex gap-1.5">
-                          <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
-                            Sửa
-                          </button>
-                          <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
-                            Xoá
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                )}
+                    </td>
+                    <td className={cx.td}>
+                      <div className="flex gap-1.5">
+                        <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
+                          Sửa
+                        </button>
+                        <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
+                          Xoá
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+
+          {editingWordId !== null && (
+            <Modal title="Sửa từ" onClose={cancelEditWord}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {detail.type === "irregular_verb" ? (
+                  <>
+                    <div>
+                      <label className={cx.label}>Nghĩa</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>V1</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.v1} onChange={(e) => setEditForm({ ...editForm, v1: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>V2</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.v2} onChange={(e) => setEditForm({ ...editForm, v2: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>V3</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.v3} onChange={(e) => setEditForm({ ...editForm, v3: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Phiên âm IPA</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className={cx.label}>Từ</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.term} onChange={(e) => setEditForm({ ...editForm, term: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Nghĩa</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Ví dụ</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.example} onChange={(e) => setEditForm({ ...editForm, example: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Loại từ</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.wtype} onChange={(e) => setEditForm({ ...editForm, wtype: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={cx.label}>Phiên âm IPA</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
+                    </div>
+                  </>
+                )}
+                <div className="md:col-span-2 flex gap-2">
+                  <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} onClick={saveEditWord}>
+                    Lưu
+                  </button>
+                  <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={cancelEditWord}>
+                    Huỷ
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          )}
         </div>
       )}
     </div>
