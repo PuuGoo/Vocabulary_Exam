@@ -332,7 +332,13 @@ export default function AdminSetsPage() {
           </div>
 
           {showAddWord && (
-            <Modal title="Thêm từ mới" onClose={() => setShowAddWord(false)}>
+            <Modal
+              title="Thêm từ mới"
+              onClose={() => {
+                setShowAddWord(false);
+                setWForm({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
+              }}
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {detail.type === "irregular_verb" ? (
                   <>
