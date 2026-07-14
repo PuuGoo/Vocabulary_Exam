@@ -9,7 +9,8 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
-    "db:fix-encoding": "tsx src/db/fix-encoding.ts"
+    "db:fix-encoding": "tsx src/db/fix-encoding.ts",
+    "test": "node --import tsx --test src/lib/gemini.test.ts src/lib/quizGroups.test.ts src/lib/reviewGroups.test.ts"
   },
   "dependencies": {
     "bcryptjs": "2.4.3",

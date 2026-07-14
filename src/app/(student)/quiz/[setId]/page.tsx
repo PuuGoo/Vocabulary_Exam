@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
+import { toast } from "@/components/Toast";
+import { groupIndexForQuestion, circleStatus } from "@/lib/quizGroups";
 
 type Word = {
   id: number;
@@ -57,15 +59,16 @@ function QuizPlayerInner() {
   const mode = (search.get("mode") as "fill" | "mc") || "fill";
   const timedMode = search.get("timed") === "1";
   const minutes = Number(search.get("minutes") || 15);
+  const retest = search.get("retest") === "1";
 
   const [set, setSet] = useState<SetDetail | null>(null);
+  const [mistakeIdByWordId, setMistakeIdByWordId] = useState<Record<number, number>>({});
   const [group, setGroup] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Record<string, string>>>({});
   const [mcOptions, setMcOptions] = useState<Record<number, string[]>>({});
 
-  // normal (per-group) grading
-  const [checked, setChecked] = useState(false);
-  const [groupScore, setGroupScore] = useState<{ score: number; total: number } | null>(null);
+  // grading, keyed by group index so a group's graded state survives navigating away and back
+  const [checkedGroups, setCheckedGroups] = useState<Record<number, { score: number; total: number }>>({});
 
   // timed mode grading (whole-set, single submit)
   const [secondsLeft, setSecondsLeft] = useState(minutes * 60);
@@ -74,17 +77,44 @@ function QuizPlayerInner() {
   const startedAtRef = useRef<number>(Date.now());
   const submittedRef = useRef(false);
 
+  // navigation / autofocus
+  const [jumpQuestion, setJumpQuestion] = useState("");
+  const [pendingFocus, setPendingFocus] = useState<number | "first" | null>(null);
+  const inputRefs = useRef(new Map<number, HTMLInputElement>()).current;
+  const rowRefs = useRef(new Map<number, HTMLDivElement>()).current;
+
   useEffect(() => {
-    fetch(`/api/sets/${params.setId}`)
-      .then((r) => r.json())
-      .then((d) => setSet(d.set));
-  }, [params.setId]);
+    let cancelled = false;
+    async function load() {
+      const res = await fetch(`/api/sets/${params.setId}`);
+      const data = await res.json();
+      let loadedSet: SetDetail = data.set;
+      let mistakeMap: Record<number, number> = {};
+      if (retest) {
+        const mRes = await fetch("/api/mistakes");
+        const mData = await mRes.json();
+        const relevant = (mData.mistakes || []).filter((m: { setId: number }) => m.setId === loadedSet.id);
+        const wordIds = new Set(relevant.map((m: { wordId: number }) => m.wordId));
+        mistakeMap = Object.fromEntries(relevant.map((m: { wordId: number; id: number }) => [m.wordId, m.id]));
+        loadedSet = { ...loadedSet, words: loadedSet.words.filter((w) => wordIds.has(w.id)) };
+      }
+      if (!cancelled) {
+        setSet(loadedSet);
+        setMistakeIdByWordId(mistakeMap);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.setId, retest]);
 
   const totalGroups = set ? Math.ceil(set.words.length / GROUP_SIZE) : 0;
   const start = group * GROUP_SIZE;
   const end = set ? Math.min(start + GROUP_SIZE, set.words.length) : 0;
   const isVerb = set?.type === "irregular_verb";
-  const effectiveChecked = timedMode ? timedSubmitted : checked;
+  const effectiveChecked = timedMode ? timedSubmitted : checkedGroups[group] !== undefined;
 
   const currentWords = useMemo(() => (set ? set.words.slice(start, end) : []), [set, start, end]);
 
@@ -118,6 +148,25 @@ function QuizPlayerInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timedMode, set, secondsLeft, timedSubmitted]);
 
+  // focus the requested word's input (or the first word of the group) after navigation
+  useEffect(() => {
+    if (pendingFocus === null) return;
+    const targetId = pendingFocus === "first" ? currentWords[0]?.id : pendingFocus;
+    if (targetId == null) {
+      setPendingFocus(null);
+      return;
+    }
+    const input = inputRefs.get(targetId);
+    const row = rowRefs.get(targetId);
+    if (input) {
+      input.focus();
+      input.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (row) {
+      row.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    setPendingFocus(null);
+  }, [group, currentWords, pendingFocus, inputRefs, rowRefs]);
+
   function setAnswer(wordId: number, part: string, value: string) {
     setAnswers((prev) => ({ ...prev, [wordId]: { ...prev[wordId], [part]: value } }));
   }
@@ -128,16 +177,28 @@ function QuizPlayerInner() {
       currentWords.forEach((w) => delete next[w.id]);
       return next;
     });
-    setChecked(false);
-    setGroupScore(null);
+    setCheckedGroups((prev) => {
+      const next = { ...prev };
+      delete next[group];
+      return next;
+    });
   }
 
-  function goGroup(g: number) {
+  function goGroup(g: number, focusWordId?: number) {
     setGroup(g);
-    if (!timedMode) {
-      setChecked(false);
-      setGroupScore(null);
+    setPendingFocus(focusWordId ?? "first");
+  }
+
+  function submitJumpQuestion() {
+    if (!set) return;
+    const n = Number(jumpQuestion);
+    if (!jumpQuestion.trim() || Number.isNaN(n) || n < 1 || n > set.words.length) {
+      toast("Nhập số thứ tự câu hợp lệ.");
+      return;
     }
+    const targetWord = set.words[n - 1];
+    goGroup(groupIndexForQuestion(n, GROUP_SIZE), targetWord.id);
+    setJumpQuestion("");
   }
 
   function isWordCorrect(w: Word): boolean {
@@ -149,6 +210,24 @@ function QuizPlayerInner() {
     } else {
       return answers[w.id]?.mc === w.meaning;
     }
+  }
+
+  function isWordAnswered(w: Word): boolean {
+    const a = answers[w.id];
+    if (!a) return false;
+    if (isVerb) return Boolean(a.v1 || a.v2 || a.v3);
+    return Boolean(a.term || a.mc);
+  }
+
+  async function clearSolvedMistakes(list: Word[]) {
+    const solved = list.filter((w) => isWordCorrect(w) && mistakeIdByWordId[w.id] != null);
+    if (solved.length === 0) return;
+    await Promise.all(solved.map((w) => fetch(`/api/mistakes/${mistakeIdByWordId[w.id]}`, { method: "DELETE" })));
+    setMistakeIdByWordId((prev) => {
+      const next = { ...prev };
+      solved.forEach((w) => delete next[w.id]);
+      return next;
+    });
   }
 
   async function postResult(score: number, total: number, durationSeconds?: number) {
@@ -190,9 +269,9 @@ function QuizPlayerInner() {
         correct += answers[w.id]?.mc === w.meaning ? 1 : 0;
       }
     }
-    setChecked(true);
-    setGroupScore({ score: correct, total });
+    setCheckedGroups((prev) => ({ ...prev, [group]: { score: correct, total } }));
     await postResult(correct, total);
+    if (retest) await clearSolvedMistakes(currentWords);
   }
 
   async function submitTimed() {
@@ -217,15 +296,33 @@ function QuizPlayerInner() {
     setTimedSubmitted(true);
     setTimedScore({ score: correct, total });
     await postResult(correct, total, durationSeconds);
+    if (retest) await clearSolvedMistakes(set.words);
   }
 
   if (!set) return <div className={cx.panel}><div className={cx.empty}>Đang tải bài kiểm tra...</div></div>;
+
+  if (retest && set.words.length === 0) {
+    return (
+      <div className={cx.panel}>
+        <div className={cx.empty}>
+          🎉 Bạn không còn từ sai nào trong bộ này.
+          <div className="mt-3">
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>
+              ← Về trang Ôn từ sai
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cx.panel}>
       <div className="flex justify-between items-center mb-2.5 flex-wrap gap-2">
         <h2 className={cx.h2}>
-          {set.name} {timedMode && <span className={cx.badgeGold}>Thi thử có tính giờ</span>}
+          {set.name}{" "}
+          {timedMode && <span className={cx.badgeGold}>Thi thử có tính giờ</span>}{" "}
+          {retest && <span className={cx.badgeGold}>Làm lại từ sai</span>}
         </h2>
         <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>
           ← Chọn bộ khác
@@ -249,32 +346,81 @@ function QuizPlayerInner() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 justify-center mb-4">
-        {Array.from({ length: totalGroups }).map((_, g) => {
-          const s2 = g * GROUP_SIZE + 1;
-          const e2 = Math.min((g + 1) * GROUP_SIZE, set.words.length);
+      <div className="flex items-center justify-center gap-2 flex-wrap mb-3">
+        <label className="text-[0.8rem] text-muted">Nhóm:</label>
+        <select
+          className={`${cx.input} !mb-0 !w-auto !py-1.5`}
+          value={group}
+          onChange={(e) => goGroup(Number(e.target.value))}
+        >
+          {Array.from({ length: totalGroups }).map((_, g) => {
+            const s2 = g * GROUP_SIZE + 1;
+            const e2 = Math.min((g + 1) * GROUP_SIZE, set.words.length);
+            return (
+              <option key={g} value={g}>
+                Nhóm {g + 1}/{totalGroups} (câu {s2}-{e2})
+              </option>
+            );
+          })}
+        </select>
+        <input
+          type="number"
+          min={1}
+          max={set.words.length}
+          placeholder="Đi tới câu số"
+          value={jumpQuestion}
+          onChange={(e) => setJumpQuestion(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitJumpQuestion();
+          }}
+          className={`${cx.input} !mb-0 !w-36 !py-1.5`}
+        />
+        <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={submitJumpQuestion}>
+          Đi tới
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 justify-center mb-4">
+        {set.words.map((w, idx) => {
+          const g = groupIndexForQuestion(idx + 1, GROUP_SIZE);
+          const graded = timedMode ? timedSubmitted : checkedGroups[g] !== undefined;
+          const status = circleStatus(graded, isWordAnswered(w), graded ? isWordCorrect(w) : false);
+          const cls =
+            status === "correct"
+              ? "bg-ok text-white border-ok"
+              : status === "wrong"
+              ? "bg-bad text-white border-bad"
+              : status === "answered"
+              ? "bg-goldpale border-gold text-golddark"
+              : "bg-white border-line text-muted";
           return (
             <button
-              key={g}
-              onClick={() => goGroup(g)}
-              className={`px-3 py-1.5 rounded-full text-[0.8rem] border ${
-                g === group ? "bg-gold text-ink border-gold font-semibold" : "bg-white border-line"
-              }`}
+              key={w.id}
+              type="button"
+              title={`Câu ${idx + 1}`}
+              onClick={() => goGroup(g, w.id)}
+              className={`w-7 h-7 rounded-full text-[0.7rem] font-semibold border flex items-center justify-center ${cls}`}
             >
-              {s2}-{e2}
+              {idx + 1}
             </button>
           );
         })}
       </div>
 
       <div className="text-[0.82rem] text-muted text-center mb-3.5">
-        Nhóm {group + 1} / {totalGroups} — mục {start + 1} đến {end}{" "}
-        {mode === "mc" ? "· Trắc nghiệm" : isVerb ? "" : "· Điền từ"}
+        {mode === "mc" ? "Trắc nghiệm" : isVerb ? "Điền V1 / V2 / V3" : "Điền từ tiếng Anh"}
       </div>
 
       <div>
         {currentWords.map((w, idx) => (
-          <div key={w.id} className="grid grid-cols-[30px_1fr] gap-2.5 items-start py-3.5 border-b border-dashed border-line last:border-none">
+          <div
+            key={w.id}
+            ref={(el) => {
+              if (el) rowRefs.set(w.id, el);
+              else rowRefs.delete(w.id);
+            }}
+            className="grid grid-cols-[30px_1fr] gap-2.5 items-start py-3.5 border-b border-dashed border-line last:border-none"
+          >
             <div className="text-muted text-[0.88rem] text-right pt-1">{start + idx + 1}.</div>
             <div>
               {isVerb ? (
@@ -292,6 +438,14 @@ function QuizPlayerInner() {
                             disabled={effectiveChecked}
                             value={val}
                             onChange={(e) => setAnswer(w.id, part, e.target.value)}
+                            ref={
+                              part === "v1"
+                                ? (el) => {
+                                    if (el) inputRefs.set(w.id, el);
+                                    else inputRefs.delete(w.id);
+                                  }
+                                : undefined
+                            }
                             className={`${cx.input} !mb-0 ${
                               effectiveChecked ? (ok ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
                             }`}
@@ -327,6 +481,10 @@ function QuizPlayerInner() {
                       disabled={effectiveChecked}
                       value={answers[w.id]?.term || ""}
                       onChange={(e) => setAnswer(w.id, "term", e.target.value)}
+                      ref={(el) => {
+                        if (el) inputRefs.set(w.id, el);
+                        else inputRefs.delete(w.id);
+                      }}
                       className={`${cx.input} !mb-0 ${
                         effectiveChecked ? (checkMatch(answers[w.id]?.term, w.term) ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
                       }`}
@@ -381,11 +539,11 @@ function QuizPlayerInner() {
         ))}
       </div>
 
-      {!timedMode && checked && groupScore && (
+      {!timedMode && checkedGroups[group] && (
         <div className="flex justify-center my-4">
           <div className="w-[110px] h-[110px] rounded-full border-[3px] border-dashed border-golddark flex flex-col items-center justify-center -rotate-[8deg] text-golddark font-serif text-center leading-tight">
             <div className="text-2xl font-bold">
-              {groupScore.score}/{groupScore.total}
+              {checkedGroups[group].score}/{checkedGroups[group].total}
             </div>
             <div className="text-[0.62rem] tracking-widest uppercase mt-0.5">Đã chấm</div>
           </div>
@@ -394,7 +552,7 @@ function QuizPlayerInner() {
 
       {!timedMode && (
         <div className="flex gap-2.5 justify-center mt-3.5 flex-wrap">
-          <button className={`${cx.btn} ${cx.btnGold}`} disabled={checked} onClick={grade}>
+          <button className={`${cx.btn} ${cx.btnGold}`} disabled={effectiveChecked} onClick={grade}>
             Kiểm tra đáp án
           </button>
           <button className={`${cx.btn} ${cx.btnGhost}`} onClick={resetGroup}>

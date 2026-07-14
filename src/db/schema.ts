@@ -117,6 +117,24 @@ export const mistakes = pgTable(
   })
 );
 
+export const wordProgress = pgTable(
+  "word_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id")
+      .notNull()
+      .references(() => words.id, { onDelete: "cascade" }),
+    known: boolean("known").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("word_progress_user_word_idx").on(table.userId, table.wordId),
+  })
+);
+
 export const passwordResets = pgTable("password_resets", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
@@ -171,3 +189,4 @@ export type Word = typeof words.$inferSelect;
 export type Attempt = typeof attempts.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
+export type WordProgress = typeof wordProgress.$inferSelect;

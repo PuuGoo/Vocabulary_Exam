@@ -37,6 +37,7 @@ export default function LearnPage() {
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
   const [known, setKnown] = useState<Record<number, boolean>>({});
+  const [jumpValue, setJumpValue] = useState("");
 
   useEffect(() => {
     fetch(`/api/sets/${params.setId}`)
@@ -44,6 +45,7 @@ export default function LearnPage() {
       .then((d) => {
         setSet(d.set);
         setOrder(d.set.words);
+        setKnown(d.progress || {});
       });
   }, [params.setId]);
 
@@ -58,6 +60,21 @@ export default function LearnPage() {
   function goPrev() {
     setFlipped(false);
     setIndex((i) => Math.max(i - 1, 0));
+  }
+  function goToIndex(n: number) {
+    if (total === 0) return;
+    const clamped = Math.min(Math.max(n, 1), total) - 1;
+    setFlipped(false);
+    setIndex(clamped);
+  }
+  function submitJump() {
+    const n = Number(jumpValue);
+    if (!jumpValue.trim() || Number.isNaN(n)) {
+      toast("Nhập số thứ tự thẻ hợp lệ.");
+      return;
+    }
+    goToIndex(n);
+    setJumpValue("");
   }
   function reshuffle() {
     if (!set) return;
@@ -84,6 +101,26 @@ export default function LearnPage() {
     goNext();
   }
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goNext();
+      } else if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        setFlipped((f) => !f);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [total]);
+
   if (!set) return <div className={cx.panel}><div className={cx.empty}>Đang tải...</div></div>;
   if (total === 0) return <div className={cx.panel}><div className={cx.empty}>Bộ từ vựng này chưa có từ nào.</div></div>;
 
@@ -98,10 +135,30 @@ export default function LearnPage() {
           ← Chọn bộ khác
         </button>
       </div>
-      <div className={cx.desc}>Bấm vào thẻ để lật xem đáp án. Tự đánh giá bạn đã nhớ từ này chưa.</div>
+      <div className={cx.desc}>
+        Bấm vào thẻ để lật xem đáp án. Tự đánh giá bạn đã nhớ từ này chưa. Dùng phím ← → để chuyển thẻ, phím
+        Space/Enter để lật thẻ.
+      </div>
 
-      <div className="text-center text-[0.85rem] text-muted mb-3">
-        Thẻ {index + 1} / {total}
+      <div className="flex items-center justify-center gap-2 flex-wrap mb-3">
+        <div className="text-[0.85rem] text-muted">
+          Thẻ {index + 1} / {total}
+        </div>
+        <input
+          type="number"
+          min={1}
+          max={total}
+          placeholder="Số thẻ"
+          value={jumpValue}
+          onChange={(e) => setJumpValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submitJump();
+          }}
+          className={`${cx.input} !mb-0 !w-24 !py-1`}
+        />
+        <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={submitJump}>
+          Đi tới
+        </button>
       </div>
 
       <div
