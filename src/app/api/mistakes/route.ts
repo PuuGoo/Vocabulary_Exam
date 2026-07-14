@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { mistakes, words, vocabSets } from "@/db/schema";
+import { mistakes, words, vocabSets, wordProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export async function GET() {
@@ -60,6 +60,14 @@ export async function POST(req: NextRequest) {
         set: { timesWrong: sql`${mistakes.timesWrong} + 1`, lastWrongAt: new Date() },
       });
   }
+
+  await db
+    .insert(wordProgress)
+    .values({ userId: session.userId, wordId: parsed.data.wordId, known: parsed.data.learned })
+    .onConflictDoUpdate({
+      target: [wordProgress.userId, wordProgress.wordId],
+      set: { known: parsed.data.learned, updatedAt: new Date() },
+    });
 
   return NextResponse.json({ ok: true });
 }
