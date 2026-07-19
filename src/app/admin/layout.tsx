@@ -2,14 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import AppShell from "@/components/AppShell";
 import ToastHost from "@/components/Toast";
-
-const TABS = [
-  { href: "/admin/sets", label: "Bộ từ vựng" },
-  { href: "/admin/import", label: "Nhập dữ liệu" },
-  { href: "/admin/classes", label: "Lớp học" },
-  { href: "/admin/users", label: "Người dùng" },
-  { href: "/admin/results", label: "Kết quả học sinh" },
-];
+import { ADMIN_TABS, LEARNING_TABS } from "@/lib/navigation";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -17,7 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (session.role !== "admin") redirect("/study");
 
   return (
-    <AppShell displayName={session.displayName} roleLabel="Admin" tabs={TABS}>
+    <AppShell displayName={session.displayName} roleLabel="Admin" tabs={[...LEARNING_TABS, ...ADMIN_TABS]}>
       {children}
       <ToastHost />
     </AppShell>

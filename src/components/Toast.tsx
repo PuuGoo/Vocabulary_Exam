@@ -30,8 +30,22 @@ export default function ToastHost() {
   if (!message) return null;
 
   return (
-    <div className="fixed bottom-5 left-1/2 -translate-x-1/2 bg-ink text-white px-5 py-2.5 rounded-lg text-sm z-50 shadow-lg max-w-[90vw] md:max-w-md text-center whitespace-pre-line">
-      {message}
+    <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      style={{ bottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
+      className="fixed left-1/2 z-[70] flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-4 py-2.5 text-sm text-white shadow-lg md:max-w-md"
+    >
+      <span className="text-left whitespace-pre-line">{message}</span>
+      <button
+        type="button"
+        aria-label="Đóng thông báo"
+        className="shrink-0 rounded px-1 text-lg leading-none text-white/70 hover:text-white focus:outline focus:outline-2 focus:outline-gold"
+        onClick={() => setMessage(null)}
+      >
+        ×
+      </button>
     </div>
   );
 }

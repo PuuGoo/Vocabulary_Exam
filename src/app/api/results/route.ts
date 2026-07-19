@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { attempts, mistakes } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { recordDailyActivity } from "@/lib/activity";
 
 export async function GET() {
   const session = await getSession();
@@ -18,14 +19,16 @@ export async function GET() {
 }
 
 const schema = z.object({
-  setId: z.number().int(),
+  setId: z.number().int().nullable(),
   setName: z.string().min(1),
-  mode: z.enum(["fill", "mc"]),
+  mode: z.enum(["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed"]),
   score: z.number().int().min(0),
   total: z.number().int().min(0),
   durationSeconds: z.number().int().min(0).optional(),
   timed: z.boolean().optional(),
   wrongWordIds: z.array(z.number().int()).optional(),
+  wrongWords: z.array(z.object({ wordId: z.number().int(), setId: z.number().int() })).optional(),
+  wordsPracticed: z.number().int().min(1).max(10000).optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -36,24 +39,30 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
 
-  const { wrongWordIds, ...attemptData } = parsed.data;
+  const { wrongWordIds, wrongWords, wordsPracticed, ...attemptData } = parsed.data;
 
   const [row] = await db
     .insert(attempts)
     .values({ userId: session.userId, ...attemptData })
     .returning();
 
-  if (wrongWordIds && wrongWordIds.length > 0) {
-    for (const wordId of wrongWordIds) {
+  const mistakesToSave = wrongWords || (parsed.data.setId !== null ? (wrongWordIds || []).map((wordId) => ({ wordId, setId: parsed.data.setId as number })) : []);
+  if (mistakesToSave.length > 0) {
+    for (const item of mistakesToSave) {
       await db
         .insert(mistakes)
-        .values({ userId: session.userId, wordId, setId: parsed.data.setId, timesWrong: 1, lastWrongAt: new Date() })
+        .values({ userId: session.userId, wordId: item.wordId, setId: item.setId, timesWrong: 1, lastWrongAt: new Date() })
         .onConflictDoUpdate({
           target: [mistakes.userId, mistakes.wordId],
           set: { timesWrong: sql`${mistakes.timesWrong} + 1`, lastWrongAt: new Date() },
         });
     }
   }
+
+  await recordDailyActivity(session.userId, {
+    wordsReviewed: wordsPracticed || 0,
+    quizzesCompleted: 1,
+  });
 
   return NextResponse.json({ result: row });
 }

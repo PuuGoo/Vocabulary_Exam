@@ -2,16 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-ink: 28 43 58;
+  --color-inksoft: 58 74 92;
+  --color-paper: 242 238 225;
+  --color-panel: 255 253 248;
+  --color-gold: 169 129 47;
+  --color-golddark: 125 95 34;
+  --color-goldpale: 241 230 200;
+  --color-line: 221 212 189;
+  --color-muted: 124 117 102;
+  --color-ok: 47 106 82;
+  --color-okbg: 232 242 236;
+  --color-bad: 168 64 46;
+  --color-badbg: 251 234 230;
+}
+
+html.theme-dark {
+  --color-ink: 226 232 240;
+  --color-inksoft: 203 213 225;
+  --color-paper: 15 23 42;
+  --color-panel: 17 24 39;
+  --color-gold: 212 166 65;
+  --color-golddark: 235 190 91;
+  --color-goldpale: 58 48 32;
+  --color-line: 55 65 81;
+  --color-muted: 156 163 175;
+  --color-ok: 110 207 166;
+  --color-okbg: 25 62 50;
+  --color-bad: 248 145 125;
+  --color-badbg: 74 35 35;
+}
+
 html, body {
   height: 100%;
 }
 body {
-  background-color: #f2eee1;
+  background-color: rgb(var(--color-paper));
   background-image:
-    linear-gradient(#f2eee1, #f2eee1),
+    linear-gradient(rgb(var(--color-paper)), rgb(var(--color-paper))),
     repeating-linear-gradient(0deg, rgba(28,43,58,0.025) 0px, rgba(28,43,58,0.025) 1px, transparent 1px, transparent 26px);
-  color: #1c2b3a;
+  color: rgb(var(--color-ink));
+  transition: background-color 160ms ease, color 160ms ease;
 }
+
+.theme-dark body {
+  background-image:
+    linear-gradient(rgb(var(--color-paper)), rgb(var(--color-paper))),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 26px);
+}
+
+.theme-dark .bg-white { background-color: rgb(31 41 55); }
+.theme-dark .bg-ink { background-color: rgb(15 23 42); }
+.theme-dark .border-ink { border-color: rgb(15 23 42); }
+.theme-dark .bg-gold { color: rgb(17 24 39); }
+.theme-dark [class*="text-goldpale"] { color: rgb(241 230 200); }
+.theme-dark input,
+.theme-dark select,
+.theme-dark textarea {
+  background-color: rgb(31 41 55);
+  border-color: rgb(75 85 99);
+  color: rgb(226 232 240);
+}
+.theme-dark input::placeholder,
+.theme-dark textarea::placeholder { color: rgb(156 163 175); }
+.theme-dark .bg-\[\#fffefb\],
+.theme-dark .bg-\[\#faf9f5\] { background-color: rgb(31 41 55); }
+.theme-dark .hover\:bg-\[\#faf9f5\]:hover { background-color: rgb(37 47 63); }
+.theme-dark .bg-\[\#e4ecf3\] { background-color: rgb(36 50 71); }
+.theme-dark .text-\[\#2b4a6b\] { color: rgb(186 204 225); }
 
 input[type="text"], input[type="password"], input[type="number"], select, textarea {
   outline-offset: 1px;
@@ -21,9 +80,24 @@ input:focus, select:focus, textarea:focus {
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #ddd4bd; border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--color-line)); border-radius: 8px; }
+
+@media (prefers-reduced-motion: reduce) {
+  body { transition: none; }
+}
+
+@page { margin: 12mm; }
 
 @media print {
+  .print-page-break { break-before: page; }
+  html.theme-dark {
+    --color-ink: 28 43 58;
+    --color-inksoft: 58 74 92;
+    --color-paper: 255 255 255;
+    --color-panel: 255 255 255;
+    --color-line: 221 212 189;
+    --color-muted: 124 117 102;
+  }
   body { background: #fff !important; }
   .shadow-sm, .shadow-lg { box-shadow: none !important; }
 }

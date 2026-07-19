@@ -6,7 +6,7 @@ import { cx } from "@/components/ui";
 type ResultRow = {
   id: number;
   setName: string;
-  mode: "fill" | "mc";
+  mode: "fill" | "mc" | "match" | "dictation" | "pronunciation" | "sentence" | "mixed";
   score: number;
   total: number;
   timed: boolean;
@@ -32,7 +32,7 @@ export default function AdminResultsPage() {
       "Học sinh": r.displayName || r.username,
       "Tên đăng nhập": r.username,
       "Bộ từ": r.setName,
-      "Chế độ": r.mode === "mc" ? "Trắc nghiệm" : "Tự luận",
+      "Chế độ": r.mode === "mixed" ? "Kiểm tra tổng hợp" : r.mode === "sentence" ? "Xếp câu" : r.mode === "pronunciation" ? "Luyện phát âm" : r.mode === "dictation" ? "Nghe & viết" : r.mode === "match" ? "Ghép cặp" : r.mode === "mc" ? "Trắc nghiệm" : "Tự luận",
       "Thi có tính giờ": r.timed ? "Có" : "Không",
       "Thời gian làm bài (giây)": r.durationSeconds ?? "",
       "Điểm": r.score,
@@ -91,7 +91,7 @@ export default function AdminResultsPage() {
                 <td className={cx.td}>{r.displayName || r.username}</td>
                 <td className={cx.td}>{r.setName}</td>
                 <td className={cx.td}>
-                  {r.mode === "mc" ? "Trắc nghiệm" : "Tự luận"}
+                  {r.mode === "mixed" ? "Kiểm tra tổng hợp" : r.mode === "sentence" ? "Xếp câu" : r.mode === "pronunciation" ? "Luyện phát âm" : r.mode === "dictation" ? "Nghe & viết" : r.mode === "match" ? "Ghép cặp" : r.mode === "mc" ? "Trắc nghiệm" : "Tự luận"}
                   {r.timed && <span className={`${cx.badgeGold} ml-1.5`}>Tính giờ</span>}
                 </td>
                 <td className={cx.td}>

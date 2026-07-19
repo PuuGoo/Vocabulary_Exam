@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { mistakes, words, vocabSets, wordProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { recordDailyActivity } from "@/lib/activity";
 
 export async function GET() {
   const session = await getSession();
@@ -68,6 +69,8 @@ export async function POST(req: NextRequest) {
       target: [wordProgress.userId, wordProgress.wordId],
       set: { known: parsed.data.learned, updatedAt: new Date() },
     });
+
+  await recordDailyActivity(session.userId, { wordsReviewed: 1 });
 
   return NextResponse.json({ ok: true });
 }

@@ -5,19 +5,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#1c2b3a",
-        inksoft: "#3a4a5c",
-        paper: "#f2eee1",
-        panel: "#fffdf8",
-        gold: "#a9812f",
-        golddark: "#7d5f22",
-        goldpale: "#f1e6c8",
-        line: "#ddd4bd",
-        muted: "#7c7566",
-        ok: "#2f6a52",
-        okbg: "#e8f2ec",
-        bad: "#a8402e",
-        badbg: "#fbeae6",
+        ink: "rgb(var(--color-ink) / <alpha-value>)",
+        inksoft: "rgb(var(--color-inksoft) / <alpha-value>)",
+        paper: "rgb(var(--color-paper) / <alpha-value>)",
+        panel: "rgb(var(--color-panel) / <alpha-value>)",
+        gold: "rgb(var(--color-gold) / <alpha-value>)",
+        golddark: "rgb(var(--color-golddark) / <alpha-value>)",
+        goldpale: "rgb(var(--color-goldpale) / <alpha-value>)",
+        line: "rgb(var(--color-line) / <alpha-value>)",
+        muted: "rgb(var(--color-muted) / <alpha-value>)",
+        ok: "rgb(var(--color-ok) / <alpha-value>)",
+        okbg: "rgb(var(--color-okbg) / <alpha-value>)",
+        bad: "rgb(var(--color-bad) / <alpha-value>)",
+        badbg: "rgb(var(--color-badbg) / <alpha-value>)",
       },
       fontFamily: {
         // NOTE: Georgia is intentionally excluded — it lacks proper precomposed
