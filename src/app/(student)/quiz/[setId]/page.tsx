@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
+import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { groupIndexForQuestion, circleStatus } from "@/lib/quizGroups";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
 type Word = {
   id: number;
@@ -46,7 +48,7 @@ function fmtClock(totalSeconds: number) {
 
 export default function QuizPlayerPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<div className={cx.panel}><div className={cx.empty} role="status">Đang chuẩn bị bài kiểm tra...</div></div>}>
       <QuizPlayerInner />
     </Suspense>
   );
@@ -58,17 +60,23 @@ function QuizPlayerInner() {
   const router = useRouter();
   const mode = (search.get("mode") as "fill" | "mc") || "fill";
   const timedMode = search.get("timed") === "1";
-  const minutes = Number(search.get("minutes") || 15);
+  const minutes = Math.min(120, Math.max(1, Number(search.get("minutes")) || 15));
   const retest = search.get("retest") === "1";
+  const quickMode = search.get("quick") === "1";
+  const quickCount = [5, 10, 20].includes(Number(search.get("count"))) ? Number(search.get("count")) : 10;
 
   const [set, setSet] = useState<SetDetail | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [mistakeIdByWordId, setMistakeIdByWordId] = useState<Record<number, number>>({});
+  const [quickRecommendation, setQuickRecommendation] = useState<{ reviewCount: number; newCount: number } | null>(null);
   const [group, setGroup] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Record<string, string>>>({});
   const [mcOptions, setMcOptions] = useState<Record<number, string[]>>({});
 
   // grading, keyed by group index so a group's graded state survives navigating away and back
   const [checkedGroups, setCheckedGroups] = useState<Record<number, { score: number; total: number }>>({});
+  const [grading, setGrading] = useState(false);
 
   // timed mode grading (whole-set, single submit)
   const [secondsLeft, setSecondsLeft] = useState(minutes * 60);
@@ -86,21 +94,31 @@ function QuizPlayerInner() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const res = await fetch(`/api/sets/${params.setId}`);
-      const data = await res.json();
-      let loadedSet: SetDetail = data.set;
-      let mistakeMap: Record<number, number> = {};
-      if (retest) {
-        const mRes = await fetch("/api/mistakes");
-        const mData = await mRes.json();
-        const relevant = (mData.mistakes || []).filter((m: { setId: number }) => m.setId === loadedSet.id);
-        const wordIds = new Set(relevant.map((m: { wordId: number }) => m.wordId));
-        mistakeMap = Object.fromEntries(relevant.map((m: { wordId: number; id: number }) => [m.wordId, m.id]));
-        loadedSet = { ...loadedSet, words: loadedSet.words.filter((w) => wordIds.has(w.id)) };
-      }
-      if (!cancelled) {
-        setSet(loadedSet);
-        setMistakeIdByWordId(mistakeMap);
+      setLoadError(false);
+      setSet(null);
+      try {
+        const res = await fetch(quickMode ? `/api/quick-practice?count=${quickCount}` : `/api/sets/${params.setId}`);
+        if (!res.ok) throw new Error("load failed");
+        const data = await res.json();
+        if (!data.set) throw new Error("missing set");
+        let loadedSet: SetDetail = data.set;
+        if (data.recommendation) setQuickRecommendation(data.recommendation);
+        let mistakeMap: Record<number, number> = data.mistakeIdByWordId || {};
+        if (retest) {
+          const mRes = await fetch("/api/mistakes");
+          if (!mRes.ok) throw new Error("mistakes failed");
+          const mData = await mRes.json();
+          const relevant = (mData.mistakes || []).filter((m: { setId: number }) => m.setId === loadedSet.id);
+          const wordIds = new Set(relevant.map((m: { wordId: number }) => m.wordId));
+          mistakeMap = Object.fromEntries(relevant.map((m: { wordId: number; id: number }) => [m.wordId, m.id]));
+          loadedSet = { ...loadedSet, words: loadedSet.words.filter((w) => wordIds.has(w.id)) };
+        }
+        if (!cancelled) {
+          setSet(loadedSet);
+          setMistakeIdByWordId(mistakeMap);
+        }
+      } catch {
+        if (!cancelled) setLoadError(true);
       }
     }
     load();
@@ -108,7 +126,7 @@ function QuizPlayerInner() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.setId, retest]);
+  }, [params.setId, retest, quickMode, quickCount, loadAttempt]);
 
   const totalGroups = set ? Math.ceil(set.words.length / GROUP_SIZE) : 0;
   const start = group * GROUP_SIZE;
@@ -117,6 +135,31 @@ function QuizPlayerInner() {
   const effectiveChecked = timedMode ? timedSubmitted : checkedGroups[group] !== undefined;
 
   const currentWords = useMemo(() => (set ? set.words.slice(start, end) : []), [set, start, end]);
+  const answeredInGroup = useMemo(
+    () => currentWords.filter((word) => Object.values(answers[word.id] || {}).some((value) => value.trim() !== "")).length,
+    [currentWords, answers]
+  );
+  const answeredOverall = useMemo(
+    () => set ? set.words.filter((word) => Object.values(answers[word.id] || {}).some((value) => value.trim() !== "")).length : 0,
+    [set, answers]
+  );
+  const hasUnsubmittedAnswers = useMemo(() => {
+    if (!set || timedSubmitted) return false;
+    return set.words.some((word, index) => {
+      const answer = answers[word.id];
+      const answered = answer && Object.values(answer).some((value) => value.trim() !== "");
+      if (!answered) return false;
+      return timedMode || checkedGroups[groupIndexForQuestion(index + 1, GROUP_SIZE)] === undefined;
+    });
+  }, [set, answers, checkedGroups, timedMode, timedSubmitted]);
+
+  const leaveWarning = "Bạn còn câu đã nhập nhưng chưa nộp. Rời trang sẽ làm mất các câu trả lời này. Bạn vẫn muốn rời đi?";
+  useUnsavedChangesWarning(hasUnsubmittedAnswers, leaveWarning);
+
+  function leaveQuiz() {
+    if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;
+    router.push("/study");
+  }
 
   // build MC options for the words in the current group, once
   useEffect(() => {
@@ -172,6 +215,7 @@ function QuizPlayerInner() {
   }
 
   function resetGroup() {
+    if ((answeredInGroup > 0 || checkedGroups[group] !== undefined) && !confirm("Xoá câu trả lời và kết quả chấm của nhóm này để làm lại?")) return;
     setAnswers((prev) => {
       const next = { ...prev };
       currentWords.forEach((w) => delete next[w.id]);
@@ -230,30 +274,37 @@ function QuizPlayerInner() {
     });
   }
 
-  async function postResult(score: number, total: number, durationSeconds?: number) {
-    if (!set) return;
-    const wrongWordIds = set.words
-      .slice(timedMode ? 0 : start, timedMode ? set.words.length : end)
+  async function postResult(score: number, total: number, durationSeconds?: number): Promise<boolean> {
+    if (!set) return false;
+    const practicedWords = set.words.slice(timedMode ? 0 : start, timedMode ? set.words.length : end);
+    const wrongWordIds = practicedWords
       .filter((w) => !isWordCorrect(w))
       .map((w) => w.id);
-    await fetch("/api/results", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        setId: set.id,
-        setName: set.name,
-        mode,
-        score,
-        total,
-        timed: timedMode,
-        durationSeconds,
-        wrongWordIds,
-      }),
-    });
+    try {
+      const res = await fetch("/api/results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setId: set.id,
+          setName: set.name,
+          mode,
+          score,
+          total,
+          timed: timedMode,
+          durationSeconds,
+          wrongWordIds,
+          wordsPracticed: practicedWords.length,
+        }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
   }
 
   async function grade() {
-    if (!set) return;
+    if (!set || grading || answeredInGroup === 0) return;
+    setGrading(true);
     let correct = 0;
     let total = 0;
     for (const w of currentWords) {
@@ -270,8 +321,16 @@ function QuizPlayerInner() {
       }
     }
     setCheckedGroups((prev) => ({ ...prev, [group]: { score: correct, total } }));
-    await postResult(correct, total);
-    if (retest) await clearSolvedMistakes(currentWords);
+    const saved = await postResult(correct, total);
+    if (!saved) toast("Đã chấm trên màn hình nhưng chưa lưu được vào lịch sử.");
+    if (retest || quickMode) {
+      try {
+        await clearSolvedMistakes(currentWords);
+      } catch {
+        toast("Đã chấm bài nhưng chưa cập nhật được danh sách từ sai.");
+      }
+    }
+    setGrading(false);
   }
 
   async function submitTimed() {
@@ -295,11 +354,41 @@ function QuizPlayerInner() {
     const durationSeconds = Math.round((Date.now() - startedAtRef.current) / 1000);
     setTimedSubmitted(true);
     setTimedScore({ score: correct, total });
-    await postResult(correct, total, durationSeconds);
-    if (retest) await clearSolvedMistakes(set.words);
+    const saved = await postResult(correct, total, durationSeconds);
+    if (!saved) toast("Bài đã được chấm nhưng chưa lưu được vào lịch sử.");
+    if (retest || quickMode) {
+      try {
+        await clearSolvedMistakes(set.words);
+      } catch {
+        toast("Đã chấm bài nhưng chưa cập nhật được danh sách từ sai.");
+      }
+    }
   }
 
-  if (!set) return <div className={cx.panel}><div className={cx.empty}>Đang tải bài kiểm tra...</div></div>;
+  function confirmTimedSubmit() {
+    if (!set || timedSubmitted) return;
+    const unanswered = set.words.length - answeredOverall;
+    const message = unanswered > 0
+      ? `Bạn còn ${unanswered} câu chưa trả lời. Bạn vẫn muốn nộp bài?`
+      : "Nộp bài thi ngay? Bạn sẽ không thể sửa câu trả lời sau khi nộp.";
+    if (confirm(message)) void submitTimed();
+  }
+
+  if (!set && !loadError) return <div className={cx.panel}><div className={cx.empty} role="status">Đang tải bài kiểm tra...</div></div>;
+
+  if (loadError || !set) {
+    return (
+      <div className={cx.panel}>
+        <div className={cx.empty}>
+          Không thể tải bài kiểm tra.
+          <div className="mt-3 flex justify-center gap-2">
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setLoadAttempt((attempt) => attempt + 1)}>Thử lại</button>
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>Chọn bộ khác</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (retest && set.words.length === 0) {
     return (
@@ -316,18 +405,46 @@ function QuizPlayerInner() {
     );
   }
 
+  if (set.words.length === 0) {
+    return (
+      <div className={cx.panel}>
+        <div className={cx.empty}>
+          Bộ từ vựng này chưa có câu hỏi nào.
+          <div className="mt-3">
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cx.panel}>
       <div className="flex justify-between items-center mb-2.5 flex-wrap gap-2">
         <h2 className={cx.h2}>
           {set.name}{" "}
           {timedMode && <span className={cx.badgeGold}>Thi thử có tính giờ</span>}{" "}
-          {retest && <span className={cx.badgeGold}>Làm lại từ sai</span>}
+          {retest && <span className={cx.badgeGold}>Làm lại từ sai</span>}{" "}
+          {quickMode && <span className={cx.badgeGold}>Luyện nhanh</span>}
         </h2>
-        <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>
+        <button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveQuiz}>
           ← Chọn bộ khác
         </button>
       </div>
+      {!retest && !quickMode && (
+        <StudyModeNav
+          setId={set.id}
+          active={timedMode ? "timed" : mode}
+          isVerb={isVerb}
+        />
+      )}
+
+      {quickMode && quickRecommendation && (
+        <div className="mb-4 rounded-lg bg-goldpale px-4 py-3 text-sm text-muted">
+          Bài luyện cá nhân hóa gồm <b className="text-ink">{quickRecommendation.reviewCount} từ cần ôn</b>
+          {quickRecommendation.newCount > 0 && <> và <b className="text-ink">{quickRecommendation.newCount} từ mới</b></>}.
+        </div>
+      )}
 
       {timedMode && (
         <div className="flex items-center justify-between gap-3 flex-wrap bg-goldpale rounded-lg px-4 py-3 mb-4">
@@ -335,7 +452,7 @@ function QuizPlayerInner() {
             ⏱ Thời gian còn lại: <span className={secondsLeft <= 60 ? "text-bad font-bold" : "font-bold"}>{fmtClock(secondsLeft)}</span>
           </div>
           {!timedSubmitted ? (
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={submitTimed}>
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={confirmTimedSubmit}>
               Nộp bài thi
             </button>
           ) : (
@@ -378,6 +495,19 @@ function QuizPlayerInner() {
         <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={submitJumpQuestion}>
           Đi tới
         </button>
+      </div>
+
+      <div className="mb-4">
+        <div className="mb-1.5 flex justify-between text-[0.76rem] text-muted">
+          <span>Tiến độ nhóm hiện tại</span>
+          <span>{answeredInGroup}/{currentWords.length} câu đã trả lời</span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-line">
+          <div
+            className="h-full rounded-full bg-gold transition-[width]"
+            style={{ width: `${currentWords.length ? (answeredInGroup / currentWords.length) * 100 : 0}%` }}
+          />
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-1.5 justify-center mb-4">
@@ -435,6 +565,8 @@ function QuizPlayerInner() {
                           <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">{part.toUpperCase()}</span>
                           <input
                             type="text"
+                            autoComplete="off"
+                            spellCheck={false}
                             disabled={effectiveChecked}
                             value={val}
                             onChange={(e) => setAnswer(w.id, part, e.target.value)}
@@ -478,6 +610,8 @@ function QuizPlayerInner() {
                     <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">TỪ TIẾNG ANH</span>
                     <input
                       type="text"
+                      autoComplete="off"
+                      spellCheck={false}
                       disabled={effectiveChecked}
                       value={answers[w.id]?.term || ""}
                       onChange={(e) => setAnswer(w.id, "term", e.target.value)}
@@ -522,13 +656,15 @@ function QuizPlayerInner() {
                         else if (chosen) cls = "border-bad bg-badbg text-bad";
                       }
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={opt}
+                          disabled={effectiveChecked}
                           onClick={() => !effectiveChecked && setAnswer(w.id, "mc", opt)}
-                          className={`border rounded-lg px-2.5 py-2 cursor-pointer text-[0.88rem] ${cls}`}
+                          className={`w-full border rounded-lg px-2.5 py-2 text-left cursor-pointer text-[0.88rem] disabled:cursor-default ${cls}`}
                         >
                           {opt}
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -552,10 +688,14 @@ function QuizPlayerInner() {
 
       {!timedMode && (
         <div className="flex gap-2.5 justify-center mt-3.5 flex-wrap">
-          <button className={`${cx.btn} ${cx.btnGold}`} disabled={effectiveChecked} onClick={grade}>
-            Kiểm tra đáp án
+          <button className={`${cx.btn} ${cx.btnGold}`} disabled={effectiveChecked || grading || answeredInGroup === 0} onClick={grade}>
+            {grading ? "Đang chấm..." : answeredInGroup === 0 ? "Hãy trả lời ít nhất 1 câu" : "Kiểm tra đáp án"}
           </button>
-          <button className={`${cx.btn} ${cx.btnGhost}`} onClick={resetGroup}>
+          <button
+            className={`${cx.btn} ${cx.btnGhost}`}
+            disabled={answeredInGroup === 0 && checkedGroups[group] === undefined}
+            onClick={resetGroup}
+          >
             Làm lại nhóm này
           </button>
         </div>

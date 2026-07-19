@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
@@ -20,20 +20,45 @@ type Word = {
 type SetDetail = SetSummary & { words: Word[] };
 type ClassOpt = { id: number; name: string };
 
+function normalizeSearch(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .trim();
+}
+
 export default function AdminSetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [showNewForm, setShowNewForm] = useState(false);
+  const [creatingSet, setCreatingSet] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb">("ielts_vocab");
   const [newClassId, setNewClassId] = useState<string>("");
   const [detail, setDetail] = useState<SetDetail | null>(null);
+  const [editSetName, setEditSetName] = useState("");
+  const [savingSetName, setSavingSetName] = useState(false);
   const [showAddWord, setShowAddWord] = useState(false);
   const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
   const [editingWordId, setEditingWordId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
   const [fetchingIpaId, setFetchingIpaId] = useState<number | null>(null);
   const [bulkIpaLoading, setBulkIpaLoading] = useState(false);
+  const [savingClass, setSavingClass] = useState(false);
+  const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
+
+  const filteredSets = useMemo(() => {
+    if (!sets) return [];
+    const query = normalizeSearch(searchQuery);
+    if (!query) return sets;
+    return sets.filter((set) =>
+      normalizeSearch(`${set.name} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query)
+    );
+  }, [sets, searchQuery]);
 
   async function loadSets() {
     const res = await fetch("/api/sets");
@@ -54,45 +79,83 @@ export default function AdminSetsPage() {
 
   async function createSet() {
     if (!newName.trim()) return toast("Vui lòng nhập tên bộ từ vựng.");
-    const res = await fetch("/api/sets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName.trim(), type: newType, classId: newClassId ? Number(newClassId) : null }),
-    });
-    if (!res.ok) return toast("Không thể tạo bộ từ vựng.");
-    toast("Đã tạo bộ từ vựng!");
-    setNewName("");
-    setNewClassId("");
+    setCreatingSet(true);
+    try {
+      const res = await fetch("/api/sets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim(), type: newType, classId: newClassId ? Number(newClassId) : null }),
+      });
+      if (!res.ok) return toast("Không thể tạo bộ từ vựng.");
+      toast("Đã tạo bộ từ vựng!");
+      closeNewForm();
+      loadSets();
+    } catch {
+      toast("Không thể kết nối để tạo bộ từ vựng.");
+    } finally {
+      setCreatingSet(false);
+    }
+  }
+
+  function closeNewForm() {
     setShowNewForm(false);
-    loadSets();
+    setNewName("");
+    setNewType("ielts_vocab");
+    setNewClassId("");
   }
 
   async function changeSetClass(setId: number, classId: string) {
-    const res = await fetch(`/api/sets/${setId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ classId: classId ? Number(classId) : null }),
-    });
-    if (!res.ok) return toast("Không thể cập nhật lớp.");
-    toast("Đã cập nhật phạm vi hiển thị.");
-    loadSets();
-    if (detail?.id === setId) openDetail(setId);
+    const nextClassId = classId ? Number(classId) : null;
+    setSavingClass(true);
+    try {
+      const res = await fetch(`/api/sets/${setId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ classId: nextClassId }),
+      });
+      if (!res.ok) return toast("Không thể cập nhật lớp.");
+      setDetail((current) => current?.id === setId ? {
+        ...current,
+        classId: nextClassId,
+        className: classesOpt.find((item) => item.id === nextClassId)?.name || null,
+      } : current);
+      toast("Đã cập nhật phạm vi hiển thị.");
+      loadSets();
+    } catch {
+      toast("Không thể kết nối để cập nhật lớp.");
+    } finally {
+      setSavingClass(false);
+    }
   }
 
   async function deleteSet(id: number) {
     if (!confirm("Xoá bộ từ vựng này? Hành động không thể hoàn tác.")) return;
-    await fetch(`/api/sets/${id}`, { method: "DELETE" });
-    toast("Đã xoá bộ từ vựng.");
-    if (detail?.id === id) setDetail(null);
-    loadSets();
+    try {
+      const res = await fetch(`/api/sets/${id}`, { method: "DELETE" });
+      if (!res.ok) return toast("Không thể xoá bộ từ vựng.");
+      toast("Đã xoá bộ từ vựng.");
+      if (detail?.id === id) setDetail(null);
+      loadSets();
+    } catch {
+      toast("Không thể kết nối để xoá bộ từ vựng.");
+    }
   }
 
   async function openDetail(id: number) {
-    const res = await fetch(`/api/sets/${id}`);
-    const data = await res.json();
-    setDetail(data.set);
-    setShowAddWord(false);
-    setEditingWordId(null);
+    setOpeningDetailId(id);
+    try {
+      const res = await fetch(`/api/sets/${id}`);
+      if (!res.ok) return toast("Không thể mở bộ từ vựng.");
+      const data = await res.json();
+      setDetail(data.set);
+      setEditSetName(data.set.name);
+      setShowAddWord(false);
+      setEditingWordId(null);
+    } catch {
+      toast("Không thể kết nối để mở bộ từ vựng.");
+    } finally {
+      setOpeningDetailId(null);
+    }
   }
 
   async function saveWord() {
@@ -119,9 +182,18 @@ export default function AdminSetsPage() {
 
   async function deleteWord(wordId: number) {
     if (!detail) return;
-    await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
-    openDetail(detail.id);
-    loadSets();
+    const target = detail.words.find((word) => word.id === wordId);
+    const label = target?.term || target?.v1 || target?.meaning || "từ này";
+    if (!confirm(`Xoá “${label}” khỏi bộ từ?`)) return;
+    try {
+      const res = await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
+      if (!res.ok) return toast("Không thể xoá từ.");
+      setDetail((current) => current ? { ...current, words: current.words.filter((word) => word.id !== wordId) } : current);
+      toast("Đã xoá từ.");
+      loadSets();
+    } catch {
+      toast("Không thể kết nối để xoá từ.");
+    }
   }
 
   function startEditWord(w: Word) {
@@ -140,6 +212,40 @@ export default function AdminSetsPage() {
 
   function cancelEditWord() {
     setEditingWordId(null);
+  }
+
+  function closeDetail() {
+    // A child editor handles Escape/overlay first; keep the parent open behind it.
+    if (showAddWord || editingWordId !== null) return;
+    if (detail && editSetName.trim() !== detail.name && !confirm("Tên bộ từ chưa được lưu. Bạn có muốn đóng và bỏ thay đổi?")) return;
+    setDetail(null);
+  }
+
+  async function saveSetName() {
+    if (!detail || savingSetName) return;
+    const name = editSetName.trim();
+    if (!name) return toast("Tên bộ từ vựng không được để trống.");
+    if (name === detail.name) return;
+
+    setSavingSetName(true);
+    try {
+      const res = await fetch(`/api/sets/${detail.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể đổi tên bộ từ vựng.");
+      const savedName = data.set?.name || name;
+      setDetail((current) => (current ? { ...current, name: savedName } : current));
+      setEditSetName(savedName);
+      loadSets();
+      toast("Đã đổi tên bộ từ vựng.");
+    } catch {
+      toast("Không thể kết nối để đổi tên bộ từ vựng.");
+    } finally {
+      setSavingSetName(false);
+    }
   }
 
   async function fetchIpaForWord(wordId: number) {
@@ -199,20 +305,35 @@ export default function AdminSetsPage() {
         &quot;Nhập dữ liệu&quot;.
       </div>
 
-      <div className="mb-4">
-        <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowNewForm((v) => !v)}>
+      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="relative min-w-[240px] flex-1 max-w-md">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            className={`${cx.input} !mb-0 !pl-9`}
+            placeholder="Tìm theo tên bộ, loại hoặc lớp..."
+            aria-label="Tìm bộ từ vựng"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowNewForm(true)}>
           + Tạo bộ từ vựng mới
         </button>
       </div>
 
       {showNewForm && (
-        <div className="border border-line rounded-[10px] p-4 mb-4 bg-white">
+        <Modal title="Tạo bộ từ vựng mới" onClose={closeNewForm} closeOnBackdrop={false}>
           <label className={cx.label}>Tên bộ từ vựng</label>
           <input
             className={cx.input}
             placeholder="VD: Từ vựng chủ đề Môi trường"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void createSet();
+            }}
+            autoFocus
           />
           <label className={cx.label}>Loại bài kiểm tra</label>
           <select
@@ -233,22 +354,29 @@ export default function AdminSetsPage() {
             ))}
           </select>
           <div className="flex gap-2.5">
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={createSet}>
-              Tạo bộ từ (rỗng)
+            <button className={`${cx.btn} ${cx.btnGold}`} disabled={creatingSet} onClick={createSet}>
+              {creatingSet ? "Đang tạo..." : "Tạo bộ từ"}
             </button>
-            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShowNewForm(false)}>
+            <button className={`${cx.btn} ${cx.btnGhost}`} disabled={creatingSet} onClick={closeNewForm}>
               Huỷ
             </button>
           </div>
-        </div>
+        </Modal>
       )}
 
       {sets === null ? (
         <div className={cx.empty}>Đang tải...</div>
       ) : sets.length === 0 ? (
         <div className={cx.empty}>Chưa có bộ từ vựng nào.</div>
+      ) : filteredSets.length === 0 ? (
+        <div className={cx.empty}>
+          Không tìm thấy bộ từ phù hợp với “{searchQuery}”.
+          <div className="mt-3">
+            <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => setSearchQuery("")}>Xoá tìm kiếm</button>
+          </div>
+        </div>
       ) : (
-        sets.map((s) => (
+        filteredSets.map((s) => (
           <div className={cx.setcard} key={s.id}>
             <div>
               <div className="font-semibold">{s.name}</div>
@@ -257,37 +385,49 @@ export default function AdminSetsPage() {
                 {s.className ? <span className={cx.badgeGold}>Lớp: {s.className}</span> : <span className={cx.badgeBlue}>Công khai</span>}
               </div>
             </div>
-            <div className="flex gap-2.5 flex-wrap">
-              <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => openDetail(s.id)}>
-                Xem / Sửa
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                className={`${cx.btn} ${cx.btnGold}`}
+                disabled={openingDetailId !== null}
+                onClick={() => openDetail(s.id)}
+              >
+                {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
-              <a
-                href={`/learn/${s.id}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${cx.btn} ${cx.btnGhost}`}
+              <details className="relative">
+                <summary className={`${cx.btn} ${cx.btnGhost} list-none select-none`}>Xem thử ▾</summary>
+                <div className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-56 rounded-lg border border-line bg-white p-1.5 shadow-lg">
+                  <a
+                    href={`/learn/${s.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
+                  >
+                    📖 Học bài
+                  </a>
+                  <a
+                    href={`/quiz/${s.id}?mode=fill`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
+                  >
+                    ✍️ {s.type === "ielts_vocab" ? "Điền từ tiếng Anh" : "Điền V1/V2/V3"}
+                  </a>
+                  {s.type === "ielts_vocab" && (
+                    <a
+                      href={`/quiz/${s.id}?mode=mc`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
+                    >
+                      ☑️ Trắc nghiệm
+                    </a>
+                  )}
+                </div>
+              </details>
+              <button
+                className="px-2 py-2 text-[0.8rem] text-bad hover:underline"
+                onClick={() => deleteSet(s.id)}
               >
-                📖 Xem thử học bài
-              </a>
-              <a
-                href={`/quiz/${s.id}?mode=fill`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`${cx.btn} ${cx.btnGhost}`}
-              >
-                🧪 Xem thử {s.type === "ielts_vocab" ? "(điền từ)" : "bài kiểm tra"}
-              </a>
-              {s.type === "ielts_vocab" && (
-                <a
-                  href={`/quiz/${s.id}?mode=mc`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`${cx.btn} ${cx.btnGhost}`}
-                >
-                  🧪 Xem thử (trắc nghiệm)
-                </a>
-              )}
-              <button className={`${cx.btn} ${cx.btnDanger}`} onClick={() => deleteSet(s.id)}>
                 Xoá
               </button>
             </div>
@@ -296,25 +436,61 @@ export default function AdminSetsPage() {
       )}
 
       {detail && (
-        <div className="border border-line rounded-[10px] p-5 mt-4 bg-white">
-          <h2 className={cx.h2}>{detail.name}</h2>
+        <Modal title={detail.name} onClose={closeDetail} wide>
+          <div>
           <div className={cx.desc}>
             {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {detail.words.length} mục
           </div>
-          <div className="mb-3 max-w-xs">
-            <label className={cx.label}>Phạm vi hiển thị</label>
-            <select
-              className={cx.input}
-              value={detail.classId ?? ""}
-              onChange={(e) => changeSetClass(detail.id, e.target.value)}
-            >
-              <option value="">Công khai — mọi học sinh đều thấy</option>
-              {classesOpt.map((c) => (
-                <option key={c.id} value={c.id}>
-                  Chỉ lớp: {c.name}
-                </option>
-              ))}
-            </select>
+          <div className="mb-4 grid grid-cols-1 items-end gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
+            <div>
+              <label className={cx.label} htmlFor="edit-set-name">Tên bộ từ vựng</label>
+              <div className="flex gap-2">
+                <input
+                  id="edit-set-name"
+                  className={`${cx.input} !mb-0`}
+                  maxLength={256}
+                  value={editSetName}
+                  onChange={(e) => setEditSetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") void saveSetName();
+                  }}
+                />
+                <button
+                  className={`${cx.btn} ${cx.btnGold} shrink-0`}
+                  disabled={savingSetName || !editSetName.trim() || editSetName.trim() === detail.name}
+                  onClick={saveSetName}
+                >
+                  {savingSetName ? "Đang lưu..." : "Lưu tên"}
+                </button>
+              </div>
+              {editSetName.trim() !== detail.name && (
+                <div className="mt-1.5 flex items-center gap-2 text-[0.75rem] text-golddark">
+                  <span>● Tên đã thay đổi nhưng chưa lưu</span>
+                  <button type="button" className="underline hover:text-ink" onClick={() => setEditSetName(detail.name)}>
+                    Hoàn tác
+                  </button>
+                </div>
+              )}
+            </div>
+            <div>
+              <label className={cx.label}>Phạm vi hiển thị</label>
+              <select
+                className={`${cx.input} !mb-0`}
+                disabled={savingClass}
+                value={detail.classId ?? ""}
+                onChange={(e) => changeSetClass(detail.id, e.target.value)}
+              >
+                <option value="">Công khai — mọi học sinh đều thấy</option>
+                {classesOpt.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    Chỉ lớp: {c.name}
+                  </option>
+                ))}
+              </select>
+              <div className={`mt-1.5 text-[0.75rem] ${savingClass ? "text-golddark" : "text-muted"}`}>
+                {savingClass ? "Đang lưu phạm vi..." : "Thay đổi được lưu tự động"}
+              </div>
+            </div>
           </div>
           <div className="flex gap-2.5 mb-3 flex-wrap">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
@@ -334,6 +510,7 @@ export default function AdminSetsPage() {
           {showAddWord && (
             <Modal
               title="Thêm từ mới"
+              closeOnBackdrop={false}
               onClose={() => {
                 setShowAddWord(false);
                 setWForm({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
@@ -396,7 +573,12 @@ export default function AdminSetsPage() {
             </Modal>
           )}
 
-          <div style={{ maxHeight: 360, overflow: "auto" }}>
+          {detail.words.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-line bg-[#fffefb] px-4 py-8 text-center text-[0.88rem] text-muted">
+              Bộ này chưa có từ nào. Chọn “Thêm từ thủ công” để bắt đầu.
+            </div>
+          ) : (
+          <div className="max-h-[52vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white">
             <table className={cx.table}>
               <thead>
                 <tr>
@@ -423,7 +605,7 @@ export default function AdminSetsPage() {
               </thead>
               <tbody>
                 {detail.words.map((w) => (
-                  <tr key={w.id}>
+                  <tr key={w.id} className="hover:bg-goldpale/30">
                     {detail.type === "irregular_verb" ? (
                       <>
                         <td className={cx.td}>{w.meaning}</td>
@@ -467,9 +649,10 @@ export default function AdminSetsPage() {
               </tbody>
             </table>
           </div>
+          )}
 
           {editingWordId !== null && (
-            <Modal title="Sửa từ" onClose={cancelEditWord}>
+            <Modal title="Sửa từ" onClose={cancelEditWord} closeOnBackdrop={false}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {detail.type === "irregular_verb" ? (
                   <>
@@ -529,7 +712,8 @@ export default function AdminSetsPage() {
               </div>
             </Modal>
           )}
-        </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

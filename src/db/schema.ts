@@ -7,12 +7,13 @@ import {
   varchar,
   boolean,
   uniqueIndex,
+  date,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab"] as const;
-export const modeEnum = ["fill", "mc"] as const;
+export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed"] as const;
 
 export const users = pgTable(
   "users",
@@ -88,7 +89,7 @@ export const attempts = pgTable("attempts", {
     .references(() => users.id, { onDelete: "cascade" }),
   setId: integer("set_id").references(() => vocabSets.id, { onDelete: "set null" }),
   setName: varchar("set_name", { length: 256 }).notNull(),
-  mode: varchar("mode", { length: 16 }).notNull(), // 'fill' | 'mc'
+  mode: varchar("mode", { length: 16 }).notNull(), // fill | mc | match | dictation | pronunciation | sentence | mixed
   score: integer("score").notNull(),
   total: integer("total").notNull(),
   durationSeconds: integer("duration_seconds"),
@@ -132,6 +133,78 @@ export const wordProgress = pgTable(
   },
   (table) => ({
     uniqPair: uniqueIndex("word_progress_user_word_idx").on(table.userId, table.wordId),
+  })
+);
+
+export const wordBookmarks = pgTable(
+  "word_bookmarks",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id")
+      .notNull()
+      .references(() => words.id, { onDelete: "cascade" }),
+    note: text("note").notNull().default(""),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("word_bookmarks_user_word_idx").on(table.userId, table.wordId),
+  })
+);
+
+export const studySessions = pgTable(
+  "study_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    setId: integer("set_id")
+      .notNull()
+      .references(() => vocabSets.id, { onDelete: "cascade" }),
+    wordId: integer("word_id")
+      .notNull()
+      .references(() => words.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("study_sessions_user_set_idx").on(table.userId, table.setId),
+  })
+);
+
+export const learningGoals = pgTable(
+  "learning_goals",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    dailyWords: integer("daily_words").notNull().default(10),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdx: uniqueIndex("learning_goals_user_idx").on(table.userId),
+  })
+);
+
+export const dailyActivities = pgTable(
+  "daily_activities",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    activityDate: date("activity_date").notNull(),
+    wordsReviewed: integer("words_reviewed").notNull().default(0),
+    quizzesCompleted: integer("quizzes_completed").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    userDateIdx: uniqueIndex("daily_activities_user_date_idx").on(table.userId, table.activityDate),
   })
 );
 
@@ -190,3 +263,7 @@ export type Attempt = typeof attempts.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;
+export type WordBookmark = typeof wordBookmarks.$inferSelect;
+export type StudySession = typeof studySessions.$inferSelect;
+export type LearningGoal = typeof learningGoals.$inferSelect;
+export type DailyActivity = typeof dailyActivities.$inferSelect;
