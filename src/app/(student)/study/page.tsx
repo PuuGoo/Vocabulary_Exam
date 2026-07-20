@@ -85,6 +85,10 @@ export default function StudyPage() {
       <h2 className={cx.h2}>Chọn bộ từ vựng để kiểm tra</h2>
       <div className={cx.desc}>Chọn một bộ từ vựng và chế độ kiểm tra phù hợp với bạn.</div>
 
+      <section className="my-4 rounded-xl border border-gold bg-gradient-to-r from-goldpale/70 to-white p-4" aria-labelledby="daily-challenge-title">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 id="daily-challenge-title" className="font-semibold">⚡ Thử thách hôm nay</h3><div className="mt-1 text-xs text-muted">10 câu giống nhau cho mọi người, tính XP một lần mỗi ngày.</div></div><Link className={`${cx.btn} ${cx.btnGold}`} href="/daily-challenge">Tham gia ngay</Link></div>
+      </section>
+
       <section className="my-4 rounded-xl border border-[#9eb5cc] bg-[#e4ecf3]/60 p-4" aria-labelledby="smart-review-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

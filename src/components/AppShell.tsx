@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { toast } from "@/components/Toast";
 import QuickSwitcher from "@/components/QuickSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
+import AssignmentReminder from "@/components/AssignmentReminder";
 
 type Tab = { href: string; label: string };
 
@@ -78,6 +79,7 @@ export default function AppShell({
           >
             <span aria-hidden="true">⌕</span><span className="hidden md:inline"> Chuyển nhanh </span><kbd className="hidden lg:inline rounded border border-goldpale/30 px-1 text-[0.65rem]">Ctrl K</kbd>
           </button>
+          <AssignmentReminder />
           <ThemeToggle />
           <Link
             href="/settings"

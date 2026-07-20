@@ -24,6 +24,7 @@ const MODE_LABELS: Record<string, string> = {
   pronunciation: "Luyện phát âm",
   sentence: "Xếp câu",
   mixed: "Kiểm tra tổng hợp",
+  daily: "Thử thách hằng ngày",
 };
 
 function dateLabel(value: string) {

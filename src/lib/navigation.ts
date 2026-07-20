@@ -1,5 +1,7 @@
 export const LEARNING_TABS = [
+  { href: "/assignments", label: "Bài tập của tôi" },
   { href: "/study", label: "Chọn bộ từ & làm bài" },
+  { href: "/daily-challenge", label: "Thử thách hôm nay" },
   { href: "/smart-review", label: "Ôn tập thông minh" },
   { href: "/mixed-practice", label: "Kiểm tra tổng hợp" },
   { href: "/print-sets", label: "Phiếu học PDF" },
@@ -12,6 +14,7 @@ export const LEARNING_TABS = [
 ];
 
 export const ADMIN_TABS = [
+  { href: "/admin/assignments", label: "Giao bài" },
   { href: "/admin/sets", label: "Bộ từ vựng" },
   { href: "/admin/import", label: "Nhập dữ liệu" },
   { href: "/admin/classes", label: "Lớp học" },

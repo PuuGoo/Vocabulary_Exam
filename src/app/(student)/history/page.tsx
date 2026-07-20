@@ -7,7 +7,7 @@ import { cx } from "@/components/ui";
 type ResultRow = {
   id: number;
   setName: string;
-  mode: "fill" | "mc" | "match" | "dictation" | "pronunciation" | "sentence" | "mixed";
+  mode: "fill" | "mc" | "match" | "dictation" | "pronunciation" | "sentence" | "mixed" | "daily";
   score: number;
   total: number;
   timed: boolean;
@@ -126,7 +126,7 @@ export default function HistoryPage() {
             {filteredRows.map((r) => (
               <tr key={r.id} className="hover:bg-goldpale/30">
                 <td className={cx.td}>{r.setName}</td>
-                <td className={`${cx.td} whitespace-nowrap`}>{r.timed ? "Thi thử" : r.mode === "mixed" ? "Kiểm tra tổng hợp" : r.mode === "sentence" ? "Xếp câu" : r.mode === "pronunciation" ? "Luyện phát âm" : r.mode === "dictation" ? "Nghe & viết" : r.mode === "match" ? "Ghép cặp" : r.mode === "mc" ? "Trắc nghiệm" : "Điền từ"}</td>
+                <td className={`${cx.td} whitespace-nowrap`}>{r.timed ? "Thi thử" : r.mode === "daily" ? "Thử thách hằng ngày" : r.mode === "mixed" ? "Kiểm tra tổng hợp" : r.mode === "sentence" ? "Xếp câu" : r.mode === "pronunciation" ? "Luyện phát âm" : r.mode === "dictation" ? "Nghe & viết" : r.mode === "match" ? "Ghép cặp" : r.mode === "mc" ? "Trắc nghiệm" : "Điền từ"}</td>
                 <td className={cx.td}>
                   <b>
                     {r.score}/{r.total}
