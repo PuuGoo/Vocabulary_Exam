@@ -41,6 +41,9 @@ export async function GET(req: NextRequest) {
       ipa: words.ipa,
       known: wordProgress.known,
       reviewedAt: wordProgress.updatedAt,
+      nextReviewAt: wordProgress.nextReviewAt,
+      intervalDays: wordProgress.intervalDays,
+      reviewStreak: wordProgress.reviewStreak,
       timesWrong: mistakes.timesWrong,
     })
     .from(words)
@@ -50,35 +53,36 @@ export async function GET(req: NextRequest) {
 
   const candidates = classFilter ? await query.where(classFilter) : await query;
   if (candidates.length === 0) {
-    return NextResponse.json({ words: [], summary: { total: 0, difficult: 0, forgotten: 0, stale: 0, new: 0 } });
+    return NextResponse.json({ words: [], summary: { total: 0, due: 0, difficult: 0, forgotten: 0, stale: 0, new: 0 } });
   }
 
   const now = Date.now();
   const ranked = candidates.map((word) => {
     const ageDays = word.reviewedAt ? Math.max(0, Math.floor((now - word.reviewedAt.getTime()) / DAY_MS)) : null;
+    const due = Boolean(word.nextReviewAt && word.nextReviewAt.getTime() <= now);
     let reason: "difficult" | "forgotten" | "stale" | "new";
     let priority: number;
     if ((word.timesWrong || 0) > 0) {
       reason = "difficult";
-      priority = 400 + (word.timesWrong || 0) * 20 + (ageDays || 0);
+      priority = (due ? 600 : 400) + (word.timesWrong || 0) * 20 + (ageDays || 0);
     } else if (word.known === false) {
       reason = "forgotten";
-      priority = 300 + (ageDays || 0);
+      priority = (due ? 550 : 300) + (ageDays || 0);
     } else if (word.known === true) {
       reason = "stale";
-      priority = 100 + (ageDays || 0);
+      priority = due ? 500 + (ageDays || 0) : 25;
     } else {
       reason = "new";
       priority = 50;
     }
-    return { ...word, ageDays, reason, priority, random: Math.random() };
-  }).filter((word) => word.known !== true || (word.ageDays || 0) >= 7 || (word.timesWrong || 0) > 0);
+    return { ...word, ageDays, due, reason, priority, random: Math.random() };
+  }).filter((word) => word.due || word.nextReviewAt === null);
 
   ranked.sort((a, b) => b.priority - a.priority || a.random - b.random);
   const selected = ranked.slice(0, count).map(({ priority: _priority, random: _random, ...word }) => word);
   const summary = selected.reduce(
     (result, word) => ({ ...result, [word.reason]: result[word.reason] + 1 }),
-    { total: selected.length, difficult: 0, forgotten: 0, stale: 0, new: 0 }
+    { total: selected.length, due: selected.filter((word) => word.due).length, difficult: 0, forgotten: 0, stale: 0, new: 0 }
   );
 
   return NextResponse.json({ words: selected, summary });

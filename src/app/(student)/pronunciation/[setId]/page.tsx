@@ -172,6 +172,7 @@ export default function PronunciationPage() {
         total: ratings.length,
         durationSeconds: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
         wrongWordIds: ratings.filter((item) => !item.good).map((item) => item.wordId),
+        practicedWordIds: ratings.map((item) => item.wordId),
         wordsPracticed: ratings.length,
       }),
     }).then((res) => {

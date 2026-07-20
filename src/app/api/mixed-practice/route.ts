@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
-import { classMembers, vocabSets, words } from "@/db/schema";
+import { classMembers, vocabSets, wordProgress, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 function shuffle<T>(items: T[]) {
@@ -11,6 +11,25 @@ function shuffle<T>(items: T[]) {
     [result[index], result[other]] = [result[other], result[index]];
   }
   return result;
+}
+
+function interleaveSets<T extends { setId: number; nextReviewAt: Date | null }>(items: T[]) {
+  const now = Date.now();
+  const groups = new Map<number, T[]>();
+  for (const item of shuffle(items)) groups.set(item.setId, [...(groups.get(item.setId) || []), item]);
+  for (const group of groups.values()) group.sort((a, b) => {
+    const priority = (item: T) => !item.nextReviewAt ? 2 : item.nextReviewAt.getTime() <= now ? 3 : 1;
+    return priority(b) - priority(a);
+  });
+  const ordered: T[] = [];
+  const setIds = shuffle([...groups.keys()]);
+  while (ordered.length < items.length) {
+    for (const setId of setIds) {
+      const item = groups.get(setId)?.shift();
+      if (item) ordered.push(item);
+    }
+  }
+  return ordered;
 }
 
 export async function GET(req: NextRequest) {
@@ -41,11 +60,13 @@ export async function GET(req: NextRequest) {
       ipa: words.ipa,
       example: words.example,
       wtype: words.wtype,
+      nextReviewAt: wordProgress.nextReviewAt,
     })
     .from(words)
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
+    .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
     .where(and(...conditions));
 
   const eligible = candidates.filter((word) => Boolean(word.term?.trim()));
-  return NextResponse.json({ words: shuffle(eligible).slice(0, count), available: eligible.length });
+  return NextResponse.json({ words: interleaveSets(eligible).slice(0, count), available: eligible.length });
 }

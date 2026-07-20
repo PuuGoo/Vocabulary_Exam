@@ -165,6 +165,26 @@ export const assignmentSubmissions = pgTable(
   })
 );
 
+export const teachBackNotes = pgTable(
+  "teach_back_notes",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    simpleExplanation: text("simple_explanation").notNull(),
+    ownExample: text("own_example"),
+    confidence: integer("confidence").notNull().default(1),
+    reviewCount: integer("review_count").notNull().default(0),
+    nextReviewAt: timestamp("next_review_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userWordIdx: uniqueIndex("teach_back_notes_user_word_idx").on(table.userId, table.wordId),
+    dueIdx: index("teach_back_notes_user_due_idx").on(table.userId, table.nextReviewAt),
+  })
+);
+
 export const mistakes = pgTable(
   "mistakes",
   {
@@ -197,10 +217,18 @@ export const wordProgress = pgTable(
       .notNull()
       .references(() => words.id, { onDelete: "cascade" }),
     known: boolean("known").notNull(),
+    intervalDays: integer("interval_days").notNull().default(0),
+    reviewStreak: integer("review_streak").notNull().default(0),
+    correctCount: integer("correct_count").notNull().default(0),
+    wrongCount: integer("wrong_count").notNull().default(0),
+    lastMode: varchar("last_mode", { length: 24 }),
+    lastReviewedAt: timestamp("last_reviewed_at", { withTimezone: true }),
+    nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
     uniqPair: uniqueIndex("word_progress_user_word_idx").on(table.userId, table.wordId),
+    dueIdx: index("word_progress_user_due_idx").on(table.userId, table.nextReviewAt),
   })
 );
 
@@ -331,6 +359,7 @@ export type Attempt = typeof attempts.$inferSelect;
 export type Assignment = typeof assignments.$inferSelect;
 export type AssignmentExtension = typeof assignmentExtensions.$inferSelect;
 export type AssignmentSubmission = typeof assignmentSubmissions.$inferSelect;
+export type TeachBackNote = typeof teachBackNotes.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;

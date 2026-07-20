@@ -22,10 +22,14 @@ type ReviewWord = {
   ipa: string | null;
   known: boolean | null;
   ageDays: number | null;
+  due: boolean;
+  intervalDays: number | null;
+  reviewStreak: number | null;
+  nextReviewAt: string | null;
   timesWrong: number | null;
   reason: Reason;
 };
-type Summary = { total: number; difficult: number; forgotten: number; stale: number; new: number };
+type Summary = { total: number; due: number; difficult: number; forgotten: number; stale: number; new: number };
 
 const REASONS: Record<Reason, { label: string; detail: (word: ReviewWord) => string; className: string }> = {
   difficult: {
@@ -134,7 +138,7 @@ export default function SmartReviewPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className={cx.h2}>🧠 Ôn tập thông minh</h2>
-          <div className={cx.desc}>Tự động ưu tiên từ hay sai, chưa nhớ và những từ đã đến lúc ôn lại.</div>
+          <div className={cx.desc}>Lịch ôn chung 1 → 3 → 7 → 14 ngày, được cập nhật từ mọi hoạt động học của bạn.</div>
         </div>
         <label className="text-xs text-muted">
           Số từ trong lượt
@@ -162,6 +166,7 @@ export default function SmartReviewPage() {
         <>
           {summary && (
             <div className="my-4 flex flex-wrap gap-2 text-xs">
+              {summary.due > 0 && <span className="rounded-full bg-okbg px-3 py-1 font-medium text-ok">{summary.due} từ đến hạn hôm nay</span>}
               {summary.difficult > 0 && <span className="rounded-full bg-badbg px-3 py-1 text-bad">{summary.difficult} từ hay sai</span>}
               {summary.forgotten > 0 && <span className="rounded-full bg-goldpale px-3 py-1 text-golddark">{summary.forgotten} từ chưa nhớ</span>}
               {summary.stale > 0 && <span className="rounded-full bg-[#e4ecf3] px-3 py-1 text-[#2b4a6b]">{summary.stale} từ đến hạn</span>}
@@ -175,6 +180,7 @@ export default function SmartReviewPage() {
           <div className={`mb-3 inline-flex rounded-full border px-3 py-1 text-xs font-medium ${REASONS[word.reason].className}`} title={REASONS[word.reason].detail(word)}>
             {REASONS[word.reason].label} · {REASONS[word.reason].detail(word)}
           </div>
+          {word.reviewStreak ? <div className="mb-3 text-xs text-muted">Chuỗi nhớ {word.reviewStreak} lần · nếu nhớ, lịch ôn tiếp tục giãn dần</div> : null}
           <button
             type="button"
             onClick={() => setFlipped((current) => !current)}

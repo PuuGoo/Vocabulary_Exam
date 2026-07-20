@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { mistakes, words, vocabSets, wordProgress } from "@/db/schema";
+import { mistakes, words, vocabSets } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { recordDailyActivity } from "@/lib/activity";
+import { recordWordOutcomes } from "@/lib/spacedProgress";
 
 export async function GET() {
   const session = await getSession();
@@ -62,13 +63,11 @@ export async function POST(req: NextRequest) {
       });
   }
 
-  await db
-    .insert(wordProgress)
-    .values({ userId: session.userId, wordId: parsed.data.wordId, known: parsed.data.learned })
-    .onConflictDoUpdate({
-      target: [wordProgress.userId, wordProgress.wordId],
-      set: { known: parsed.data.learned, updatedAt: new Date() },
-    });
+  await recordWordOutcomes(session.userId, [{
+    wordId: parsed.data.wordId,
+    setId: parsed.data.setId,
+    correct: parsed.data.learned,
+  }], "flashcard");
 
   await recordDailyActivity(session.userId, { wordsReviewed: 1 });
 

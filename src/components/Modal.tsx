@@ -93,7 +93,7 @@ export default function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`bg-white rounded-[10px] w-full shadow-lg flex max-h-[92vh] flex-col ${wide ? "max-w-6xl" : "max-w-2xl"}`}
+        className={`bg-white text-ink rounded-[10px] w-full shadow-lg flex max-h-[92vh] flex-col ${wide ? "max-w-6xl" : "max-w-2xl"}`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
           <h3 id={titleId} className="font-serif text-[1.05rem]">{title}</h3>

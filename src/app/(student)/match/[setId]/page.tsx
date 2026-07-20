@@ -136,6 +136,7 @@ export default function MatchGamePage() {
           total: set.words.length,
           durationSeconds: Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000)),
           wrongWordIds: [...wrongWordIdsRef.current],
+          practicedWordIds: set.words.map((word) => word.id),
           wordsPracticed: set.words.length,
         }),
       });

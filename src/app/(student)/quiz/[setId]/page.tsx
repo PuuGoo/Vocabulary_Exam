@@ -293,6 +293,7 @@ function QuizPlayerInner() {
           timed: timedMode,
           durationSeconds,
           wrongWordIds,
+          practicedWordIds: practicedWords.map((word) => word.id),
           wordsPracticed: practicedWords.length,
         }),
       });

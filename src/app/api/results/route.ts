@@ -28,6 +28,8 @@ const schema = z.object({
   timed: z.boolean().optional(),
   wrongWordIds: z.array(z.number().int()).optional(),
   wrongWords: z.array(z.object({ wordId: z.number().int(), setId: z.number().int() })).optional(),
+  practicedWordIds: z.array(z.number().int()).optional(),
+  practicedWords: z.array(z.object({ wordId: z.number().int(), setId: z.number().int() })).optional(),
   wordsPracticed: z.number().int().min(1).max(10000).optional(),
 });
 
@@ -39,7 +41,7 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
 
-  const { wrongWordIds, wrongWords, wordsPracticed, ...attemptData } = parsed.data;
+  const { wrongWordIds, wrongWords, practicedWordIds, practicedWords, wordsPracticed, ...attemptData } = parsed.data;
 
   const [row] = await db
     .insert(attempts)
@@ -57,6 +59,18 @@ export async function POST(req: NextRequest) {
           set: { timesWrong: sql`${mistakes.timesWrong} + 1`, lastWrongAt: new Date() },
         });
     }
+  }
+
+  const practiced = practicedWords || (parsed.data.setId !== null
+    ? (practicedWordIds || []).map((wordId) => ({ wordId, setId: parsed.data.setId as number }))
+    : []);
+  if (practiced.length > 0) {
+    const wrongIds = new Set(mistakesToSave.map((item) => item.wordId));
+    const { recordWordOutcomes } = await import("@/lib/spacedProgress");
+    await recordWordOutcomes(session.userId, practiced.map((item) => ({
+      ...item,
+      correct: !wrongIds.has(item.wordId),
+    })), attemptData.mode);
   }
 
   await recordDailyActivity(session.userId, {
