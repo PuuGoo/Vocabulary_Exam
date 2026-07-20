@@ -7,13 +7,16 @@ import {
   varchar,
   boolean,
   uniqueIndex,
+  index,
+  customType,
   date,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab"] as const;
-export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed"] as const;
+export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily"] as const;
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable(
   "users",
@@ -89,13 +92,78 @@ export const attempts = pgTable("attempts", {
     .references(() => users.id, { onDelete: "cascade" }),
   setId: integer("set_id").references(() => vocabSets.id, { onDelete: "set null" }),
   setName: varchar("set_name", { length: 256 }).notNull(),
-  mode: varchar("mode", { length: 16 }).notNull(), // fill | mc | match | dictation | pronunciation | sentence | mixed
+  mode: varchar("mode", { length: 16 }).notNull(), // fill | mc | match | dictation | pronunciation | sentence | mixed | daily
   score: integer("score").notNull(),
   total: integer("total").notNull(),
   durationSeconds: integer("duration_seconds"),
   timed: boolean("timed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export const assignments = pgTable(
+  "assignments",
+  {
+    id: serial("id").primaryKey(),
+    classId: integer("class_id")
+      .notNull()
+      .references(() => classes.id, { onDelete: "cascade" }),
+    setId: integer("set_id")
+      .notNull()
+      .references(() => vocabSets.id, { onDelete: "cascade" }),
+    title: varchar("title", { length: 256 }).notNull(),
+    instructions: text("instructions").notNull().default(""),
+    mode: varchar("mode", { length: 24 }).notNull(),
+    minScore: integer("min_score").notNull().default(70),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    timeLimitMinutes: integer("time_limit_minutes"),
+    archived: boolean("archived").notNull().default(false),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    classIdx: index("assignments_class_idx").on(table.classId),
+    setIdx: index("assignments_set_idx").on(table.setId),
+  })
+);
+
+export const assignmentExtensions = pgTable(
+  "assignment_extensions",
+  {
+    id: serial("id").primaryKey(),
+    assignmentId: integer("assignment_id").notNull().references(() => assignments.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    dueAt: timestamp("due_at", { withTimezone: true }),
+    excused: boolean("excused").notNull().default(false),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    assignmentUserIdx: uniqueIndex("assignment_extensions_assignment_user_idx").on(table.assignmentId, table.userId),
+    userIdx: index("assignment_extensions_user_idx").on(table.userId),
+  })
+);
+
+export const assignmentSubmissions = pgTable(
+  "assignment_submissions",
+  {
+    id: serial("id").primaryKey(),
+    assignmentId: integer("assignment_id").notNull().references(() => assignments.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    textContent: text("text_content"),
+    fileName: varchar("file_name", { length: 256 }),
+    fileType: varchar("file_type", { length: 128 }),
+    fileSize: integer("file_size"),
+    fileData: bytea("file_data"),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    assignmentUserIdx: uniqueIndex("assignment_submissions_assignment_user_idx").on(table.assignmentId, table.userId),
+    userIdx: index("assignment_submissions_user_idx").on(table.userId),
+  })
+);
 
 export const mistakes = pgTable(
   "mistakes",
@@ -260,6 +328,9 @@ export type User = typeof users.$inferSelect;
 export type VocabSet = typeof vocabSets.$inferSelect;
 export type Word = typeof words.$inferSelect;
 export type Attempt = typeof attempts.$inferSelect;
+export type Assignment = typeof assignments.$inferSelect;
+export type AssignmentExtension = typeof assignmentExtensions.$inferSelect;
+export type AssignmentSubmission = typeof assignmentSubmissions.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;

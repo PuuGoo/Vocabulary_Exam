@@ -29,6 +29,34 @@
       "when": 1784463395318,
       "tag": "0003_even_katie_power",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784520810732,
+      "tag": "0004_panoramic_puff_adder",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784524353275,
+      "tag": "0005_clumsy_microbe",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784524710826,
+      "tag": "0006_new_goblin_queen",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784525741974,
+      "tag": "0007_brown_blizzard",
+      "breakpoints": true
     }
   ]
 }
