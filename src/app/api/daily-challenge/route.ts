@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { attempts, mistakes, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { dateInVietnam, recordDailyActivity } from "@/lib/activity";
+import { recordWordOutcomes } from "@/lib/spacedProgress";
 
 type Candidate = { id: number; setId: number; setName: string; meaning: string; term: string; ipa: string | null; example: string | null };
 
@@ -117,6 +118,11 @@ export async function POST(req: NextRequest) {
   for (const item of corrections.filter((correction) => !correction.correct)) {
     await db.insert(mistakes).values({ userId: session.userId, wordId: item.wordId, setId: item.setId, timesWrong: 1, lastWrongAt: new Date() }).onConflictDoUpdate({ target: [mistakes.userId, mistakes.wordId], set: { timesWrong: sql`${mistakes.timesWrong} + 1`, lastWrongAt: new Date() } });
   }
+  await recordWordOutcomes(session.userId, corrections.map((item) => ({
+    wordId: item.wordId,
+    setId: item.setId,
+    correct: item.correct,
+  })), "daily");
   await recordDailyActivity(session.userId, { wordsReviewed: challenge.length, quizzesCompleted: 1 });
   return NextResponse.json({ date, score, total: challenge.length, corrections });
 }

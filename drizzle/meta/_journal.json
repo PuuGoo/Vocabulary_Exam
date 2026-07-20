@@ -57,6 +57,20 @@
       "when": 1784525741974,
       "tag": "0007_brown_blizzard",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784539352947,
+      "tag": "0008_lame_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784541158529,
+      "tag": "0009_panoramic_roulette",
+      "breakpoints": true
     }
   ]
 }

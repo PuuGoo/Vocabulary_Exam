@@ -182,6 +182,7 @@ export default function DictationPage() {
           total: sessionWords.length,
           durationSeconds: Math.max(1, finalElapsed),
           wrongWordIds,
+          practicedWordIds: sessionWords.map((word) => word.id),
           wordsPracticed: sessionWords.length,
         }),
       });

@@ -9,7 +9,8 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
 type SetSummary = { id: number; name: string; type: string; count: number; className: string | null };
 type MixedWord = { id: number; setId: number; setName: string; meaning: string; term: string; ipa: string | null; example: string | null; wtype: string | null };
-type Question = MixedWord & { choices: string[] };
+type PracticeMode = "interleaved" | "fill" | "mc";
+type Question = MixedWord & { choices: string[]; questionMode: "fill" | "mc" };
 type WrongWord = { wordId: number; setId: number };
 
 function shuffle<T>(items: T[]) {
@@ -37,7 +38,7 @@ export default function MixedPracticePage() {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [selectedSetIds, setSelectedSetIds] = useState<number[]>([]);
   const [search, setSearch] = useState("");
-  const [mode, setMode] = useState<"fill" | "mc">("mc");
+  const [mode, setMode] = useState<PracticeMode>("interleaved");
   const [count, setCount] = useState("20");
   const [starting, setStarting] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -78,6 +79,7 @@ export default function MixedPracticePage() {
     return (sets || []).filter((item) => !query || `${item.name} ${item.className || ""}`.toLocaleLowerCase("vi").includes(query));
   }, [search, sets]);
   const question = questions[index];
+  const activeMode = question?.questionMode || "mc";
   const answerCorrect = checked && !!question && matches(answer, question.term);
 
   async function startPractice() {
@@ -90,9 +92,10 @@ export default function MixedPracticePage() {
       const words: MixedWord[] = data.words || [];
       if (words.length === 0) throw new Error("Các bộ đã chọn chưa có từ phù hợp.");
       const uniqueTerms = [...new Set(words.map((word) => word.term).filter(Boolean))];
-      if (mode === "mc" && uniqueTerms.length < 2) throw new Error("Cần ít nhất hai từ khác nhau để tạo câu trắc nghiệm.");
-      const prepared = words.map((word) => ({
+      if (mode !== "fill" && uniqueTerms.length < 2) throw new Error("Cần ít nhất hai từ khác nhau để tạo câu trắc nghiệm.");
+      const prepared = words.map((word, wordIndex) => ({
         ...word,
+        questionMode: mode === "interleaved" ? (wordIndex % 2 === 0 ? "mc" as const : "fill" as const) : mode,
         choices: shuffle([word.term, ...shuffle(uniqueTerms.filter((term) => term !== word.term)).slice(0, 3)]),
       }));
       setQuestions(prepared);
@@ -146,6 +149,7 @@ export default function MixedPracticePage() {
           total: questions.length,
           durationSeconds: Math.max(1, Math.round((Date.now() - startedAtRef.current) / 1000)),
           wrongWords,
+          practicedWords: questions.map((item) => ({ wordId: item.id, setId: item.setId })),
           wordsPracticed: questions.length,
         }),
       });
@@ -160,14 +164,14 @@ export default function MixedPracticePage() {
   }
 
   useEffect(() => { if (finished && !saved && !saving && !saveError) void saveResult(); });
-  useEffect(() => { if (checked) nextButtonRef.current?.focus(); else if (started && !finished && mode === "fill") inputRef.current?.focus(); }, [checked, finished, index, mode, started]);
+  useEffect(() => { if (checked) nextButtonRef.current?.focus(); else if (started && !finished && activeMode === "fill") inputRef.current?.focus(); }, [activeMode, checked, finished, index, started]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (!started || finished) return;
       const target = event.target as HTMLElement | null;
       if (checked && event.key === "Enter") { event.preventDefault(); next(); return; }
-      if (mode === "mc" && !checked && !(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) {
+      if (activeMode === "mc" && !checked && !(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) {
         const choiceIndex = Number(event.key) - 1;
         if (choiceIndex >= 0 && choiceIndex < (question?.choices.length || 0)) { event.preventDefault(); grade(question.choices[choiceIndex]); }
       }
@@ -194,9 +198,9 @@ export default function MixedPracticePage() {
           </section>
           <section className="h-fit rounded-xl border border-gold/50 bg-goldpale/30 p-4 lg:sticky lg:top-4">
             <h3 className="font-semibold">2. Thiết lập bài</h3>
-            <label className={`${cx.label} mt-4`}>Kiểu câu hỏi<select className={`${cx.input} mt-1`} value={mode} onChange={(event) => setMode(event.target.value as "fill" | "mc")}><option value="mc">Trắc nghiệm</option><option value="fill">Điền từ tiếng Anh</option></select></label>
+            <label className={`${cx.label} mt-4`}>Kiểu câu hỏi<select className={`${cx.input} mt-1`} value={mode} onChange={(event) => setMode(event.target.value as PracticeMode)}><option value="interleaved">Trộn điền từ + trắc nghiệm</option><option value="mc">Trắc nghiệm</option><option value="fill">Điền từ tiếng Anh</option></select></label>
             <label className={cx.label}>Số câu<select className={`${cx.input} mt-1`} value={count} onChange={(event) => setCount(event.target.value)}><option value="10">10 câu</option><option value="20">20 câu</option><option value="50">50 câu</option></select></label>
-            <div className="mb-4 rounded-lg bg-white/70 p-3 text-xs text-muted">Câu hỏi sẽ được trộn ngẫu nhiên từ {selectedSetIds.length || 0} bộ đã chọn.</div>
+            <div className="mb-4 rounded-lg bg-white/70 p-3 text-xs text-muted">{mode === "interleaved" ? "Mỗi câu luân phiên giữa trắc nghiệm và điền từ" : "Câu hỏi được trộn ngẫu nhiên"} từ {selectedSetIds.length || 0} bộ đã chọn.</div>
             <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={selectedSetIds.length === 0 || starting} onClick={() => void startPractice()}>{starting ? "Đang tạo bài..." : "Bắt đầu kiểm tra"}</button>
           </section>
         </div>
@@ -215,10 +219,10 @@ export default function MixedPracticePage() {
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎯 Kiểm tra tổng hợp</h2><span className="text-sm text-muted">Câu {index + 1}/{questions.length} · {score} đúng</span></div>
       <div className="mb-5 mt-3 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(index + (checked ? 1 : 0)) / questions.length * 100}%` }} /></div>
       <section className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-5 text-center sm:p-8">
-        <span className={cx.badgeGold}>{question.setName}</span><div className="mt-5 text-xs uppercase tracking-widest text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold">{question.meaning}</div>
-        {mode === "fill" ? <div className="mt-6"><label className="sr-only" htmlFor="mixed-answer">Nhập từ tiếng Anh</label><input ref={inputRef} id="mixed-answer" className={`${cx.input} mx-auto max-w-sm text-center text-lg ${checked ? answerCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} disabled={checked} autoComplete="off" spellCheck={false} placeholder="Nhập từ tiếng Anh..." value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !checked) grade(); }} /></div> : <div className="mt-6 grid gap-2 sm:grid-cols-2">{question.choices.map((choice, choiceIndex) => { const chosen = checked && answer === choice; const correct = checked && matches(choice, question.term); return <button key={choice} className={`rounded-xl border p-3 text-left text-sm ${correct ? "border-ok bg-okbg text-ok" : chosen ? "border-bad bg-badbg text-bad" : "border-line hover:border-gold hover:bg-goldpale/30"}`} disabled={checked} onClick={() => grade(choice)}><span className="mr-2 text-xs text-muted">{choiceIndex + 1}</span>{choice}</button>; })}</div>}
+        <span className={cx.badgeGold}>{question.setName}</span><div className="mt-3 text-xs font-medium uppercase tracking-wider text-golddark">{activeMode === "fill" ? "Điền từ" : "Trắc nghiệm"}</div><div className="mt-5 text-xs uppercase tracking-widest text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold">{question.meaning}</div>
+        {activeMode === "fill" ? <div className="mt-6"><label className="sr-only" htmlFor="mixed-answer">Nhập từ tiếng Anh</label><input ref={inputRef} id="mixed-answer" className={`${cx.input} mx-auto max-w-sm text-center text-lg ${checked ? answerCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} disabled={checked} autoComplete="off" spellCheck={false} placeholder="Nhập từ tiếng Anh..." value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !checked) grade(); }} /></div> : <div className="mt-6 grid gap-2 sm:grid-cols-2">{question.choices.map((choice, choiceIndex) => { const chosen = checked && answer === choice; const correct = checked && matches(choice, question.term); return <button key={choice} className={`rounded-xl border p-3 text-left text-sm ${correct ? "border-ok bg-okbg text-ok" : chosen ? "border-bad bg-badbg text-bad" : "border-line hover:border-gold hover:bg-goldpale/30"}`} disabled={checked} onClick={() => grade(choice)}><span className="mr-2 text-xs text-muted">{choiceIndex + 1}</span>{choice}</button>; })}</div>}
         {checked && <div className={`mt-5 rounded-lg p-3 text-sm ${answerCorrect ? "bg-okbg text-ok" : "bg-badbg text-bad"}`}>{answerCorrect ? "✓ Chính xác!" : <>Chưa đúng. Đáp án: <b>{question.term}</b></>}{question.ipa && <span className="ml-2 text-golddark">{question.ipa}</span>}<span className="ml-2 inline-block"><SpeakButton text={question.term} /></span>{question.example && <div className="mt-2 text-xs italic text-muted">VD: {question.example}</div>}</div>}
-        {!checked ? mode === "fill" && <button className={`${cx.btn} ${cx.btnGold}`} disabled={!answer.trim()} onClick={() => grade()}>Kiểm tra</button> : <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold} mt-5`} onClick={next}>{index === questions.length - 1 ? "Xem kết quả" : "Câu tiếp theo →"}<kbd className="ml-2 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>}
+        {!checked ? activeMode === "fill" && <button className={`${cx.btn} ${cx.btnGold}`} disabled={!answer.trim()} onClick={() => grade()}>Kiểm tra</button> : <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold} mt-5`} onClick={next}>{index === questions.length - 1 ? "Xem kết quả" : "Câu tiếp theo →"}<kbd className="ml-2 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>}
       </section>
     </div>
   ) : null;

@@ -156,6 +156,7 @@ export default function SentencePage() {
         total: results.length,
         durationSeconds: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
         wrongWordIds: results.filter((result) => !result.perfect).map((result) => result.wordId),
+        practicedWordIds: results.map((result) => result.wordId),
         wordsPracticed: results.length,
       }),
     }).then((res) => { if (!res.ok) throw new Error("save failed"); setSaved(true); })

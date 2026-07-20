@@ -92,7 +92,7 @@ export default function StudyPage() {
       <section className="my-4 rounded-xl border border-[#9eb5cc] bg-[#e4ecf3]/60 p-4" aria-labelledby="smart-review-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 id="smart-review-title" className="font-semibold">🧠 Ôn tập thông minh</h3>
+            <h3 id="smart-review-title" className="font-semibold">🧠 Ôn đến hạn 1–3–7–14 ngày</h3>
             <div className="mt-1 text-xs text-muted">Hệ thống tự chọn từ hay sai, chưa nhớ và từ đã đến lúc ôn lại.</div>
           </div>
           <Link className={`${cx.btn} ${cx.btnDark}`} href="/smart-review">Bắt đầu ôn</Link>
@@ -101,7 +101,7 @@ export default function StudyPage() {
 
       <section className="my-4 rounded-xl border border-gold/50 bg-goldpale/30 p-4" aria-labelledby="mixed-practice-title">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h3 id="mixed-practice-title" className="font-semibold">🎯 Kiểm tra nhiều bộ từ</h3><div className="mt-1 text-xs text-muted">Tự chọn nhiều chủ đề và trộn thành một bài Điền từ hoặc Trắc nghiệm.</div></div>
+          <div><h3 id="mixed-practice-title" className="font-semibold">🎯 Luyện tập trộn lẫn</h3><div className="mt-1 text-xs text-muted">Trộn nhiều chủ đề và luân phiên Điền từ – Trắc nghiệm trong cùng một phiên.</div></div>
           <Link className={`${cx.btn} ${cx.btnGold}`} href="/mixed-practice">Tạo bài tổng hợp</Link>
         </div>
       </section>
