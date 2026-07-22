@@ -6,6 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "android:sync": "cap sync android",
+    "android:sync:production": "node scripts/sync-android.mjs",
+    "android:open": "cap open android",
+    "android:run": "cap run android",
+    "android:doctor": "cap doctor android",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
@@ -13,6 +18,11 @@
     "test": "node --import tsx --test src/lib/gemini.test.ts src/lib/quizGroups.test.ts src/lib/reviewGroups.test.ts src/lib/assignments.test.ts src/lib/csv.test.ts src/lib/feynman.test.ts src/lib/pomodoro.test.ts src/lib/spacedRepetition.test.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.8",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/core": "^7.6.8",
+    "@capacitor/splash-screen": "^7.0.5",
+    "@capacitor/status-bar": "^7.0.6",
     "bcryptjs": "2.4.3",
     "dotenv": "^17.4.2",
     "drizzle-orm": "0.33.0",
@@ -27,6 +37,7 @@
     "zod": "3.23.8"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.8",
     "@types/bcryptjs": "2.4.6",
     "@types/node": "20.16.11",
     "@types/nodemailer": "^8.0.1",

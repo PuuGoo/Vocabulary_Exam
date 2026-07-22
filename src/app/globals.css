@@ -3,19 +3,19 @@
 @tailwind utilities;
 
 :root {
-  --color-ink: 28 43 58;
-  --color-inksoft: 58 74 92;
-  --color-paper: 242 238 225;
-  --color-panel: 255 253 248;
-  --color-gold: 169 129 47;
-  --color-golddark: 125 95 34;
-  --color-goldpale: 241 230 200;
-  --color-line: 221 212 189;
-  --color-muted: 124 117 102;
-  --color-ok: 47 106 82;
-  --color-okbg: 232 242 236;
-  --color-bad: 168 64 46;
-  --color-badbg: 251 234 230;
+  --color-ink: 36 35 55;
+  --color-inksoft: 81 79 103;
+  --color-paper: 248 248 252;
+  --color-panel: 255 255 255;
+  --color-gold: 120 101 238;
+  --color-golddark: 101 80 219;
+  --color-goldpale: 238 235 255;
+  --color-line: 235 234 242;
+  --color-muted: 139 137 159;
+  --color-ok: 48 151 112;
+  --color-okbg: 234 248 242;
+  --color-bad: 212 76 91;
+  --color-badbg: 254 237 239;
 }
 
 html.theme-dark {
@@ -39,10 +39,8 @@ html, body {
 }
 body {
   background-color: rgb(var(--color-paper));
-  background-image:
-    linear-gradient(rgb(var(--color-paper)), rgb(var(--color-paper))),
-    repeating-linear-gradient(0deg, rgba(28,43,58,0.025) 0px, rgba(28,43,58,0.025) 1px, transparent 1px, transparent 26px);
   color: rgb(var(--color-ink));
+  font-family: Inter, Manrope, "Segoe UI", Arial, sans-serif;
   transition: background-color 160ms ease, color 160ms ease;
 }
 
@@ -76,14 +74,46 @@ input[type="text"], input[type="password"], input[type="number"], select, textar
   outline-offset: 1px;
 }
 input:focus, select:focus, textarea:focus {
-  outline: 2px solid #a9812f;
+  outline: 2px solid #7865ee;
 }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: rgb(var(--color-line)); border-radius: 8px; }
 
+@layer components {
+  .lexora-card { @apply rounded-[16px] border border-line bg-white shadow-[0_4px_18px_rgba(43,39,74,0.035)]; transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease; }
+  .lexora-card:hover { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(43,39,74,0.07); border-color: rgba(120,101,238,0.22); }
+  .lexora-nav-item { @apply flex h-11 items-center gap-3 rounded-[12px] px-2 text-[0.82rem] font-semibold text-muted transition duration-200 hover:bg-[#F5F3FC] hover:text-ink lg:px-3; }
+  .lexora-nav-active { @apply bg-[#EFECFF] text-[#6550DB] shadow-[inset_0_0_0_1px_rgba(120,101,238,0.08)]; }
+  .lexora-page-enter { animation: lexora-rise 480ms cubic-bezier(.2,.8,.2,1) both; }
+  .lexora-stagger > * { animation: lexora-rise 520ms cubic-bezier(.2,.8,.2,1) both; }
+  .lexora-stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .lexora-stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .lexora-stagger > *:nth-child(4) { animation-delay: 180ms; }
+}
+
+@keyframes lexora-rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes lexora-modal-in { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes lexora-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lexora-toast-in { from { opacity: 0; transform: translate(-50%, 12px) scale(.98); } to { opacity: 1; transform: translate(-50%, 0) scale(1); } }
+.lexora-modal-backdrop { animation: lexora-backdrop-in 180ms ease-out both; }
+.lexora-modal-panel { animation: lexora-modal-in 220ms cubic-bezier(.2,.8,.2,1) both; }
+.lexora-toast { animation: lexora-toast-in 220ms cubic-bezier(.2,.8,.2,1) both; }
+.lexora-progress { position: relative; overflow: hidden; }
+.lexora-progress::after { content: ""; position: absolute; inset: 0 auto 0 -35%; width: 35%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent); animation: lexora-shimmer 2.8s ease-in-out infinite; }
+.lexora-skeleton { background: linear-gradient(90deg, rgba(235,234,242,.7) 25%, rgba(248,248,252,.95) 50%, rgba(235,234,242,.7) 75%); background-size: 220% 100%; animation: lexora-skeleton 1.6s ease-in-out infinite; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible { outline: 2px solid rgb(var(--color-gold)); outline-offset: 3px; }
+@keyframes lexora-shimmer { 0% { transform: translateX(0); opacity: 0; } 20% { opacity: 1; } 65%, 100% { transform: translateX(390%); opacity: 0; } }
+@keyframes lexora-skeleton { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0 0; } }
+@keyframes lexora-timer-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(120,101,238,.08); } 50% { box-shadow: 0 0 0 10px rgba(120,101,238,0); } }
+.lexora-timer-pulse { animation: lexora-timer-pulse 2.4s ease-in-out infinite; }
+@keyframes lexora-drawer { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+.lexora-drawer { animation: lexora-drawer 260ms cubic-bezier(.2,.8,.2,1) both; }
+
 @media (prefers-reduced-motion: reduce) {
   body { transition: none; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
 
 @page { margin: 12mm; }
@@ -100,4 +130,15 @@ input:focus, select:focus, textarea:focus {
   }
   body { background: #fff !important; }
   .shadow-sm, .shadow-lg { box-shadow: none !important; }
+}
+html.lexora-native-app {
+  overscroll-behavior-y: none;
+}
+
+html.lexora-native-app body {
+  min-height: 100dvh;
+}
+
+html.lexora-native-app :is(a, button, [role="button"]) {
+  -webkit-tap-highlight-color: rgba(120, 101, 238, 0.14);
 }
