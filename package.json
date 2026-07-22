@@ -15,7 +15,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
     "db:fix-encoding": "tsx src/db/fix-encoding.ts",
-    "test": "node --import tsx --test src/lib/gemini.test.ts src/lib/quizGroups.test.ts src/lib/reviewGroups.test.ts src/lib/assignments.test.ts src/lib/csv.test.ts src/lib/feynman.test.ts src/lib/pomodoro.test.ts src/lib/spacedRepetition.test.ts"
+    "test": "node --import tsx --test src/lib/gemini.test.ts src/lib/quizGroups.test.ts src/lib/reviewGroups.test.ts src/lib/assignments.test.ts src/lib/backup.test.ts src/lib/csv.test.ts src/lib/feynman.test.ts src/lib/pomodoro.test.ts src/lib/spacedRepetition.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.8",
