@@ -36,6 +36,13 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Cài Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
       - name: Cài Android SDK
         uses: android-actions/setup-android@v3
         with:
