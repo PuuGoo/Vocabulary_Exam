@@ -26,6 +26,7 @@ const breadcrumbNames: Record<string, string> = {
   assignments: "Bài thi thử", "vocabulary-vault": "Kho từ vựng", admin: "Khu quản trị",
   sets: "Bộ từ vựng", users: "Học viên", classes: "Lớp học", progress: "Tiến độ",
   results: "Kết quả", import: "Nhập nội dung", notebook: "Sổ tay từ vựng",
+  backup: "Sao lưu dữ liệu",
   "smart-review": "Ôn tập thông minh", feynman: "Phòng Feynman", history: "Lịch sử học tập",
 };
 

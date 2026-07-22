@@ -17,6 +17,7 @@ export const LEARNING_TABS = [
 ];
 
 export const ADMIN_TABS = [
+  { href: "/admin/backup", label: "Sao lưu dữ liệu" },
   { href: "/admin/assignments", label: "Giao bài" },
   { href: "/admin/sets", label: "Bộ từ vựng" },
   { href: "/admin/import", label: "Nhập dữ liệu" },
