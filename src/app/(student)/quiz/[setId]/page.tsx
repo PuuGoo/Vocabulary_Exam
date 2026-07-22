@@ -133,6 +133,10 @@ function QuizPlayerInner() {
   const end = set ? Math.min(start + GROUP_SIZE, set.words.length) : 0;
   const isVerb = set?.type === "irregular_verb";
   const effectiveChecked = timedMode ? timedSubmitted : checkedGroups[group] !== undefined;
+  const gradedGroups = Object.values(checkedGroups);
+  const allGroupsGraded = !timedMode && totalGroups > 0 && gradedGroups.length === totalGroups;
+  const overallScore = gradedGroups.reduce((sum, result) => sum + result.score, 0);
+  const overallTotal = gradedGroups.reduce((sum, result) => sum + result.total, 0);
 
   const currentWords = useMemo(() => (set ? set.words.slice(start, end) : []), [set, start, end]);
   const answeredInGroup = useMemo(
@@ -303,6 +307,15 @@ function QuizPlayerInner() {
     }
   }
 
+  function restartAllGroups() {
+    setAnswers({});
+    setCheckedGroups({});
+    setGroup(0);
+    setJumpQuestion("");
+    startedAtRef.current = Date.now();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   async function grade() {
     if (!set || grading || answeredInGroup === 0) return;
     setGrading(true);
@@ -462,6 +475,20 @@ function QuizPlayerInner() {
             </div>
           )}
         </div>
+      )}
+
+      {allGroupsGraded && !grading && (
+        <section className="mb-5 rounded-xl border border-gold bg-goldpale/50 p-5 text-center" role="status">
+          <div className="text-3xl" aria-hidden="true">🏁</div>
+          <h3 className="mt-2 font-serif text-xl font-bold">Đã hoàn thành toàn bộ bài luyện</h3>
+          <div className="mt-2 text-3xl font-bold text-golddark">{overallScore}/{overallTotal}</div>
+          <p className="mt-1 text-sm text-muted">Độ chính xác {overallTotal ? Math.round((overallScore / overallTotal) * 100) : 0}%</p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAllGroups}>Làm lại toàn bộ</button>
+            {overallScore < overallTotal && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại từ sai</button>}
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/learn/${set.id}`)}>Học lại bằng thẻ</button>
+          </div>
+        </section>
       )}
 
       <div className="flex items-center justify-center gap-2 flex-wrap mb-3">

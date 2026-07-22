@@ -46,7 +46,7 @@ export default function ThemeToggle() {
       onClick={cycle}
       aria-label={`Giao diện: ${current.label}. Bấm để chuyển chế độ.`}
       title={`Giao diện: ${current.label}`}
-      className="bg-transparent border border-goldpale/40 text-goldpale px-2.5 sm:px-3 py-1.5 rounded-md text-[0.8rem] hover:border-gold hover:text-gold"
+      className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-line bg-white text-sm text-muted transition hover:border-[#CFC7FF] hover:text-gold"
     >
       <span aria-hidden="true">{current.icon}</span><span className="hidden lg:inline"> {current.label}</span>
     </button>

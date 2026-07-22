@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
@@ -30,7 +31,7 @@ export default function FeynmanPage() {
       if (!setRes.ok || !dueRes.ok) throw new Error();
       const [setData, dueData] = await Promise.all([setRes.json(), dueRes.json()]);
       setSets(setData.sets || []); setDue(dueData.words || []);
-    } catch { setSets([]); toast("Không thể tải Feynman Lab."); }
+    } catch { setSets([]); toast("Không thể tải phòng Feynman."); }
   }
   useEffect(() => { void loadHome(); }, []);
 
@@ -59,7 +60,7 @@ export default function FeynmanPage() {
   const progress = queue.length ? Math.round((completed / queue.length) * 100) : 0;
   const containsTarget = useMemo(() => word && explanation.toLocaleLowerCase("vi").includes(target(word).toLocaleLowerCase("vi")), [word, explanation]);
 
-  if (queue.length && index >= queue.length) return <div className={cx.panel}><div className="py-8 text-center"><div className="text-4xl">🎓</div><h2 className="mt-3 font-serif text-xl">Hoàn thành phiên Teach-back</h2><p className="mt-2 text-sm text-muted">Bạn đã tự giải thích {completed} từ. Những từ chưa chắc sẽ quay lại sớm hơn.</p><button className={`${cx.btn} ${cx.btnGold} mt-5`} onClick={() => { setQueue([]); void loadHome(); }}>Về Feynman Lab</button></div></div>;
+  if (queue.length && index >= queue.length) return <div className={cx.panel}><div className="py-8 text-center"><div className="text-4xl">🎓</div><h2 className="mt-3 font-serif text-xl">Hoàn thành lượt tự giảng lại</h2><p className="mt-2 text-sm text-muted">Bạn đã tự giải thích {completed} từ. Những từ chưa chắc sẽ được xếp lịch ôn sớm hơn.</p><div className="mt-5 flex flex-wrap justify-center gap-2"><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { setQueue([]); void loadHome(); }}>Về phòng Feynman</button><Link className={`${cx.btn} ${cx.btnGhost}`} href="/progress">Xem tiến độ</Link><Link className={`${cx.btn} ${cx.btnGhost}`} href="/study">Chọn bài học tiếp theo</Link></div></div></div>;
 
   if (word) return <div className={cx.panel}>
     <div className="mb-4 flex items-center justify-between gap-3"><button className="text-sm text-golddark hover:underline" onClick={() => setQueue([])}>← Thoát phiên</button><span className="text-sm text-muted">Từ {index + 1}/{queue.length}</span></div>
@@ -74,8 +75,8 @@ export default function FeynmanPage() {
       : <div className="mt-4"><div className="rounded-[10px] border border-ok/30 bg-[#e5f4ea] p-4"><div className="text-[0.72rem] font-semibold uppercase text-ok">Định nghĩa tham chiếu</div><div className="mt-1 font-medium">{word.meaning}</div>{word.example && <div className="mt-2 text-sm italic text-muted">“{word.example}”</div>}</div><p className="mt-4 text-center text-sm font-medium">So sánh với lời giải thích của bạn: mức độ hiểu hiện tại?</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><button disabled={saving} className={`${cx.btn} border border-bad bg-badbg text-bad`} onClick={() => void rate(1)}>1 · Còn mơ hồ<br/><span className="text-[0.68rem] font-normal">Ôn lại sau 1 ngày</span></button><button disabled={saving} className={`${cx.btn} border border-gold bg-goldpale text-golddark`} onClick={() => void rate(2)}>2 · Hiểu phần lớn<br/><span className="text-[0.68rem] font-normal">Ôn lại sau 3–14 ngày</span></button><button disabled={saving} className={`${cx.btn} border border-ok/40 bg-[#e5f4ea] text-ok`} onClick={() => void rate(3)}>3 · Giải thích rõ<br/><span className="text-[0.68rem] font-normal">Ôn lại sau 7–60 ngày</span></button></div></div>}
   </div>;
 
-  return <div className={cx.panel}><div className="mb-5"><h2 className={cx.h2}>Feynman Lab</h2><p className={cx.desc + " !mb-0"}>Hiểu thật sâu bằng cách tự giảng lại: khảo sát → đặt câu hỏi → tự giải thích → đối chiếu → ôn ngắt quãng.</p></div>
-    <div className="mb-5 grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-line bg-white p-3"><b className="block text-xl">{due.length}</b><span className="text-[0.75rem] text-muted">từ đến lịch teach-back</span></div><div className="rounded-lg border border-line bg-white p-3 sm:col-span-2"><div className="flex flex-wrap items-center gap-2"><span className="text-sm">Số từ mỗi phiên:</span>{[5,10].map((count) => <button key={count} className={`rounded-full border px-3 py-1 text-sm ${sessionSize === count ? "border-ink bg-ink text-white" : "border-line"}`} onClick={() => setSessionSize(count)}>{count}</button>)}{due.length > 0 && <button className={`${cx.btn} ${cx.btnGold} !py-1.5 ml-auto`} onClick={() => startQueue(due.slice(0, sessionSize))}>Ôn từ đến hạn</button>}</div></div></div>
-    <h3 className="mb-3 font-serif">Chọn bộ từ để bắt đầu</h3>{sets === null ? <div className={cx.empty}>Đang tải...</div> : sets.length === 0 ? <div className={cx.empty}>Chưa có bộ từ phù hợp.</div> : <div className="grid gap-3 sm:grid-cols-2">{sets.filter((set) => set.count > 0).map((set) => <button key={set.id} onClick={() => void startSet(set.id)} className="rounded-[10px] border border-line bg-white p-4 text-left hover:border-gold hover:bg-goldpale/20"><b>{set.name}</b><div className="mt-1 text-[0.75rem] text-muted">{set.count} từ · Bắt đầu teach-back →</div></button>)}</div>}
+  return <div className={cx.panel}><div className="mb-5"><h2 className={cx.h2}>Phòng Feynman</h2><p className={cx.desc + " !mb-0"}>Hiểu thật sâu bằng cách tự giảng lại: khảo sát → đặt câu hỏi → tự giải thích → đối chiếu → ôn ngắt quãng.</p></div>
+    <div className="mb-5 grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-line bg-white p-3"><b className="block text-xl">{due.length}</b><span className="text-[0.75rem] text-muted">từ đến lịch tự giảng lại</span></div><div className="rounded-lg border border-line bg-white p-3 sm:col-span-2"><div className="flex flex-wrap items-center gap-2"><span className="text-sm">Số từ mỗi lượt:</span>{[5,10].map((count) => <button key={count} className={`rounded-full border px-3 py-1 text-sm ${sessionSize === count ? "border-ink bg-ink text-white" : "border-line"}`} onClick={() => setSessionSize(count)}>{count}</button>)}{due.length > 0 && <button className={`${cx.btn} ${cx.btnGold} !py-1.5 ml-auto`} onClick={() => startQueue(due.slice(0, sessionSize))}>Ôn từ đến hạn</button>}</div></div></div>
+    <h3 className="mb-3 font-serif">Chọn bộ từ để bắt đầu</h3>{sets === null ? <div className={cx.empty}>Đang tải...</div> : sets.length === 0 ? <div className={cx.empty}>Chưa có bộ từ phù hợp.</div> : <div className="grid gap-3 sm:grid-cols-2">{sets.filter((set) => set.count > 0).map((set) => <button key={set.id} onClick={() => void startSet(set.id)} className="lexora-card rounded-[10px] p-4 text-left hover:bg-goldpale/20"><b>{set.name}</b><div className="mt-1 text-[0.75rem] text-muted">{set.count} từ · Bắt đầu tự giảng lại →</div></button>)}</div>}
   </div>;
 }

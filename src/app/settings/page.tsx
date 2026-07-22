@@ -8,7 +8,7 @@ export default async function SettingsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const homeHref = session.role === "admin" ? "/admin/sets" : "/study";
+  const homeHref = session.role === "admin" ? "/admin" : "/dashboard";
 
   return (
     <div className="max-w-[560px] mx-auto px-4 pt-8 pb-16">

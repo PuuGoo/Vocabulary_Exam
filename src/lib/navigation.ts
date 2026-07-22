@@ -1,4 +1,6 @@
 export const LEARNING_TABS = [
+  { href: "/dashboard", label: "Tổng quan" },
+  { href: "/vocabulary-vault", label: "Kho từ vựng" },
   { href: "/assignments", label: "Bài tập của tôi" },
   { href: "/feynman", label: "Feynman Lab" },
   { href: "/study", label: "Chọn bộ từ & làm bài" },
