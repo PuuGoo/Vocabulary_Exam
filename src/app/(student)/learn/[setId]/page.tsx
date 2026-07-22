@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { TouchEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
@@ -46,7 +47,11 @@ export default function LearnPage() {
   const [bookmarkIdByWordId, setBookmarkIdByWordId] = useState<Record<number, number>>({});
   const [savingBookmarkWordId, setSavingBookmarkWordId] = useState<number | null>(null);
   const [resumedPosition, setResumedPosition] = useState<number | null>(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const [isSwiping, setIsSwiping] = useState(false);
   const savingRef = useRef(false);
+  const swipeStartRef = useRef<{ x: number; y: number; startedAt: number } | null>(null);
+  const suppressCardClickRef = useRef(false);
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionSaveErrorShownRef = useRef(false);
 
@@ -167,6 +172,59 @@ export default function LearnPage() {
     setIndex(0);
     setFlipped(false);
     setResumedPosition(null);
+  }
+
+  function resetSwipe() {
+    swipeStartRef.current = null;
+    setSwipeOffset(0);
+    setIsSwiping(false);
+  }
+
+  function onCardTouchStart(event: TouchEvent<HTMLDivElement>) {
+    if (event.touches.length !== 1 || (event.target as HTMLElement).closest("button")) return;
+    const touch = event.touches[0];
+    swipeStartRef.current = { x: touch.clientX, y: touch.clientY, startedAt: Date.now() };
+    suppressCardClickRef.current = false;
+  }
+
+  function onCardTouchMove(event: TouchEvent<HTMLDivElement>) {
+    const start = swipeStartRef.current;
+    if (!start || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 10) {
+      resetSwipe();
+      return;
+    }
+    if (Math.abs(deltaX) < 8) return;
+    setIsSwiping(true);
+    setSwipeOffset(Math.max(-110, Math.min(110, deltaX)));
+  }
+
+  function onCardTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    const start = swipeStartRef.current;
+    if (!start) return;
+    const touch = event.changedTouches[0];
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    const elapsed = Date.now() - start.startedAt;
+    const horizontal = Math.abs(deltaX) > Math.abs(deltaY) * 1.25;
+    const intentional = Math.abs(deltaX) >= 52 || (Math.abs(deltaX) >= 30 && elapsed <= 250);
+    if (horizontal && intentional) {
+      suppressCardClickRef.current = true;
+      if (deltaX < 0 && index < total - 1) goNext();
+      if (deltaX > 0 && index > 0) goPrev();
+    }
+    resetSwipe();
+  }
+
+  function onCardClick() {
+    if (suppressCardClickRef.current) {
+      suppressCardClickRef.current = false;
+      return;
+    }
+    setFlipped((current) => !current);
   }
 
   function startUnknownReview() {
@@ -394,9 +452,20 @@ export default function LearnPage() {
       </div>
 
       <div
-        onClick={() => setFlipped((f) => !f)}
-        className="relative cursor-pointer select-none border-2 border-dashed border-gold rounded-2xl bg-white min-h-[220px] flex flex-col items-center justify-center px-6 py-10 mb-5 text-center hover:border-golddark transition-colors"
+        onClick={onCardClick}
+        onTouchStart={onCardTouchStart}
+        onTouchMove={onCardTouchMove}
+        onTouchEnd={onCardTouchEnd}
+        onTouchCancel={resetSwipe}
+        style={{
+          touchAction: "pan-y",
+          transform: `translateX(${swipeOffset}px) rotate(${swipeOffset / 35}deg)`,
+          transition: isSwiping ? "none" : "transform 180ms ease-out, border-color 150ms ease",
+        }}
+        className="relative cursor-pointer select-none border-2 border-dashed border-gold rounded-2xl bg-white min-h-[220px] flex flex-col items-center justify-center px-6 py-10 mb-2 text-center hover:border-golddark"
       >
+        <span className={`pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>← Thẻ trước</span>
+        <span className={`pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Thẻ sau →</span>
         <button
           type="button"
           title={bookmarkIdByWordId[word.id] ? "Bỏ khỏi sổ tay" : "Lưu vào sổ tay"}
@@ -450,6 +519,7 @@ export default function LearnPage() {
           ✅ Đã nhớ <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">2</kbd>
         </button>
       </div>
+      <div className="mb-5 text-center text-xs font-medium text-muted sm:hidden">Vuốt sang trái hoặc phải để chuyển thẻ</div>
       {savingWordId !== null && (
         <div className="-mt-2 mb-3 text-center text-[0.75rem] text-muted" role="status">Đang lưu đánh giá...</div>
       )}
