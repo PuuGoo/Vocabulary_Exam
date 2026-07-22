@@ -45,6 +45,15 @@ không dùng localStorage hay dữ liệu giả — mọi thứ đọc/ghi qua A
 
 ## Chạy ở local
 
+## Web và Android
+
+Ứng dụng dùng chung một máy chủ Next.js và database PostgreSQL cho cả web lẫn Android.
+
+- Cài như app ngay trên Android: triển khai website bằng HTTPS, mở bằng Chrome rồi chọn **Thêm vào màn hình chính**. Đây là PWA nhẹ, không cần Android SDK.
+- Android native: mã nguồn Capacitor nằm trong `android/`. Cấu hình và lệnh chạy chi tiết xem tại [`docs/ANDROID.md`](docs/ANDROID.md).
+- Build APK không chiếm dung lượng máy: dùng workflow [Build Android app](.github/workflows/android.yml) trên GitHub Actions, với secret `CAPACITOR_SERVER_URL` là URL HTTPS của website.
+
+
 ### 1. Cài đặt
 
 ```bash

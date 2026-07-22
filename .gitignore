@@ -8,3 +8,10 @@ npm-debug.log*
 .DS_Store
 *.tsbuildinfo
 .vs/
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+.android-sdk/
+.android-sdk-commandline-tools.zip
+.android-sdk-extract/

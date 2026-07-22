@@ -10,7 +10,10 @@ export async function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth") ||
-    pathname === "/favicon.ico"
+    pathname === "/favicon.ico" ||
+    pathname === "/manifest.webmanifest" ||
+    pathname === "/sw.js" ||
+    pathname.startsWith("/icons/")
   ) {
     return NextResponse.next();
   }
@@ -29,7 +32,7 @@ export async function middleware(req: NextRequest) {
 
   if (session && isPublic) {
     const url = req.nextUrl.clone();
-    url.pathname = session.role === "admin" ? "/admin/sets" : "/study";
+    url.pathname = session.role === "admin" ? "/admin" : "/dashboard";
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -47,7 +50,7 @@ export async function middleware(req: NextRequest) {
 
   if (pathname === "/") {
     const url = req.nextUrl.clone();
-    url.pathname = session ? (session.role === "admin" ? "/admin/sets" : "/study") : "/login";
+    url.pathname = session ? (session.role === "admin" ? "/admin" : "/dashboard") : "/login";
     url.search = "";
     return NextResponse.redirect(url);
   }

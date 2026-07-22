@@ -1,0 +1,58 @@
+name: Build Android app
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "URL HTTPS của máy chủ Lexora (nếu không dùng secret)"
+        required: false
+        type: string
+  push:
+    branches: [main, master]
+
+jobs:
+  build-debug:
+    runs-on: ubuntu-latest
+    env:
+      CAPACITOR_SERVER_URL: ${{ secrets.CAPACITOR_SERVER_URL || inputs.server_url }}
+    steps:
+      - name: Lấy mã nguồn
+        uses: actions/checkout@v4
+
+      - name: Kiểm tra URL máy chủ
+        run: |
+          if [ -z "$CAPACITOR_SERVER_URL" ]; then
+            echo "Hãy tạo secret CAPACITOR_SERVER_URL hoặc truyền server_url khi chạy thủ công."
+            exit 1
+          fi
+          if [[ "$CAPACITOR_SERVER_URL" != https://* ]]; then
+            echo "Bản Android phát hành bắt buộc dùng URL HTTPS."
+            exit 1
+          fi
+
+      - name: Cài Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Cài Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Cài dependencies
+        run: npm ci
+
+      - name: Đồng bộ Capacitor
+        run: npm run android:sync
+
+      - name: Build APK debug
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Tải APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lexora-android-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
