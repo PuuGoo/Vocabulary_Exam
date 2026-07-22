@@ -180,7 +180,7 @@ export default function ListenPage() {
         <div className="text-4xl" aria-hidden="true">🎧</div><h2 className="mt-2 font-serif text-xl font-bold">Đã kết thúc lượt nghe</h2>
         <p className="mt-2 text-sm text-muted">Bạn đã nghe {visitedRef.current.size}/{sessionWords.length} từ.</p>
         <div className="mt-3 text-xs text-muted">{progressSaved ? "✓ Đã cập nhật hoạt động hôm nay" : progressSaveError ? "Chưa thể cập nhật hoạt động hôm nay" : "Đang cập nhật tiến độ..."}</div>
-        <div className="mt-5 flex flex-wrap justify-center gap-2"><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setStarted(false)}>Thiết lập lượt mới</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>Chọn bộ khác</button></div>
+        <div className="mt-5 flex flex-wrap justify-center gap-2"><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setStarted(false)}>Thiết lập lượt mới</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/dictation/${set.id}`)}>Kiểm tra bằng nghe và viết</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>Chọn bộ khác</button></div>
       </section>
     </div>
   );

@@ -454,6 +454,19 @@ export default function LearnPage() {
         <div className="-mt-2 mb-3 text-center text-[0.75rem] text-muted" role="status">Đang lưu đánh giá...</div>
       )}
 
+      {index === total - 1 && known[word.id] !== undefined && savingWordId === null && (
+        <section className="mb-4 rounded-xl border border-gold bg-goldpale/50 p-4 text-center" role="status">
+          <div className="text-2xl" aria-hidden="true">🎉</div>
+          <h3 className="mt-1 font-serif text-lg font-bold">Bạn đã xem hết lượt thẻ này</h3>
+          <p className="mt-1 text-sm text-muted">Đã nhớ {knownCount} từ · Chưa nhớ {unknownCount} từ · Chưa đánh giá {unratedCount} từ.</p>
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {unknownCount > 0 && !reviewUnknown && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startUnknownReview}>Ôn ngay {unknownCount} từ chưa nhớ</button>}
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/quiz/${set.id}?mode=${isVerb ? "fill" : "mc"}`)}>{isVerb ? "Chuyển sang điền V1/V2/V3" : "Chuyển sang trắc nghiệm"}</button>
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={restartInOrder}>Học lại từ đầu</button>
+          </div>
+        </section>
+      )}
+
       <div className="flex justify-between items-center flex-wrap gap-2">
         <button className={`${cx.btn} ${cx.btnGhost}`} disabled={index === 0} onClick={goPrev}>
           ◀ Thẻ trước

@@ -159,6 +159,7 @@ export default function SmartReviewPage() {
           <p className="mt-2 text-sm text-muted">Đã nhớ {results.known} từ · Cần ôn lại {results.unknown} từ</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setLoadAttempt((value) => value + 1)}>Tạo lượt ôn mới</button>
+            {results.unknown > 0 && <Link className={`${cx.btn} ${cx.btnGhost}`} href="/review">Ôn ngay {results.unknown} từ chưa nhớ</Link>}
             <Link className={`${cx.btn} ${cx.btnGhost}`} href="/progress">Xem tiến độ</Link>
           </div>
         </section>

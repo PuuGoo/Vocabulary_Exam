@@ -100,7 +100,7 @@ export default function ReviewPage() {
         </div>
       ) : (
         groups.map((g) => (
-          <div key={g.setId} className="mb-5">
+          <section key={g.setId} className="lexora-card mb-5 p-4 sm:p-5">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
               <h3 className="font-serif text-[1rem]">
                 {g.setName} <span className="text-muted text-[0.8rem] font-sans">— {g.items.length} từ sai</span>
@@ -114,6 +114,9 @@ export default function ReviewPage() {
                     Làm lại (Trắc nghiệm)
                   </Link>
                 )}
+                <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/dictation/${g.setId}`}>
+                  Nghe và viết
+                </Link>
               </div>
             </div>
 
@@ -155,7 +158,7 @@ export default function ReviewPage() {
                 </div>
               </div>
             ))}
-          </div>
+          </section>
         ))
       )}
     </div>

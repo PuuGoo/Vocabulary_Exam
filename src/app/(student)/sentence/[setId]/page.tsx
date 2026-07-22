@@ -184,6 +184,7 @@ export default function SentencePage() {
           <p className="mt-2 text-sm text-muted">Hoàn thành ngay lần đầu {results.filter((result) => result.perfect).length}/{results.length} câu.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { const next = shuffle(set.words.filter((word) => word.example && tokenize(word.example).length >= 3 && tokenize(word.example).length <= 24)).slice(0, 10); setQuestions(next); setIndex(0); setResults([]); setSaved(false); saveAttemptedRef.current = false; startedAtRef.current = Date.now(); }}>Luyện lượt mới</button>
+            {saved && results.some((result) => !result.perfect) && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {results.filter((result) => !result.perfect).length} từ cần cải thiện</button>}
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/pronunciation/${set.id}`)}>Luyện phát âm</button>
           </div>
           <div className="mt-3 text-xs text-muted" role="status">{saving ? "Đang lưu kết quả..." : saved ? "✓ Đã lưu vào lịch sử học" : ""}</div>

@@ -202,6 +202,7 @@ export default function PronunciationPage() {
           <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-gold" style={{ width: `${ratings.length ? goodCount / ratings.length * 100 : 0}%` }} /></div>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { setIndex(0); setRatings([]); setSaved(false); saveAttemptedRef.current = false; startedAtRef.current = Date.now(); }}>Luyện lại</button>
+            {saved && ratings.length - goodCount > 0 && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {ratings.length - goodCount} từ chưa tốt</button>}
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/dictation/${set.id}`)}>Chuyển sang nghe & viết</button>
           </div>
           <div className="mt-3 text-xs text-muted" role="status">{saving ? "Đang lưu kết quả..." : saved ? "✓ Đã lưu vào lịch sử học" : ""}</div>

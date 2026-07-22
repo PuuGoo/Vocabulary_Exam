@@ -1,101 +1,22 @@
 "use client";
 
-import { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { cx } from "@/components/ui";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginForm />
-    </Suspense>
-  );
-}
+export default function LoginPage() { return <Suspense fallback={null}><LoginForm /></Suspense>; }
 
 function LoginForm() {
-  const router = useRouter();
-  const search = useSearchParams();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    setLoading(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Đăng nhập thất bại.");
-      return;
-    }
-    const next = search.get("next");
-    router.push(next || "/");
-    router.refresh();
+  const router = useRouter(); const search = useSearchParams();
+  const [username, setUsername] = useState(""); const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null); const [loading, setLoading] = useState(false);
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault(); setError(null); setLoading(true);
+    try { const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password }) }); if (!response.ok) { const data = await response.json().catch(() => ({})); setError(data.error || "Đăng nhập thất bại."); return; } router.push(search.get("next") || "/"); router.refresh(); }
+    catch { setError("Không thể kết nối. Vui lòng thử lại."); } finally { setLoading(false); }
   }
-
-  return (
-    <div className="max-w-[400px] mx-auto mt-16 px-4">
-      <div className="bg-panel border border-line rounded-2xl px-8 py-9 text-center shadow-lg">
-        <div className="w-16 h-16 mx-auto mb-3.5 rounded-full border-2 border-gold flex items-center justify-center font-serif text-2xl text-gold font-bold">
-          IV
-        </div>
-        <h1 className="font-serif text-[1.3rem] mb-0.5">IELTS Vocab Check</h1>
-        <div className="text-muted text-[0.85rem] mb-5">Đăng nhập để bắt đầu ôn luyện từ vựng</div>
-
-        <form onSubmit={handleSubmit} className="text-left">
-          {error && <div className={cx.errMsg}>{error}</div>}
-          <label className={cx.label}>Tên đăng nhập</label>
-          <input
-            className={cx.input}
-            type="text"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <label className={cx.label}>Mật khẩu</label>
-          <input
-            className={cx.input}
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <button
-            type="submit"
-            disabled={loading}
-            className={`${cx.btn} ${cx.btnGold} w-full mt-1`}
-          >
-            {loading ? "Đang đăng nhập..." : "Đăng nhập"}
-          </button>
-        </form>
-
-        <div className="text-[0.82rem] mt-3 text-muted">
-          <Link href="/forgot-password" className="text-golddark font-medium hover:underline">
-            Quên mật khẩu?
-          </Link>
-        </div>
-
-        <div className="text-[0.82rem] mt-4 text-muted">
-          Chưa có tài khoản?{" "}
-          <Link href="/register" className="text-golddark font-medium hover:underline">
-            Đăng ký học sinh
-          </Link>
-        </div>
-
-        <div className="mt-4 text-[0.74rem] text-muted bg-goldpale px-3 py-2.5 rounded-lg text-left leading-relaxed">
-          Tài khoản demo — Admin: <code className="bg-white/60 px-1 rounded">admin / admin123</code>
-          <br />
-          Học sinh: <code className="bg-white/60 px-1 rounded">hocsinh / 123456</code>
-        </div>
-      </div>
-    </div>
-  );
+  return <main className="min-h-screen bg-paper p-4 sm:p-6 lg:p-10"><div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-[24px] border border-line bg-white shadow-[0_20px_70px_rgba(43,39,74,0.08)] lg:grid-cols-[1.05fr_0.95fr]">
+    <section className="relative overflow-hidden bg-[#302A68] p-7 text-white sm:p-10 lg:p-14"><Link href="/" className="relative z-10 flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#7865EE] text-lg font-extrabold">L</span><span><b className="block text-lg">Lexora</b><span className="block text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-[#C8C2FF]">Học viện IELTS</span></span></Link><div className="relative z-10 mt-20 max-w-md lg:mt-28"><p className="text-sm font-semibold text-[#C8C2FF]">Điểm số tiếp theo bắt đầu từ đây.</p><h1 className="mt-4 text-[clamp(2rem,5vw,3.7rem)] font-extrabold leading-[1.05] tracking-[-0.06em]">Tận dụng từng buổi học.</h1><p className="mt-6 max-w-sm text-sm leading-6 text-[#D3D0EC]">Cách học IELTS bình tĩnh, rõ ràng để xây dựng kỹ năng và sự tự tin.</p><div className="mt-10 space-y-3 text-sm font-semibold text-[#E6E3FA]"><div>✓ Trọng tâm mỗi ngày theo năng lực</div><div>✓ Lặp lại ngắt quãng để nhớ lâu</div><div>✓ Theo dõi tiến bộ rõ ràng</div></div></div></section>
+    <section className="flex items-center p-7 sm:p-12 lg:p-16"><div className="w-full max-w-[380px]"><p className="text-sm font-semibold text-gold">Chào mừng trở lại</p><h2 className="mt-2 text-3xl font-extrabold tracking-[-0.05em]">Đăng nhập Lexora</h2><p className="mt-3 text-sm leading-6 text-muted">Tiếp tục nơi bạn đã dừng lại và duy trì chuỗi học tập.</p><form onSubmit={handleSubmit} className="mt-8 space-y-4">{error && <div className="rounded-[11px] border border-bad/20 bg-badbg px-3 py-2.5 text-sm text-bad">{error}</div>}<label className="block"><span className="mb-1.5 block text-xs font-bold text-ink">Tên đăng nhập</span><input className="h-12 w-full rounded-[11px] border border-line bg-[#FBFAFE] px-3.5 text-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-[#7865EE]/10" type="text" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label><label className="block"><span className="mb-1.5 block text-xs font-bold text-ink">Mật khẩu</span><input className="h-12 w-full rounded-[11px] border border-line bg-[#FBFAFE] px-3.5 text-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-[#7865EE]/10" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label><button type="submit" disabled={loading} className="h-12 w-full rounded-[11px] bg-gold text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-golddark disabled:opacity-50">{loading ? "Đang đăng nhập..." : "Đăng nhập"}</button></form><div className="mt-5 text-center text-xs text-muted"><Link href="/forgot-password" className="font-bold text-golddark hover:underline">Quên mật khẩu?</Link></div><p className="mt-8 border-t border-line pt-6 text-center text-sm text-muted">Chưa có tài khoản? <Link href="/register" className="font-bold text-golddark hover:underline">Tạo tài khoản</Link></p><div className="mt-6 rounded-[12px] bg-[#F7F6FA] p-3 text-xs leading-5 text-muted"><b className="text-ink">Tài khoản dùng thử</b><br />Quản trị viên: <code>admin / admin123</code><br />Học viên: <code>hocsinh / 123456</code></div></div></section>
+  </div></main>;
 }

@@ -28,7 +28,7 @@ export default function RegisterPage() {
       setError(data.error || "Đăng ký thất bại.");
       return;
     }
-    router.push("/study");
+    router.push("/dashboard");
     router.refresh();
   }
 

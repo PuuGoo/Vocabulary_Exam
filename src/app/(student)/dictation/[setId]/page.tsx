@@ -259,6 +259,7 @@ export default function DictationPage() {
         <div className="flex justify-center gap-2 flex-wrap">
           {!resultSaved && !savingResult && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => void saveResult()}>Lưu lại kết quả</button>}
           <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setStarted(false)}>Luyện lượt mới</button>
+          {resultSaved && wrongWordIds.length > 0 && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {wrongWordIds.length} từ sai</button>}
           <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>Chọn bộ khác</button>
         </div>
       </div>

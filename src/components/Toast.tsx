@@ -35,7 +35,7 @@ export default function ToastHost() {
       aria-live="polite"
       aria-atomic="true"
       style={{ bottom: "max(1.25rem, env(safe-area-inset-bottom))" }}
-      className="fixed left-1/2 z-[70] flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-4 py-2.5 text-sm text-white shadow-lg md:max-w-md"
+      className="lexora-toast fixed left-1/2 z-[70] flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-4 py-2.5 text-sm text-white shadow-lg md:max-w-md"
     >
       <span className="text-left whitespace-pre-line">{message}</span>
       <button

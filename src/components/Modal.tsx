@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 
 const modalStack: symbol[] = [];
 let bodyOverflowBeforeModals = "";
@@ -80,9 +81,11 @@ export default function Modal({
     };
   }, []);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal((
     <div
-      className="fixed inset-0 bg-ink/50 z-50 flex items-center justify-center p-4"
+      className="lexora-modal-backdrop fixed inset-0 bg-ink/50 z-50 flex items-center justify-center p-4"
       onMouseDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onCloseRef.current();
       }}
@@ -93,7 +96,7 @@ export default function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`bg-white text-ink rounded-[10px] w-full shadow-lg flex max-h-[92vh] flex-col ${wide ? "max-w-6xl" : "max-w-2xl"}`}
+        className={`lexora-modal-panel bg-white text-ink rounded-[10px] w-full shadow-lg flex max-h-[92vh] flex-col ${wide ? "max-w-6xl" : "max-w-2xl"}`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
           <h3 id={titleId} className="font-serif text-[1.05rem]">{title}</h3>
@@ -104,5 +107,5 @@ export default function Modal({
         <div className="overflow-y-auto p-5">{children}</div>
       </div>
     </div>
-  );
+  ), document.body);
 }

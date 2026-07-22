@@ -23,10 +23,11 @@ const config: Config = {
         // NOTE: Georgia is intentionally excluded — it lacks proper precomposed
         // glyphs for several Vietnamese diacritic combinations (ấ, ắ, ẫ, ậ, ẳ...),
         // which caused the tone mark to render visually detached from the letter.
-        serif: ["Times New Roman", "Times", "serif"],
+        sans: ["Inter", "Manrope", "Segoe UI", "Arial", "sans-serif"],
+        serif: ["Inter", "Manrope", "Segoe UI", "Arial", "sans-serif"],
       },
       borderRadius: {
-        DEFAULT: "10px",
+        DEFAULT: "12px",
       },
     },
   },

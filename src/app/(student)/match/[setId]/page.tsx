@@ -231,6 +231,7 @@ export default function MatchGamePage() {
         <div className="flex justify-center gap-2 flex-wrap">
           {!resultSaved && !savingResult && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => void saveResult()}>Lưu lại kết quả</button>}
           <button className={`${cx.btn} ${cx.btnGold}`} onClick={restart}>Chơi lại</button>
+          {resultSaved && wrongWordIdsRef.current.size > 0 && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {wrongWordIdsRef.current.size} từ sai</button>}
           <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>Chọn bộ khác</button>
         </div>
       </div>

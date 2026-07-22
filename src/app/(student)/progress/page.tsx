@@ -301,6 +301,7 @@ export default function ProgressPage() {
                     {set.totalWords > 0 ? (
                       <>
                         <Link className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} href={`/learn/${set.id}`}>Học bài</Link>
+                        {set.needsReview > 0 && <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/quiz/${set.id}?mode=fill&retest=1`}>Ôn {set.needsReview} từ</Link>}
                         <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/quiz/${set.id}?mode=fill`}>Làm bài</Link>
                       </>
                     ) : <span className="text-[0.78rem] text-muted">Chưa có từ</span>}

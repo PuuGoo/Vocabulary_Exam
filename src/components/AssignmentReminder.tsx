@@ -71,7 +71,7 @@ export default function AssignmentReminder() {
     <div className="relative" ref={rootRef}>
       <button
         type="button"
-        className="relative rounded-md border border-goldpale/40 bg-transparent px-2.5 py-1.5 text-[0.8rem] text-goldpale hover:border-gold hover:text-gold"
+        className="relative flex h-10 w-10 items-center justify-center rounded-[12px] border border-line bg-white px-2.5 py-1.5 text-[0.8rem] text-muted transition hover:border-[#CFC7FF] hover:text-gold"
         aria-label={urgent.length ? `${urgent.length} bài tập cần chú ý` : "Nhắc bài tập"}
         aria-expanded={open}
         title="Nhắc bài tập"
