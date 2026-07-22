@@ -47,6 +47,10 @@ jobs:
       - name: Đồng bộ Capacitor
         run: npm run android:sync
 
+      - name: Cấp quyền chạy Gradle
+        working-directory: android
+        run: chmod +x gradlew
+
       - name: Build APK debug
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
