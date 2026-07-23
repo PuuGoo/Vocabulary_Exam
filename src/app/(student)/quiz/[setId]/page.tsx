@@ -729,7 +729,7 @@ function QuizPlayerInner() {
           </button>
         </div>
       )}
-      <div className="flex justify-between mt-3.5">
+      <div className="sticky bottom-[5.75rem] z-20 -mx-4 mt-3.5 flex justify-between gap-3 border-t border-line bg-[#FBFAFE]/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
         <button className={`${cx.btn} ${cx.btnGhost}`} disabled={group === 0} onClick={() => goGroup(group - 1)}>
           ◀ Nhóm trước
         </button>
