@@ -99,6 +99,9 @@ input:focus, select:focus, textarea:focus {
 .lexora-modal-backdrop { animation: lexora-backdrop-in 180ms ease-out both; }
 .lexora-modal-panel { animation: lexora-modal-in 220ms cubic-bezier(.2,.8,.2,1) both; }
 .lexora-toast { animation: lexora-toast-in 220ms cubic-bezier(.2,.8,.2,1) both; }
+@media (max-width: 767px) {
+  .lexora-toast { bottom: calc(5.75rem + env(safe-area-inset-bottom)); }
+}
 .lexora-progress { position: relative; overflow: hidden; }
 .lexora-progress::after { content: ""; position: absolute; inset: 0 auto 0 -35%; width: 35%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent); animation: lexora-shimmer 2.8s ease-in-out infinite; }
 .lexora-skeleton { background: linear-gradient(90deg, rgba(235,234,242,.7) 25%, rgba(248,248,252,.95) 50%, rgba(235,234,242,.7) 75%); background-size: 220% 100%; animation: lexora-skeleton 1.6s ease-in-out infinite; }
