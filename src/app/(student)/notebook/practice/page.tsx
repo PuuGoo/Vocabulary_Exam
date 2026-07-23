@@ -5,6 +5,7 @@ import Link from "next/link";
 import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 
 type Bookmark = {
   id: number;
@@ -115,6 +116,14 @@ export default function NotebookPracticePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [word?.wordId, saving, finished]);
 
+  const notebookSwipe = useSwipeNavigation({
+    onSwipeLeft: () => { void mark(false); },
+    onSwipeRight: () => { void mark(true); },
+    canSwipeLeft: Boolean(word) && !saving,
+    canSwipeRight: Boolean(word) && !saving,
+    enabled: Boolean(word) && !saving && !finished,
+  });
+
   if (bookmarks === null) return <div className={cx.panel}><div className={cx.empty} role="status">Đang chuẩn bị từ trong sổ tay...</div></div>;
   if (loadError) return <div className={cx.panel}><div className={cx.empty}>Không thể tải từ trong sổ tay.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => void load()}>Thử lại</button></div></div></div>;
   if (bookmarks.length === 0) return <div className={cx.panel}><div className={cx.empty}>Sổ tay chưa có từ nào để luyện.<div className="mt-3"><Link className={`${cx.btn} ${cx.btnGold}`} href="/dictionary">Tra cứu và lưu từ</Link></div></div></div>;
@@ -158,10 +167,14 @@ export default function NotebookPracticePage() {
 
       <button
         type="button"
-        className="flex min-h-[250px] w-full cursor-pointer select-none flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold bg-white px-6 py-10 text-center transition-colors hover:border-golddark"
+        {...notebookSwipe.swipeProps}
+        style={notebookSwipe.swipeStyle}
+        className="relative flex min-h-[250px] w-full cursor-pointer select-none flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gold bg-white px-6 py-10 text-center hover:border-golddark"
         aria-label={flipped ? "Đang hiện đáp án, bấm để xem nghĩa" : "Đang hiện nghĩa, bấm để xem đáp án"}
         onClick={() => setFlipped((value) => !value)}
       >
+        <span className={`pointer-events-none absolute left-4 top-4 rounded-full bg-okbg px-3 py-1.5 text-xs font-bold text-ok transition-opacity ${notebookSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>✓ Đã nhớ</span>
+        <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-badbg px-3 py-1.5 text-xs font-bold text-bad transition-opacity ${notebookSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Chưa nhớ ✕</span>
         <span className="mb-3 text-[0.68rem] uppercase tracking-widest text-muted">{word.setName}</span>
         {!flipped ? (
           <>
@@ -179,6 +192,8 @@ export default function NotebookPracticePage() {
           </>
         )}
       </button>
+
+      <div className="mt-2 text-center text-xs font-semibold text-muted sm:hidden">Vuốt trái: chưa nhớ · Vuốt phải: đã nhớ</div>
 
       {flipped && (
         <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted">

@@ -6,6 +6,7 @@ import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 
 type Question = { id: number; setId: number; setName: string; meaning: string; ipa: string | null; choices: string[] };
 type Completion = { score: number; total: number; createdAt?: string };
@@ -104,6 +105,14 @@ export default function DailyChallengePage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
+  const challengeSwipe = useSwipeNavigation({
+    onSwipeLeft: goNext,
+    onSwipeRight: () => setIndex((current) => Math.max(0, current - 1)),
+    canSwipeLeft: Boolean(questions && question && answers[question.id] && index < questions.length - 1),
+    canSwipeRight: index > 0,
+    enabled: started && !completion && Boolean(question),
+  });
+
   if (questions === null) return <div className={cx.panel}><div className={cx.empty} role="status">Đang mở thử thách hôm nay...</div></div>;
   if (loadError) return <div className={cx.panel}><div className={cx.empty}>Không thể tải thử thách.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div></div>;
 
@@ -128,7 +137,8 @@ export default function DailyChallengePage() {
     <div className={cx.panel}>
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>⚡ Thử thách hôm nay</h2><span className="text-sm text-muted">{answeredCount}/{questions.length} đã trả lời</span></div>
       <div className="my-4 flex gap-1.5 overflow-x-auto pb-1">{questions.map((item, itemIndex) => <button key={item.id} aria-label={`Đến câu ${itemIndex + 1}`} className={`h-8 min-w-8 rounded-full border text-xs font-medium ${itemIndex === index ? "border-ink bg-ink text-white" : answers[item.id] ? "border-gold bg-goldpale text-golddark" : "border-line text-muted"}`} onClick={() => setIndex(itemIndex)}>{itemIndex + 1}</button>)}</div>
-      <section className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-5 text-center sm:p-8"><span className={cx.badgeGold}>{question.setName}</span><div className="mt-5 text-xs uppercase tracking-widest text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold">{question.meaning}</div><div className="mt-6 grid gap-2 sm:grid-cols-2">{question.choices.map((choice, choiceIndex) => <button key={choice} className={`rounded-xl border p-3 text-left text-sm ${answers[question.id] === choice ? "border-gold bg-goldpale text-golddark" : "border-line hover:border-gold hover:bg-goldpale/30"}`} onClick={() => selectAnswer(choice)}><span className="mr-2 text-xs text-muted">{choiceIndex + 1}</span>{choice}</button>)}</div>
+      <section {...challengeSwipe.swipeProps} style={challengeSwipe.swipeStyle} className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-line bg-white p-5 text-center sm:p-8"><span className={`pointer-events-none absolute left-3 top-3 rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB] transition-opacity ${challengeSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>← Câu trước</span><span className={`pointer-events-none absolute right-3 top-3 rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB] transition-opacity ${challengeSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Câu sau →</span><span className={cx.badgeGold}>{question.setName}</span><div className="mt-5 text-xs uppercase tracking-widest text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold">{question.meaning}</div><div className="mt-6 grid gap-2 sm:grid-cols-2">{question.choices.map((choice, choiceIndex) => <button key={choice} className={`rounded-xl border p-3 text-left text-sm ${answers[question.id] === choice ? "border-gold bg-goldpale text-golddark" : "border-line hover:border-gold hover:bg-goldpale/30"}`} onClick={() => selectAnswer(choice)}><span className="mr-2 text-xs text-muted">{choiceIndex + 1}</span>{choice}</button>)}</div>
+        <div className="mt-4 text-xs font-semibold text-muted sm:hidden">Chọn đáp án rồi vuốt trái để sang câu tiếp theo</div>
         <div className="mt-6 flex flex-wrap justify-between gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} disabled={index === 0} onClick={() => setIndex((current) => Math.max(0, current - 1))}>← Câu trước</button>{index === questions.length - 1 ? <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold}`} disabled={!allAnswered || submitting} onClick={() => void submit()}>{submitting ? "Đang nộp..." : "Nộp thử thách"}<kbd className="ml-2 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button> : <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold}`} disabled={!answers[question.id]} onClick={goNext}>Câu tiếp theo →<kbd className="ml-2 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>}</div>
       </section>
     </div>
