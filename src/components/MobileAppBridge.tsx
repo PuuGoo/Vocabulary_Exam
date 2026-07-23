@@ -28,6 +28,12 @@ export default function MobileAppBridge() {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 
     void App.addListener("backButton", ({ canGoBack }) => {
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (activeElement?.matches("input, textarea, select, [contenteditable=\"true\"]")) {
+        activeElement.blur();
+        return;
+      }
+
       const openDialog = document.querySelector<HTMLElement>('[role="dialog"]');
       if (openDialog) {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));

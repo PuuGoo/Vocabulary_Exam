@@ -30,6 +30,14 @@ const breadcrumbNames: Record<string, string> = {
   "smart-review": "Ôn tập thông minh", feynman: "Phòng Feynman", history: "Lịch sử học tập",
 };
 
+const mobileNavLabels: Record<string, string> = {
+  "/dashboard": "Tổng quan",
+  "/study": "Học tập",
+  "/mixed-practice": "Luyện tập",
+  "/assignments": "Bài tập",
+};
+const mobileStudyPaths = ["/learn/", "/quiz/", "/match/", "/dictation/", "/listen/", "/pronunciation/", "/sentence/"];
+
 function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(-2).map((part) => part[0]?.toUpperCase()).join("") || "LX";
 }
@@ -47,6 +55,13 @@ export default function AppShell({ displayName, roleLabel, tabs, children }: {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const isAdmin = roleLabel === "Admin";
   const visibleNav = primaryNav.filter((item) => !item.admin || isAdmin);
+  const mobileTabs = visibleNav.filter((item) => !item.admin).slice(0, 4);
+
+  function isNavActive(item: NavItem) {
+    if (item.href === "/admin") return pathname.startsWith("/admin");
+    if (item.href === "/study") return pathname === "/study" || mobileStudyPaths.some((prefix) => pathname.startsWith(prefix));
+    return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  }
 
   useEffect(() => setMobileNavOpen(false), [pathname]);
   useEffect(() => {
@@ -84,7 +99,7 @@ export default function AppShell({ displayName, roleLabel, tabs, children }: {
   const navigation = (mobile = false) => (
     <nav aria-label="Điều hướng chính" className="space-y-1.5">
       {visibleNav.map((item) => {
-        const active = item.href === "/admin" ? pathname.startsWith("/admin") : pathname === item.href || pathname.startsWith(`${item.href}/`);
+        const active = isNavActive(item);
         return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`lexora-nav-item group ${active ? "lexora-nav-active" : ""} ${mobile ? "!px-3" : ""}`}>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[0.9rem] font-bold" aria-hidden="true">{item.icon}</span>
           <span className="truncate md:hidden lg:block">{item.label}</span>
@@ -114,9 +129,20 @@ export default function AppShell({ displayName, roleLabel, tabs, children }: {
         <div className="flex min-w-0 items-center gap-3"><button onClick={() => setMobileNavOpen(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-line md:hidden" aria-label="Mở menu"><span className="text-lg">☰</span></button><div className="min-w-0"><div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted">Học viện Lexora</div><div className="truncate text-sm font-bold capitalize sm:text-[0.95rem]">{breadcrumb}</div></div></div>
         <div className="flex items-center gap-2"><button type="button" onClick={() => setQuickSwitcherOpen(true)} className="hidden h-10 items-center gap-2 rounded-[12px] border border-line bg-[#FBFAFE] px-3 text-xs text-muted transition hover:border-[#CFC7FF] hover:text-ink sm:flex"><span>⌕</span><span>Tìm nhanh</span><kbd className="rounded-md bg-[#EFEDF6] px-1.5 py-0.5 text-[0.62rem]">⌘ K</kbd></button><PomodoroTimer /><AssignmentReminder /><Link href="/settings" className="hidden h-10 w-10 items-center justify-center rounded-[12px] border border-line text-muted transition hover:border-[#CFC7FF] hover:text-gold sm:flex" aria-label="Cài đặt">⚙</Link><div className="ml-1 flex h-10 w-10 items-center justify-center rounded-full bg-[#ECE9FF] text-xs font-extrabold text-[#6550DB] ring-2 ring-white">{initials(displayName)}</div></div>
       </header>
-      <main className="mx-auto w-full max-w-[1536px] p-4 sm:p-6 lg:p-8">{children}</main>
+      <main className="mx-auto w-full max-w-[1536px] p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 lg:p-8 lg:pb-8">{children}</main>
     </div>
     <button onClick={logout} disabled={loggingOut} className="sr-only">{loggingOut ? "Đang đăng xuất" : "Đăng xuất"}</button>
+    <nav aria-label="Điều hướng nhanh trên điện thoại" className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-[18px] border border-line bg-white/95 p-1.5 shadow-[0_14px_40px_rgba(36,35,55,0.16)] backdrop-blur-md md:hidden" style={{ paddingBottom: "max(0.375rem, env(safe-area-inset-bottom))" }}>
+      {mobileTabs.map((item) => {
+        const active = isNavActive(item);
+        return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[13px] px-1 text-[0.65rem] font-bold transition-colors ${active ? "bg-goldpale text-golddark" : "text-muted hover:bg-[#F8F7FC]"}`}>
+          <span className="text-base leading-5" aria-hidden="true">{item.icon}</span><span className="truncate">{mobileNavLabels[item.href] || item.label}</span>
+        </Link>;
+      })}
+      <button type="button" onClick={() => setMobileNavOpen(true)} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[13px] px-1 text-[0.65rem] font-bold transition-colors ${mobileNavOpen || pathname.startsWith("/admin") || pathname === "/vocabulary-vault" ? "bg-goldpale text-golddark" : "text-muted hover:bg-[#F8F7FC]"}`} aria-label="Mở thêm điều hướng">
+        <span className="text-base leading-5" aria-hidden="true">•••</span><span>Thêm</span>
+      </button>
+    </nav>
     <QuickSwitcher open={quickSwitcherOpen} onClose={() => setQuickSwitcherOpen(false)} tabs={tabs} />
   </div>;
 }
