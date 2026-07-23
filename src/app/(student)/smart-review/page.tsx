@@ -5,6 +5,7 @@ import Link from "next/link";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 
 type Reason = "difficult" | "forgotten" | "stale" | "new";
 type ReviewWord = {
@@ -131,6 +132,14 @@ export default function SmartReviewPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [mark, saving, word]);
 
+  const reviewSwipe = useSwipeNavigation({
+    onSwipeLeft: () => { void mark(false); },
+    onSwipeRight: () => { void mark(true); },
+    canSwipeLeft: Boolean(word) && !saving,
+    canSwipeRight: Boolean(word) && !saving,
+    enabled: Boolean(word) && !saving && !finished,
+  });
+
   if (words === null) return <div className={cx.panel}><div className={cx.empty} role="status">Đang tạo lịch ôn phù hợp với bạn...</div></div>;
 
   return (
@@ -184,15 +193,20 @@ export default function SmartReviewPage() {
           {word.reviewStreak ? <div className="mb-3 text-xs text-muted">Chuỗi nhớ {word.reviewStreak} lần · nếu nhớ, lịch ôn tiếp tục giãn dần</div> : null}
           <button
             type="button"
+            {...reviewSwipe.swipeProps}
+            style={reviewSwipe.swipeStyle}
             onClick={() => setFlipped((current) => !current)}
-            className="flex min-h-[250px] w-full cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-gold bg-white px-6 py-10 text-center transition-colors hover:border-golddark"
+            className="relative flex min-h-[250px] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gold bg-white px-6 py-10 text-center hover:border-golddark"
           >
+            <span className={`pointer-events-none absolute left-4 top-4 rounded-full bg-okbg px-3 py-1.5 text-xs font-bold text-ok transition-opacity ${reviewSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>✓ Đã nhớ</span>
+            <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-badbg px-3 py-1.5 text-xs font-bold text-bad transition-opacity ${reviewSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Chưa nhớ ✕</span>
             {!flipped ? (
               <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">Nghĩa tiếng Việt</span><span className="font-serif text-2xl font-bold">{word.meaning}</span><span className="mt-5 text-xs text-muted">Bấm hoặc nhấn Space để xem đáp án</span></>
             ) : (
               <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">{word.setType === "irregular_verb" ? "V1 — V2 — V3" : "Từ tiếng Anh"}</span><span className="flex flex-wrap items-center justify-center gap-3 font-serif text-2xl font-bold">{word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}<span onClick={(event) => event.stopPropagation()}><SpeakButton text={word.setType === "irregular_verb" ? word.v1 || "" : word.term || ""} /></span></span>{word.ipa && <span className="mt-1 text-lg text-golddark">{word.ipa}</span>}{word.wtype && <span className="mt-2 text-sm text-muted">({word.wtype})</span>}{word.example && <span className="mt-3 max-w-xl text-sm italic text-muted">VD: {word.example}</span>}</>
             )}
           </button>
+          <div className="mt-2 text-center text-xs font-semibold text-muted sm:hidden">Vuốt trái: chưa nhớ · Vuốt phải: đã nhớ</div>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <button className={`${cx.btn} ${cx.btnGhost} border-bad/50 text-bad`} disabled={saving} onClick={() => void mark(false)}>❌ Chưa nhớ <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">1</kbd></button>
             <button className={`${cx.btn} ${cx.btnGold}`} disabled={saving} onClick={() => void mark(true)}>✅ Đã nhớ <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">2</kbd></button>

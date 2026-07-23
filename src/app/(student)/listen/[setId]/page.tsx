@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 
 type Word = { id: number; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null };
 type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
@@ -149,6 +150,14 @@ export default function ListenPage() {
     setFinished(true);
   }
 
+  const listenSwipe = useSwipeNavigation({
+    onSwipeLeft: () => setIndex((current) => Math.min(sessionWords.length - 1, current + 1)),
+    onSwipeRight: () => setIndex((current) => Math.max(0, current - 1)),
+    canSwipeLeft: started && !finished && index < sessionWords.length - 1,
+    canSwipeRight: started && !finished && index > 0,
+    enabled: started && !finished,
+  });
+
   if (loading) return <div className={cx.panel}><div className={cx.empty} role="status">Đang chuẩn bị danh sách nghe...</div></div>;
   if (loadError || !set) return <div className={cx.panel}><div className={cx.empty}>Không thể tải bộ từ.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div></div>;
 
@@ -190,7 +199,9 @@ export default function ListenPage() {
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe rảnh tay — {set.name}</h2><span className="text-sm text-muted">{index + 1}/{sessionWords.length}</span></div>
       <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} />
       <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(index + 1) / sessionWords.length * 100}%` }} /></div>
-      {word && <section className="mx-auto max-w-xl rounded-2xl border border-line bg-white px-5 py-10 text-center">
+      {word && <section {...listenSwipe.swipeProps} style={listenSwipe.swipeStyle} className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-line bg-white px-5 py-10 text-center">
+        <span className={`pointer-events-none absolute left-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>← Từ trước</span>
+        <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Từ sau →</span>
         <div className={`mx-auto flex h-24 w-24 items-center justify-center rounded-full text-4xl ${playing ? "animate-pulse bg-goldpale" : "bg-line/50"}`} aria-hidden="true">{playing ? "🔊" : "⏸"}</div>
         <div className="mt-6 font-serif text-3xl font-bold">{set.type === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}</div>
         {word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
@@ -201,6 +212,7 @@ export default function ListenPage() {
           <button className={`${cx.btn} ${cx.btnGhost}`} disabled={index === sessionWords.length - 1} onClick={() => setIndex((current) => Math.min(sessionWords.length - 1, current + 1))}>Từ sau ▶</button>
         </div>
         <div className="mt-4 text-xs text-muted"><kbd className="rounded border border-line px-1.5 py-0.5">Space</kbd> phát/tạm dừng · <kbd className="rounded border border-line px-1.5 py-0.5">← →</kbd> chuyển từ</div>
+        <div className="mt-3 text-xs font-semibold text-[#6550DB] sm:hidden">Vuốt trái hoặc phải để chuyển từ</div>
         <button className="mt-6 text-xs font-medium text-muted underline hover:text-bad" onClick={finishSession}>Kết thúc lượt nghe</button>
       </section>}
     </div>
