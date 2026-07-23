@@ -557,7 +557,7 @@ function QuizPlayerInner() {
               type="button"
               title={`Câu ${idx + 1}`}
               onClick={() => goGroup(g, w.id)}
-              className={`w-7 h-7 rounded-full text-[0.7rem] font-semibold border flex items-center justify-center ${cls}`}
+              className={`min-h-10 min-w-10 rounded-full text-[0.72rem] font-semibold border flex items-center justify-center ${cls}`}
             >
               {idx + 1}
             </button>
