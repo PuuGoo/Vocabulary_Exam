@@ -688,8 +688,9 @@ function QuizPlayerInner() {
                           type="button"
                           key={opt}
                           disabled={effectiveChecked}
-                          onClick={() => !effectiveChecked && setAnswer(w.id, "mc", opt)}
-                          className={`w-full border rounded-lg px-2.5 py-2 text-left cursor-pointer text-[0.88rem] disabled:cursor-default ${cls}`}
+                          aria-pressed={chosen}
+                          onClick={() => setAnswer(w.id, "mc", opt)}
+                          className={`flex min-h-11 w-full items-center rounded-lg border px-3 py-2 text-left text-[0.88rem] transition-colors disabled:cursor-default ${cls}`}
                         >
                           {opt}
                         </button>
