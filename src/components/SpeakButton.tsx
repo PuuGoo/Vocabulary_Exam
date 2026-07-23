@@ -19,7 +19,7 @@ export default function SpeakButton({ text, className = "" }: { text: string; cl
       onClick={speak}
       title="Nghe phát âm"
       aria-label="Nghe phát âm"
-      className={`inline-flex items-center justify-center w-6 h-6 rounded-full border border-line bg-white hover:border-gold hover:text-golddark text-[0.8rem] shrink-0 ${className}`}
+      className={`inline-flex min-h-10 min-w-10 items-center justify-center rounded-full border border-line bg-white text-[0.85rem] transition-colors hover:border-gold hover:text-golddark shrink-0 ${className}`}
     >
       🔊
     </button>

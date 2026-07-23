@@ -557,7 +557,7 @@ function QuizPlayerInner() {
               type="button"
               title={`Câu ${idx + 1}`}
               onClick={() => goGroup(g, w.id)}
-              className={`w-7 h-7 rounded-full text-[0.7rem] font-semibold border flex items-center justify-center ${cls}`}
+              className={`min-h-10 min-w-10 rounded-full text-[0.72rem] font-semibold border flex items-center justify-center ${cls}`}
             >
               {idx + 1}
             </button>
@@ -688,8 +688,9 @@ function QuizPlayerInner() {
                           type="button"
                           key={opt}
                           disabled={effectiveChecked}
-                          onClick={() => !effectiveChecked && setAnswer(w.id, "mc", opt)}
-                          className={`w-full border rounded-lg px-2.5 py-2 text-left cursor-pointer text-[0.88rem] disabled:cursor-default ${cls}`}
+                          aria-pressed={chosen}
+                          onClick={() => setAnswer(w.id, "mc", opt)}
+                          className={`flex min-h-11 w-full items-center rounded-lg border px-3 py-2 text-left text-[0.88rem] transition-colors disabled:cursor-default ${cls}`}
                         >
                           {opt}
                         </button>
@@ -728,7 +729,7 @@ function QuizPlayerInner() {
           </button>
         </div>
       )}
-      <div className="flex justify-between mt-3.5">
+      <div className="sticky bottom-[5.75rem] z-20 -mx-4 mt-3.5 flex justify-between gap-3 border-t border-line bg-[#FBFAFE]/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
         <button className={`${cx.btn} ${cx.btnGhost}`} disabled={group === 0} onClick={() => goGroup(group - 1)}>
           ◀ Nhóm trước
         </button>
