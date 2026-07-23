@@ -33,7 +33,9 @@ export default function PomodoroTimer() {
   const [state, setState] = useState<SavedState>(defaults);
   const [open, setOpen] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [alarmActive, setAlarmActive] = useState(false);
   const originalTitle = useRef("");
+  const alarmTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     originalTitle.current = document.title;
@@ -57,6 +59,25 @@ export default function PomodoroTimer() {
     return () => { document.title = originalTitle.current; };
   }, []);
 
+  function stopAlarm() {
+    if (alarmTimerRef.current !== null) {
+      window.clearInterval(alarmTimerRef.current);
+      alarmTimerRef.current = null;
+    }
+    setAlarmActive(false);
+  }
+
+  function startAlarm() {
+    if (alarmTimerRef.current !== null) return;
+    setAlarmActive(true);
+    ring();
+    alarmTimerRef.current = window.setInterval(ring, 1400);
+  }
+
+  useEffect(() => () => {
+    if (alarmTimerRef.current !== null) window.clearInterval(alarmTimerRef.current);
+  }, []);
+
   useEffect(() => {
     function onShortcut(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
@@ -76,7 +97,7 @@ export default function PomodoroTimer() {
       const next = nextPomodoroPhase(current.phase, current.completedFocus);
       const focusFinished = current.phase === "focus";
       const message = focusFinished ? `Hoàn thành Pomodoro! Đến giờ ${next.phase === "long_break" ? "nghỉ dài" : "nghỉ ngắn"}.` : "Hết giờ nghỉ. Sẵn sàng tập trung trở lại!";
-      window.setTimeout(() => { if (current.soundEnabled) ring(); toast(message); if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("IELTS Vocab · Pomodoro", { body: message }); }, 0);
+      window.setTimeout(() => { if (current.soundEnabled) startAlarm(); toast(message); if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("IELTS Vocab · Pomodoro", { body: message }); }, 0);
       return { ...current, phase: next.phase, completedFocus: next.completedFocus, todayCount: current.todayCount + (focusFinished ? 1 : 0), remaining: duration(next.phase, current.settings), running: false, endAt: null };
     });
   }
@@ -96,20 +117,22 @@ export default function PomodoroTimer() {
   useEffect(() => { if (state.running && state.remaining === 0) finishPhase(); }, [state.running, state.remaining]);
 
   function toggle() {
+    stopAlarm();
     setState((current) => current.running && current.endAt
       ? { ...current, running: false, endAt: null, remaining: remainingSeconds(current.endAt) }
       : { ...current, running: true, endAt: Date.now() + current.remaining * 1000 });
   }
-  function reset() { setState((current) => ({ ...current, running: false, endAt: null, remaining: duration(current.phase, current.settings) })); }
-  function skip() { setState((current) => { const phase: PomodoroPhase = current.phase === "focus" ? "short_break" : "focus"; return { ...current, phase, running: false, endAt: null, remaining: duration(phase, current.settings) }; }); }
+  function reset() { stopAlarm(); setState((current) => ({ ...current, running: false, endAt: null, remaining: duration(current.phase, current.settings) })); }
+  function skip() { stopAlarm(); setState((current) => { const phase: PomodoroPhase = current.phase === "focus" ? "short_break" : "focus"; return { ...current, phase, running: false, endAt: null, remaining: duration(phase, current.settings) }; }); }
   function changeSetting(key: keyof Settings, value: number) { setState((current) => { const settings = { ...current.settings, [key]: value }; return { ...current, settings, ...(!current.running ? { remaining: duration(current.phase, settings) } : {}) }; }); }
   const total = duration(state.phase, state.settings);
   const percent = Math.min(100, Math.max(0, ((total - state.remaining) / total) * 100));
   const cycleProgress = state.phase === "long_break" ? 4 : state.completedFocus % 4;
 
   return <>
-    <button type="button" onClick={() => setOpen(true)} className={`flex h-10 items-center gap-1.5 rounded-[12px] border px-2.5 text-[0.8rem] font-semibold transition-colors ${state.running ? "border-[#7865EE] bg-[#7865EE] text-white hover:bg-[#6550DB]" : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-gold"}`} title={`Pomodoro · ${phaseLabels[state.phase]} ${formatTimer(state.remaining)} · Alt+P`} aria-label={`Mở đồng hồ Pomodoro, còn ${formatTimer(state.remaining)}`} aria-keyshortcuts="Alt+P"><span aria-hidden="true">🍅</span><span className="hidden md:inline"> {state.running ? formatTimer(state.remaining) : "Pomodoro"}</span></button>
+    <button type="button" onClick={() => alarmActive ? stopAlarm() : setOpen(true)} className={`flex h-10 items-center gap-1.5 rounded-[12px] border px-2.5 text-[0.8rem] font-semibold transition-colors ${alarmActive ? "border-bad bg-bad text-white hover:bg-[#B84242]" : state.running ? "border-[#7865EE] bg-[#7865EE] text-white hover:bg-[#6550DB]" : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-gold"}`} title={alarmActive ? "Tắt chuông Pomodoro" : `Pomodoro · ${phaseLabels[state.phase]} ${formatTimer(state.remaining)} · Alt+P`} aria-label={alarmActive ? "Tắt chuông Pomodoro" : `Mở đồng hồ Pomodoro, còn ${formatTimer(state.remaining)}`} aria-keyshortcuts="Alt+P"><span aria-hidden="true">{alarmActive ? "🔔" : "🍅"}</span><span className="hidden md:inline"> {alarmActive ? "Tắt chuông" : state.running ? formatTimer(state.remaining) : "Pomodoro"}</span></button>
     {open && <Modal title="Đồng hồ Pomodoro" onClose={() => setOpen(false)}>
+      {alarmActive && <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-bad bg-badbg px-3 py-2.5 text-sm text-bad" role="alert"><span>Đã hết giờ. Chuông đang lặp lại.</span><button type="button" className={`${cx.btn} !min-h-10 !px-3 !py-1.5 border border-bad text-bad`} onClick={stopAlarm}>Tắt chuông</button></div>}
       <div className="text-center"><div className={`mx-auto mb-3 inline-flex rounded-full px-3 py-1 text-[0.75rem] font-semibold ${state.phase === "focus" ? "bg-badbg text-bad" : "bg-[#e5f4ea] text-ok"}`}>{phaseLabels[state.phase]}</div>
         <div className={`mx-auto flex h-52 w-52 items-center justify-center rounded-full p-3 ${state.running ? "lexora-timer-pulse" : ""}`} style={{ background: `conic-gradient(#a87913 ${percent}%, #e3dccb ${percent}% 100%)` }}><div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white"><div className="font-serif text-5xl font-bold tabular-nums text-ink" aria-live="polite" aria-atomic="true">{formatTimer(state.remaining)}</div><div className="mt-2 max-w-36 truncate text-[0.76rem] font-medium text-inksoft">{state.task || "Chưa chọn nhiệm vụ"}</div></div></div>
         <div className="mt-4 flex justify-center gap-2">{[0,1,2,3].map((dot) => <span key={dot} className={`h-2.5 w-2.5 rounded-full ${dot < cycleProgress ? "bg-[#9a6b08]" : "bg-[#c9c0ad]"}`} />)}</div><div className="mt-1 text-[0.72rem] font-medium text-inksoft">{cycleProgress}/4 trước kỳ nghỉ dài · {state.todayCount} Pomodoro hôm nay</div>
