@@ -42,7 +42,7 @@ export default function LearnPage() {
   const [flipped, setFlipped] = useState(false);
   const [known, setKnown] = useState<Record<number, boolean>>({});
   const [jumpValue, setJumpValue] = useState("");
-  const [reviewUnknown, setReviewUnknown] = useState(false);
+  const [reviewMode, setReviewMode] = useState<"all" | "unknown" | "unrated">("all");
   const [savingWordId, setSavingWordId] = useState<number | null>(null);
   const [bookmarkIdByWordId, setBookmarkIdByWordId] = useState<Record<number, number>>({});
   const [savingBookmarkWordId, setSavingBookmarkWordId] = useState<number | null>(null);
@@ -89,7 +89,7 @@ export default function LearnPage() {
       }
       setIndex(resumeIndex);
       setFlipped(false);
-      setReviewUnknown(false);
+      setReviewMode("all");
     } catch {
       setLoadError(true);
     } finally {
@@ -160,7 +160,11 @@ export default function LearnPage() {
   }
   function reshuffle() {
     if (!set) return;
-    const words = reviewUnknown ? set.words.filter((item) => known[item.id] === false) : set.words;
+    const words = reviewMode === "unknown"
+      ? set.words.filter((item) => known[item.id] === false)
+      : reviewMode === "unrated"
+        ? set.words.filter((item) => known[item.id] === undefined)
+        : set.words;
     setOrder(shuffle(words));
     setIndex(0);
     setFlipped(false);
@@ -168,7 +172,11 @@ export default function LearnPage() {
   }
   function restartInOrder() {
     if (!set) return;
-    setOrder(reviewUnknown ? set.words.filter((item) => known[item.id] === false) : set.words);
+    setOrder(reviewMode === "unknown"
+      ? set.words.filter((item) => known[item.id] === false)
+      : reviewMode === "unrated"
+        ? set.words.filter((item) => known[item.id] === undefined)
+        : set.words);
     setIndex(0);
     setFlipped(false);
     setResumedPosition(null);
@@ -229,15 +237,23 @@ export default function LearnPage() {
 
   function startUnknownReview() {
     if (!set || unknownCount === 0) return;
-    setReviewUnknown(true);
+    setReviewMode("unknown");
     setOrder(set.words.filter((item) => known[item.id] === false));
+    setIndex(0);
+    setFlipped(false);
+  }
+
+  function startUnratedReview() {
+    if (!set || unratedCount === 0) return;
+    setReviewMode("unrated");
+    setOrder(set.words.filter((item) => known[item.id] === undefined));
     setIndex(0);
     setFlipped(false);
   }
 
   function showAllWords() {
     if (!set) return;
-    setReviewUnknown(false);
+    setReviewMode("all");
     setOrder(set.words);
     setIndex(0);
     setFlipped(false);
@@ -253,7 +269,7 @@ export default function LearnPage() {
     savingRef.current = true;
     setSavingWordId(markedWord.id);
     setKnown((prev) => ({ ...prev, [markedWord.id]: learned }));
-    if (reviewUnknown && learned) {
+    if (reviewMode === "unrated" || (reviewMode === "unknown" && learned)) {
       setOrder((prev) => prev.filter((item) => item.id !== word.id));
       setIndex((current) => Math.max(0, Math.min(current, total - 2)));
       setFlipped(false);
@@ -344,7 +360,7 @@ export default function LearnPage() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [total, word?.id, reviewUnknown, known, set]);
+  }, [total, word?.id, reviewMode, known, set]);
 
   if (loading) return <div className={cx.panel}><div className={cx.empty} role="status">Đang tải bộ từ...</div></div>;
   if (loadError || !set) return (
@@ -358,7 +374,7 @@ export default function LearnPage() {
       </div>
     </div>
   );
-  if (total === 0 && !reviewUnknown) return (
+  if (total === 0 && reviewMode === "all") return (
     <div className={cx.panel}>
       <div className={cx.empty}>
         Bộ từ vựng này chưa có từ nào.
@@ -393,8 +409,8 @@ export default function LearnPage() {
 
       <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-4 py-3 flex-wrap">
         <div className="text-[0.85rem]">
-          {reviewUnknown ? (
-            <><b>Đang ôn riêng từ chưa nhớ</b> · còn {total} từ</>
+          {reviewMode !== "all" ? (
+            <><b>{reviewMode === "unknown" ? "Đang ôn riêng từ chưa nhớ" : "Đang đánh giá từ chưa phân loại"}</b> · còn {total} từ</>
           ) : (
             <div className="flex gap-x-3 gap-y-1 flex-wrap">
               <span><b className="text-ok">{knownCount}</b> đã nhớ</span>
@@ -403,22 +419,31 @@ export default function LearnPage() {
             </div>
           )}
         </div>
-        {reviewUnknown ? (
+        {reviewMode !== "all" ? (
           <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={showAllWords}>Xem tất cả từ</button>
         ) : (
-          <button
-            className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`}
-            disabled={unknownCount === 0}
-            onClick={startUnknownReview}
-          >
-            Ôn riêng từ chưa nhớ ({unknownCount})
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`}
+              disabled={unknownCount === 0}
+              onClick={startUnknownReview}
+            >
+              Ôn từ chưa nhớ ({unknownCount})
+            </button>
+            <button
+              className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`}
+              disabled={unratedCount === 0}
+              onClick={startUnratedReview}
+            >
+              Đánh giá từ còn lại ({unratedCount})
+            </button>
+          </div>
         )}
       </div>
 
-      {reviewUnknown && total === 0 ? (
+      {reviewMode !== "all" && total === 0 ? (
         <div className={cx.empty}>
-          🎉 Bạn đã nhớ hết các từ trong lượt ôn này.
+          🎉 {reviewMode === "unknown" ? "Bạn đã nhớ hết các từ trong lượt ôn này." : "Bạn đã đánh giá hết các từ trong bộ này."}
           <div className="mt-3">
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={showAllWords}>Xem lại tất cả từ</button>
           </div>
@@ -530,7 +555,8 @@ export default function LearnPage() {
           <h3 className="mt-1 font-serif text-lg font-bold">Bạn đã xem hết lượt thẻ này</h3>
           <p className="mt-1 text-sm text-muted">Đã nhớ {knownCount} từ · Chưa nhớ {unknownCount} từ · Chưa đánh giá {unratedCount} từ.</p>
           <div className="mt-3 flex flex-wrap justify-center gap-2">
-            {unknownCount > 0 && !reviewUnknown && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startUnknownReview}>Ôn ngay {unknownCount} từ chưa nhớ</button>}
+            {unknownCount > 0 && reviewMode === "all" && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startUnknownReview}>Ôn ngay {unknownCount} từ chưa nhớ</button>}
+            {unratedCount > 0 && reviewMode === "all" && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={startUnratedReview}>Đánh giá {unratedCount} từ còn lại</button>}
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/quiz/${set.id}?mode=${isVerb ? "fill" : "mc"}`)}>{isVerb ? "Chuyển sang điền V1/V2/V3" : "Chuyển sang trắc nghiệm"}</button>
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={restartInOrder}>Học lại từ đầu</button>
           </div>
