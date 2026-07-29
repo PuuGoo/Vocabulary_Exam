@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { vocabCategories, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
+import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 
 export const runtime = "nodejs";
 
@@ -66,10 +67,11 @@ export async function POST(req: NextRequest) {
 
   if (target === "__new_vocab" || target === "__new_verb") {
     setType = target === "__new_verb" ? "irregular_verb" : "ielts_vocab";
-    const name = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
+    const rawName = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
     if (category) {
       await db.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
+    const name = category ? formatCategorySetName(await nextCategoryOrder(db, category), rawName) : rawName;
     const [set] = await db.insert(vocabSets).values({ name, category, type: setType, classId, createdBy: session.userId }).returning();
     setId = set.id;
   } else {
