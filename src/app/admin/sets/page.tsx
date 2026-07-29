@@ -22,6 +22,8 @@ type Word = {
 };
 type SetDetail = SetSummary & { words: Word[] };
 type ClassOpt = { id: number; name: string };
+const ALL_CATEGORIES = "__all__";
+const UNCATEGORIZED = "__uncategorized__";
 
 function normalizeSearch(value: string) {
   return value
@@ -39,6 +41,7 @@ export default function AdminSetsPage() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [creatingSet, setCreatingSet] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
   const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb">("ielts_vocab");
@@ -56,14 +59,26 @@ export default function AdminSetsPage() {
   const [savingClass, setSavingClass] = useState(false);
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
 
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const set of sets || []) {
+      const category = set.category?.trim() || UNCATEGORIZED;
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort(([left], [right]) => {
+      if (left === UNCATEGORIZED) return 1;
+      if (right === UNCATEGORIZED) return -1;
+      return left.localeCompare(right, "vi");
+    });
+  }, [sets]);
   const filteredSets = useMemo(() => {
     if (!sets) return [];
     const query = normalizeSearch(searchQuery);
-    if (!query) return sets;
     return sets.filter((set) =>
-      normalizeSearch(`${set.name} ${set.category || ""} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query)
+      (selectedCategory === ALL_CATEGORIES || (set.category?.trim() || UNCATEGORIZED) === selectedCategory)
+      && (!query || normalizeSearch(`${set.name} ${set.category || ""} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query))
     );
-  }, [sets, searchQuery]);
+  }, [sets, searchQuery, selectedCategory]);
 
   async function loadSets() {
     const res = await fetch("/api/sets");
@@ -347,6 +362,14 @@ export default function AdminSetsPage() {
           + Tạo bộ từ vựng mới
         </button>
       </div>
+      {sets && sets.length > 0 && categories.length > 0 && (
+        <div className="mb-5 flex flex-wrap gap-2" aria-label="Lọc bộ từ theo danh mục">
+          <CategoryFilter label="Tất cả" count={sets.length} active={selectedCategory === ALL_CATEGORIES} onClick={() => setSelectedCategory(ALL_CATEGORIES)} />
+          {categories.map(([category, count]) => (
+            <CategoryFilter key={category} label={category === UNCATEGORIZED ? "Chưa phân loại" : category} count={count} active={selectedCategory === category} onClick={() => setSelectedCategory(category)} />
+          ))}
+        </div>
+      )}
 
       {showNewForm && (
         <Modal title="Tạo bộ từ vựng mới" onClose={closeNewForm} closeOnBackdrop={false}>
@@ -407,9 +430,9 @@ export default function AdminSetsPage() {
         <div className={cx.empty}>Chưa có bộ từ vựng nào.</div>
       ) : filteredSets.length === 0 ? (
         <div className={cx.empty}>
-          Không tìm thấy bộ từ phù hợp với “{searchQuery}”.
+          Không tìm thấy bộ từ phù hợp với bộ lọc hiện tại.
           <div className="mt-3">
-            <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => setSearchQuery("")}>Xoá tìm kiếm</button>
+            <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setSearchQuery(""); setSelectedCategory(ALL_CATEGORIES); }}>Xoá bộ lọc</button>
           </div>
         </div>
       ) : (
@@ -783,5 +806,23 @@ export default function AdminSetsPage() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function CategoryFilter({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+        active
+          ? "border-[#7865EE] bg-[#7865EE] text-white shadow-[0_4px_12px_rgba(120,101,238,0.2)]"
+          : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-ink"
+      }`}
+    >
+      <span className="max-w-[180px] truncate">{label}</span>
+      <span className={`rounded-full px-1.5 py-0.5 text-[0.62rem] ${active ? "bg-white/20 text-white" : "bg-[#F1EFF8] text-muted"}`}>{count}</span>
+    </button>
   );
 }

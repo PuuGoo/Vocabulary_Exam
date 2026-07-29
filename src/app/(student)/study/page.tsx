@@ -9,22 +9,42 @@ import Modal from "@/components/Modal";
 
 type SetSummary = { id: number; name: string; category?: string | null; type: string; count: number; className?: string | null };
 type GoalSummary = { dailyWords: number; todayWords: number; streak: number; completed: boolean };
+const ALL_CATEGORIES = "__all__";
+const UNCATEGORIZED = "__uncategorized__";
 
 export default function StudyPage() {
   const router = useRouter();
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [timedSetId, setTimedSetId] = useState<number | null>(null);
   const [minutes, setMinutes] = useState("15");
   const [quickCount, setQuickCount] = useState("10");
   const [sessionPositionBySetId, setSessionPositionBySetId] = useState<Record<number, number>>({});
   const [goal, setGoal] = useState<GoalSummary | null>(null);
 
+  const categories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const set of sets || []) {
+      const category = set.category?.trim() || UNCATEGORIZED;
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort(([left], [right]) => {
+      if (left === UNCATEGORIZED) return 1;
+      if (right === UNCATEGORIZED) return -1;
+      return left.localeCompare(right, "vi");
+    });
+  }, [sets]);
   const filteredSets = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("vi");
-    return (sets || []).filter((set) => !query || `${set.name} ${set.category || ""} ${set.className || ""}`.toLocaleLowerCase("vi").includes(query));
-  }, [sets, searchQuery]);
+    return (sets || []).filter((set) => {
+      const category = set.category?.trim() || UNCATEGORIZED;
+      const categoryMatches = selectedCategory === ALL_CATEGORIES || category === selectedCategory;
+      const queryMatches = !query || `${set.name} ${set.category || ""} ${set.className || ""}`.toLocaleLowerCase("vi").includes(query);
+      return categoryMatches && queryMatches;
+    });
+  }, [sets, searchQuery, selectedCategory]);
   const groupedSets = useMemo(() => {
     const groups = new Map<string, SetSummary[]>();
     for (const set of filteredSets) {
@@ -80,15 +100,23 @@ export default function StudyPage() {
 
     <section>
       <div className="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><h2 className="text-lg font-extrabold tracking-[-0.02em]">Bộ từ của bạn</h2><p className="mt-1 text-xs text-muted">Chọn một bộ từ, sau đó chọn chế độ luyện tập.</p></div>{sets && sets.length > 0 && <label className="relative block w-full sm:w-72"><span className="sr-only">Tìm bộ từ</span><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">⌕</span><input type="search" className="h-10 w-full rounded-[11px] border border-line bg-white pl-9 pr-3 text-sm outline-none focus:border-gold" placeholder="Tìm kiếm bộ từ..." value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} /></label>}</div>
+      {sets && sets.length > 0 && categories.length > 0 && <div className="mb-4 flex flex-wrap gap-2" aria-label="Lọc bộ từ theo danh mục">
+        <CategoryFilter label="Tất cả" count={sets.length} active={selectedCategory === ALL_CATEGORIES} onClick={() => setSelectedCategory(ALL_CATEGORIES)} />
+        {categories.map(([category, count]) => <CategoryFilter key={category} label={category === UNCATEGORIZED ? "Chưa phân loại" : category} count={count} active={selectedCategory === category} onClick={() => setSelectedCategory(category)} />)}
+      </div>}
       {sets === null ? <div className="grid gap-4 md:grid-cols-2">{[1,2,3,4].map((item) => <div key={item} className="lexora-card lexora-skeleton h-48" />)}</div>
         : loadError ? <EmptyState title="Không thể tải bộ từ" detail="Kết nối có thể đã bị gián đoạn." action="Thử lại" onAction={() => void loadSets()} />
         : sets.length === 0 ? <EmptyState title="Chưa có bộ từ nào" detail="Hãy nhờ giáo viên hoặc quản trị viên thêm bộ từ vựng." />
-        : filteredSets.length === 0 ? <EmptyState title="Không tìm thấy bộ từ phù hợp" detail="Hãy thử một từ khóa khác." action="Xóa tìm kiếm" onAction={() => setSearchQuery("")} />
+        : filteredSets.length === 0 ? <EmptyState title="Không tìm thấy bộ từ phù hợp" detail="Hãy thử danh mục hoặc từ khóa khác." action="Xóa bộ lọc" onAction={() => { setSearchQuery(""); setSelectedCategory(ALL_CATEGORIES); }} />
         : <div className="space-y-6">{groupedSets.map(([category, categorySets]) => <section key={category} className="rounded-[16px] border border-line bg-white/50 p-3 sm:p-4"><div className="mb-3 flex items-center justify-between gap-2 px-1"><h3 className="flex items-center gap-2 text-sm font-extrabold"><span aria-hidden="true">📁</span>{category}</h3><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.68rem] font-bold text-[#6550DB]">{categorySets.length} bộ</span></div><div className="grid items-start gap-4 md:grid-cols-2">{categorySets.map((set) => <CollectionCard key={set.id} set={set} position={sessionPositionBySetId[set.id] || 0} onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }} onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")} onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }} onTimed={() => setTimedSetId(set.id)} />)}</div></section>)}</div>}
     </section>
 
     {timedSet && <Modal title={`Thi thử tính giờ · ${timedSet.name}`} onClose={() => setTimedSetId(null)}><p className="mb-5 text-sm leading-6 text-muted">Bài thi sẽ tự động nộp khi hết giờ. Bạn vẫn có thể hoàn thành sớm.</p><label className={cx.label} htmlFor="timed-minutes">Thời gian làm bài (phút)</label><input id="timed-minutes" type="number" min={1} max={120} className={`${cx.input} max-w-32`} value={minutes} onChange={(event) => setMinutes(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") startTimed(timedSet.id); }} autoFocus /><div className="flex gap-2"><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => startTimed(timedSet.id)}>Bắt đầu thi</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setTimedSetId(null)}>Hủy</button></div></Modal>}
   </div>;
+}
+
+function CategoryFilter({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return <button type="button" aria-pressed={active} onClick={onClick} className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition ${active ? "border-[#7865EE] bg-[#7865EE] text-white shadow-[0_4px_12px_rgba(120,101,238,0.2)]" : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-ink"}`}><span className="max-w-[180px] truncate">{label}</span><span className={`rounded-full px-1.5 py-0.5 text-[0.62rem] ${active ? "bg-white/20 text-white" : "bg-[#F1EFF8] text-muted"}`}>{count}</span></button>;
 }
 
 function LaunchCard({ href, icon, title, detail, tone, action }: { href: string; icon: string; title: string; detail: string; tone: "purple" | "orange" | "green"; action: string }) {
