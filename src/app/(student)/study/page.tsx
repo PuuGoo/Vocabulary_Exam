@@ -7,7 +7,7 @@ import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
 
-type SetSummary = { id: number; name: string; type: string; count: number; className?: string | null };
+type SetSummary = { id: number; name: string; category?: string | null; type: string; count: number; className?: string | null };
 type GoalSummary = { dailyWords: number; todayWords: number; streak: number; completed: boolean };
 
 export default function StudyPage() {
@@ -23,8 +23,16 @@ export default function StudyPage() {
 
   const filteredSets = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("vi");
-    return (sets || []).filter((set) => !query || `${set.name} ${set.className || ""}`.toLocaleLowerCase("vi").includes(query));
+    return (sets || []).filter((set) => !query || `${set.name} ${set.category || ""} ${set.className || ""}`.toLocaleLowerCase("vi").includes(query));
   }, [sets, searchQuery]);
+  const groupedSets = useMemo(() => {
+    const groups = new Map<string, SetSummary[]>();
+    for (const set of filteredSets) {
+      const label = set.category?.trim() || "Bộ từ khác";
+      groups.set(label, [...(groups.get(label) || []), set]);
+    }
+    return Array.from(groups.entries());
+  }, [filteredSets]);
   const timedSet = sets?.find((set) => set.id === timedSetId) || null;
 
   async function loadSets() {
@@ -62,7 +70,7 @@ export default function StudyPage() {
     <section className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="mb-2 text-sm font-semibold text-gold">Học tập của tôi</p><h1 className="text-[clamp(1.8rem,4vw,2.5rem)] font-extrabold tracking-[-0.045em]">Bắt đầu buổi học tiếp theo.</h1><p className="mt-2 max-w-2xl text-[0.95rem] leading-6 text-muted">Ôn tập có trọng tâm hoặc chọn một bộ từ và luyện theo cách phù hợp với bạn.</p></div>{sets && <div className="self-start rounded-full border border-line bg-white px-3 py-2 text-xs font-bold text-muted sm:self-auto">{sets.length} bộ từ có sẵn</div>}</section>
 
     <section className="lexora-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <LaunchCard href="/smart-review" icon="↻" title="Ôn tập thông minh" detail="Ôn các từ đến hạn hôm nay" tone="purple" action="Bắt đầu ôn" />
+      <LaunchCard href="/smart-review" icon="↻" title="Ôn tập thông minh" detail="Tự xếp lịch 1 · 3 · 7 · 14 · 28 ngày" tone="purple" action="Bắt đầu ôn" />
       <LaunchCard href="/daily-challenge" icon="✦" title="Thử thách hằng ngày" detail="10 câu hỏi · nhận điểm kinh nghiệm" tone="orange" action="Tham gia ngay" />
       <LaunchCard href="/mixed-practice" icon="◎" title="Luyện tập trộn lẫn" detail="Luân phiên chủ đề và dạng câu hỏi" tone="green" action="Tạo lượt học" />
       <article className="lexora-card flex min-h-[154px] flex-col justify-between p-5 transition hover:-translate-y-1 hover:shadow-[0_10px_25px_rgba(43,39,74,0.07)]"><div className="flex items-start justify-between"><span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#FFF8DF] font-bold text-[#A87C12]">⚡</span><select aria-label="Số từ luyện nhanh" className="rounded-[9px] border border-line bg-white px-2 py-1.5 text-xs font-bold" value={quickCount} onChange={(event) => setQuickCount(event.target.value)}><option value="5">5 từ</option><option value="10">10 từ</option><option value="20">20 từ</option></select></div><div className="mt-4"><h2 className="text-sm font-extrabold">Luyện nhanh</h2><p className="mt-1 text-xs text-muted">Ưu tiên từ yếu và dễ quên</p><button onClick={() => router.push(`/quiz/quick?quick=1&count=${quickCount}&mode=fill`)} className="mt-4 text-xs font-bold text-gold hover:underline">Luyện ngay →</button></div></article>
@@ -76,7 +84,7 @@ export default function StudyPage() {
         : loadError ? <EmptyState title="Không thể tải bộ từ" detail="Kết nối có thể đã bị gián đoạn." action="Thử lại" onAction={() => void loadSets()} />
         : sets.length === 0 ? <EmptyState title="Chưa có bộ từ nào" detail="Hãy nhờ giáo viên hoặc quản trị viên thêm bộ từ vựng." />
         : filteredSets.length === 0 ? <EmptyState title="Không tìm thấy bộ từ phù hợp" detail="Hãy thử một từ khóa khác." action="Xóa tìm kiếm" onAction={() => setSearchQuery("")} />
-        : <div className="grid items-start gap-4 md:grid-cols-2">{filteredSets.map((set) => <CollectionCard key={set.id} set={set} position={sessionPositionBySetId[set.id] || 0} onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }} onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")} onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }} onTimed={() => setTimedSetId(set.id)} />)}</div>}
+        : <div className="space-y-6">{groupedSets.map(([category, categorySets]) => <section key={category} className="rounded-[16px] border border-line bg-white/50 p-3 sm:p-4"><div className="mb-3 flex items-center justify-between gap-2 px-1"><h3 className="flex items-center gap-2 text-sm font-extrabold"><span aria-hidden="true">📁</span>{category}</h3><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.68rem] font-bold text-[#6550DB]">{categorySets.length} bộ</span></div><div className="grid items-start gap-4 md:grid-cols-2">{categorySets.map((set) => <CollectionCard key={set.id} set={set} position={sessionPositionBySetId[set.id] || 0} onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }} onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")} onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }} onTimed={() => setTimedSetId(set.id)} />)}</div></section>)}</div>}
     </section>
 
     {timedSet && <Modal title={`Thi thử tính giờ · ${timedSet.name}`} onClose={() => setTimedSetId(null)}><p className="mb-5 text-sm leading-6 text-muted">Bài thi sẽ tự động nộp khi hết giờ. Bạn vẫn có thể hoàn thành sớm.</p><label className={cx.label} htmlFor="timed-minutes">Thời gian làm bài (phút)</label><input id="timed-minutes" type="number" min={1} max={120} className={`${cx.input} max-w-32`} value={minutes} onChange={(event) => setMinutes(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") startTimed(timedSet.id); }} autoFocus /><div className="flex gap-2"><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => startTimed(timedSet.id)}>Bắt đầu thi</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setTimedSetId(null)}>Hủy</button></div></Modal>}

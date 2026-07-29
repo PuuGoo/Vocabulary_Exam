@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
   const file = form.get("file") as File | null;
   const target = String(form.get("target") || "");
   const newSetName = String(form.get("newSetName") || "").trim();
+  const category = normalizeText(String(form.get("category") || "").trim()) || null;
   const classIdRaw = form.get("classId");
   const classId = classIdRaw && String(classIdRaw).trim() !== "" ? Number(classIdRaw) : null;
 
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (target === "__new_vocab" || target === "__new_verb") {
     setType = target === "__new_verb" ? "irregular_verb" : "ielts_vocab";
     const name = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
-    const [set] = await db.insert(vocabSets).values({ name, type: setType, classId, createdBy: session.userId }).returning();
+    const [set] = await db.insert(vocabSets).values({ name, category, type: setType, classId, createdBy: session.userId }).returning();
     setId = set.id;
   } else {
     const setIdNum = Number(target);
@@ -81,7 +82,16 @@ export async function POST(req: NextRequest) {
   for (const r of rows) {
     if (setType === "irregular_verb") {
       if (r.meaning && r.v1 && r.v2 && r.v3) {
-        toInsert.push({ setId, meaning: r.meaning, v1: r.v1, v2: r.v2, v3: r.v3, ipa: r.ipa || null });
+        toInsert.push({
+          setId,
+          meaning: r.meaning,
+          v1: r.v1,
+          v2: r.v2,
+          v3: r.v3,
+          ipaV1: r.ipa_v1 || r.ipav1 || null,
+          ipaV2: r.ipa_v2 || r.ipav2 || null,
+          ipaV3: r.ipa_v3 || r.ipav3 || null,
+        });
         added++;
       }
     } else {

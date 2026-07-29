@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
 import StudyModeNav from "@/components/StudyModeNav";
+import VerbIpa from "@/components/VerbIpa";
 import { toast } from "@/components/Toast";
 
 type Word = {
@@ -14,6 +15,9 @@ type Word = {
   v1?: string | null;
   v2?: string | null;
   v3?: string | null;
+  ipaV1?: string | null;
+  ipaV2?: string | null;
+  ipaV3?: string | null;
   term?: string | null;
   example?: string | null;
   wtype?: string | null;
@@ -521,7 +525,7 @@ export default function LearnPage() {
               {answerText}
               <SpeakButton text={speakText} />
             </div>
-            {word.ipa && <div className="text-golddark text-lg mt-1">{word.ipa}</div>}
+            {isVerb ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <div className="text-golddark text-lg mt-1">{word.ipa}</div>}
             {!isVerb && word.wtype && <div className="text-muted text-[0.8rem] mt-2">({word.wtype})</div>}
             {!isVerb && word.example && <div className="text-muted text-[0.85rem] italic mt-3 max-w-md">VD: {word.example}</div>}
           </>

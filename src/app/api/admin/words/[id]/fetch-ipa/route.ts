@@ -21,11 +21,19 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!word) return NextResponse.json({ error: "Không tìm thấy từ." }, { status: 404 });
 
   const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, word.setId) });
-  const lookupText = set?.type === "irregular_verb" ? word.v1 : (word.term || word.v1);
-  if (!lookupText) return NextResponse.json({ error: "Từ này chưa có nội dung để tra phiên âm." }, { status: 400 });
+  const lookupTexts = set?.type === "irregular_verb"
+    ? [word.v1, word.v2, word.v3].filter((value): value is string => Boolean(value))
+    : [word.term || word.v1].filter((value): value is string => Boolean(value));
+  if (lookupTexts.length === 0) return NextResponse.json({ error: "Từ này chưa có nội dung để tra phiên âm." }, { status: 400 });
 
   try {
-    const ipa = await fetchIpaSingle(lookupText);
+    if (set?.type === "irregular_verb") {
+      const [ipaV1, ipaV2, ipaV3] = await Promise.all(lookupTexts.map((text) => fetchIpaSingle(text)));
+      if (!ipaV1 && !ipaV2 && !ipaV3) return NextResponse.json({ error: "Không lấy được phiên âm cho từ này." }, { status: 422 });
+      await db.update(words).set({ ipaV1, ipaV2, ipaV3 }).where(eq(words.id, word.id));
+      return NextResponse.json({ ipaV1, ipaV2, ipaV3, ipa: [ipaV1, ipaV2, ipaV3].filter(Boolean).join(" · ") });
+    }
+    const ipa = await fetchIpaSingle(lookupTexts[0]);
     if (!ipa) return NextResponse.json({ error: "Không lấy được phiên âm cho từ này." }, { status: 422 });
     await db.update(words).set({ ipa }).where(eq(words.id, word.id));
     return NextResponse.json({ ipa });

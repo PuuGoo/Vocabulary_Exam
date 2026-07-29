@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import VerbIpa from "@/components/VerbIpa";
 
 type Word = {
   id: number;
@@ -13,6 +14,9 @@ type Word = {
   v1: string | null;
   v2: string | null;
   v3: string | null;
+  ipaV1?: string | null;
+  ipaV2?: string | null;
+  ipaV3?: string | null;
   ipa: string | null;
   wtype: string | null;
 };
@@ -214,7 +218,7 @@ export default function PronunciationPage() {
           <section className="rounded-2xl border border-line bg-white px-5 py-8 text-center">
             <div className="text-xs uppercase tracking-widest text-muted">Đọc to từ sau</div>
             <div className="mt-3 font-serif text-3xl font-bold">{target}</div>
-            {word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
+            {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
             <div className="mt-2 text-sm text-muted">{word.wtype ? `(${word.wtype}) · ` : ""}{word.meaning}</div>
             {set.type === "irregular_verb" && <div className="mt-2 text-xs text-muted">Các dạng: {word.v1} — {word.v2} — {word.v3}</div>}
             <div className="mt-6 flex flex-wrap justify-center gap-2">

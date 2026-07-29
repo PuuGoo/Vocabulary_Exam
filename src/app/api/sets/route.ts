@@ -24,6 +24,7 @@ export async function GET() {
     .select({
       id: vocabSets.id,
       name: vocabSets.name,
+      category: vocabSets.category,
       type: vocabSets.type,
       classId: vocabSets.classId,
       className: classes.name,
@@ -43,6 +44,7 @@ export async function GET() {
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(256),
+  category: z.string().trim().max(128).nullable().optional(),
   type: z.enum(["irregular_verb", "ielts_vocab"]),
   classId: z.number().int().nullable().optional(),
 });
@@ -61,6 +63,7 @@ export async function POST(req: NextRequest) {
     .insert(vocabSets)
     .values({
       name: normalizeText(parsed.data.name),
+      category: parsed.data.category ? normalizeText(parsed.data.category) : null,
       type: parsed.data.type,
       classId: parsed.data.classId ?? null,
       createdBy: session.userId,

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
 import StudyModeNav from "@/components/StudyModeNav";
+import VerbIpa from "@/components/VerbIpa";
 import { toast } from "@/components/Toast";
 import { groupIndexForQuestion, circleStatus } from "@/lib/quizGroups";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
@@ -15,6 +16,9 @@ type Word = {
   v1?: string | null;
   v2?: string | null;
   v3?: string | null;
+  ipaV1?: string | null;
+  ipaV2?: string | null;
+  ipaV3?: string | null;
   term?: string | null;
   example?: string | null;
   wtype?: string | null;
@@ -624,7 +628,7 @@ function QuizPlayerInner() {
                           <span className="text-muted">
                             {w.v1} — {w.v2} — {w.v3}
                           </span>
-                          {w.ipa && <span className="text-golddark">{w.ipa}</span>}
+                          <VerbIpa ipaV1={w.ipaV1} ipaV2={w.ipaV2} ipaV3={w.ipaV3} className="w-full justify-start text-sm" />
                           <SpeakButton text={w.v1 || ""} />
                         </>
                       )}

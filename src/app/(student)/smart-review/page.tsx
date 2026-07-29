@@ -6,6 +6,7 @@ import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import VerbIpa from "@/components/VerbIpa";
 
 type Reason = "difficult" | "forgotten" | "stale" | "new";
 type ReviewWord = {
@@ -17,6 +18,9 @@ type ReviewWord = {
   v1: string | null;
   v2: string | null;
   v3: string | null;
+  ipaV1: string | null;
+  ipaV2: string | null;
+  ipaV3: string | null;
   term: string | null;
   example: string | null;
   wtype: string | null;
@@ -147,7 +151,7 @@ export default function SmartReviewPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className={cx.h2}>🧠 Ôn tập thông minh</h2>
-          <div className={cx.desc}>Lịch ôn chung 1 → 3 → 7 → 14 ngày, được cập nhật từ mọi hoạt động học của bạn.</div>
+          <div className={cx.desc}>Tự xếp lịch ôn 1 → 3 → 7 → 14 → 28 ngày, được cập nhật từ mọi hoạt động học của bạn.</div>
         </div>
         <label className="text-xs text-muted">
           Số từ trong lượt
@@ -203,7 +207,7 @@ export default function SmartReviewPage() {
             {!flipped ? (
               <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">Nghĩa tiếng Việt</span><span className="font-serif text-2xl font-bold">{word.meaning}</span><span className="mt-5 text-xs text-muted">Bấm hoặc nhấn Space để xem đáp án</span></>
             ) : (
-              <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">{word.setType === "irregular_verb" ? "V1 — V2 — V3" : "Từ tiếng Anh"}</span><span className="flex flex-wrap items-center justify-center gap-3 font-serif text-2xl font-bold">{word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}<span onClick={(event) => event.stopPropagation()}><SpeakButton text={word.setType === "irregular_verb" ? word.v1 || "" : word.term || ""} /></span></span>{word.ipa && <span className="mt-1 text-lg text-golddark">{word.ipa}</span>}{word.wtype && <span className="mt-2 text-sm text-muted">({word.wtype})</span>}{word.example && <span className="mt-3 max-w-xl text-sm italic text-muted">VD: {word.example}</span>}</>
+              <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">{word.setType === "irregular_verb" ? "V1 — V2 — V3" : "Từ tiếng Anh"}</span><span className="flex flex-wrap items-center justify-center gap-3 font-serif text-2xl font-bold">{word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}<span onClick={(event) => event.stopPropagation()}><SpeakButton text={word.setType === "irregular_verb" ? word.v1 || "" : word.term || ""} /></span></span>{word.setType === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <span className="mt-1 text-lg text-golddark">{word.ipa}</span>}{word.wtype && <span className="mt-2 text-sm text-muted">({word.wtype})</span>}{word.example && <span className="mt-3 max-w-xl text-sm italic text-muted">VD: {word.example}</span>}</>
             )}
           </button>
           <div className="mt-2 text-center text-xs font-semibold text-muted sm:hidden">Vuốt trái: chưa nhớ · Vuốt phải: đã nhớ</div>
