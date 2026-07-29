@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { vocabCategories, vocabSets, words, classMembers, classes } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
+import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { z } from "zod";
 
 export async function GET() {
@@ -64,8 +65,10 @@ export async function POST(req: NextRequest) {
     if (category) {
       await tx.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
+    const normalizedName = normalizeText(parsed.data.name);
+    const setName = category ? formatCategorySetName(await nextCategoryOrder(tx, category), normalizedName) : normalizedName;
     return tx.insert(vocabSets).values({
-      name: normalizeText(parsed.data.name),
+      name: setName,
       category,
       type: parsed.data.type,
       classId: parsed.data.classId ?? null,

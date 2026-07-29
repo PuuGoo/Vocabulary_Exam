@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
+import { formatCategorySetName, hasCategoryPrefix, nextCategoryOrder, removeCategoryPrefix } from "@/lib/categorySequence";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -55,13 +56,25 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     ...(parsed.data.category !== undefined ? { category: parsed.data.category ? normalizeText(parsed.data.category) : null } : {}),
   };
 
-  await db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx) => {
+    const [current] = await tx.select().from(vocabSets).where(eq(vocabSets.id, setId)).limit(1);
+    if (!current) return null;
+    const nextCategory = patch.category === undefined ? current.category : patch.category;
+    const categoryChanged = nextCategory !== current.category;
+    if (patch.name && !categoryChanged && current.category) {
+      const currentPrefix = current.name.match(/^\d+_/)?.[0];
+      patch.name = currentPrefix ? `${currentPrefix}${removeCategoryPrefix(patch.name)}` : patch.name;
+    }
+    if (categoryChanged && nextCategory) {
+      patch.name = formatCategorySetName(await nextCategoryOrder(tx, nextCategory), patch.name || current.name);
+    }
     if (patch.category) {
       await tx.insert(vocabCategories).values({ name: patch.category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
     await tx.update(vocabSets).set(patch).where(eq(vocabSets.id, setId));
+    return tx.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
   });
-  const updated = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
+  if (!updated) return NextResponse.json({ error: "Không tìm thấy bộ từ vựng." }, { status: 404 });
   return NextResponse.json({ set: updated });
 }
 
