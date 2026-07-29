@@ -5,7 +5,7 @@ import { feynmanIntervalDays, nextFeynmanReview } from "./feynman";
 test("Feynman reviews return uncertain words quickly", () => {
   assert.equal(feynmanIntervalDays(1, 9), 1);
   assert.equal(feynmanIntervalDays(2, 0), 3);
-  assert.equal(feynmanIntervalDays(3, 2), 30);
+  assert.equal(feynmanIntervalDays(3, 2), 28);
 });
 
 test("nextFeynmanReview schedules from the supplied time", () => {

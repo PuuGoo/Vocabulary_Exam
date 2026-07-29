@@ -89,7 +89,7 @@ export async function POST(request: Request) {
         if (id == null || !name || !type || (oldClassId != null && classId == null)) { report.skipped.vocabSets++; continue; }
         const key = setKey(name, type, classId ?? null); let mapped = setsByKey.get(key);
         if (mapped == null) {
-          const [created] = await tx.insert(vocabSets).values({ name, type, classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
+          const [created] = await tx.insert(vocabSets).values({ name, category: nullableText(row, "category"), type, classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
           mapped = created.id; setsByKey.set(key, mapped); report.added.vocabSets++;
         } else report.skipped.vocabSets++;
         setMap.set(id, mapped);
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
         if (id == null || setId == null || !meaning) { report.skipped.words++; continue; }
         const key = wordKey(setId, row); let mapped = wordsByKey.get(key);
         if (mapped == null) {
-          const [created] = await tx.insert(words).values({ setId, meaning, v1: nullableText(row, "v1"), v2: nullableText(row, "v2"), v3: nullableText(row, "v3"), term: nullableText(row, "term"), example: nullableText(row, "example"), wtype: nullableText(row, "wtype"), ipa: nullableText(row, "ipa"), createdAt: date(row, "createdAt") }).returning({ id: words.id });
+          const [created] = await tx.insert(words).values({ setId, meaning, v1: nullableText(row, "v1"), v2: nullableText(row, "v2"), v3: nullableText(row, "v3"), ipaV1: nullableText(row, "ipaV1"), ipaV2: nullableText(row, "ipaV2"), ipaV3: nullableText(row, "ipaV3"), term: nullableText(row, "term"), example: nullableText(row, "example"), wtype: nullableText(row, "wtype"), ipa: nullableText(row, "ipa"), createdAt: date(row, "createdAt") }).returning({ id: words.id });
           mapped = created.id; wordsByKey.set(key, mapped); report.added.words++;
         } else report.skipped.words++;
         wordMap.set(id, mapped);

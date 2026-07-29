@@ -6,8 +6,9 @@ import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
+import VerbIpa from "@/components/VerbIpa";
 
-type Word = { id: number; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null };
+type Word = { id: number; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; ipaV1?: string | null; ipaV2?: string | null; ipaV3?: string | null };
 type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
 
 function shuffle<T>(items: T[]) {
@@ -204,7 +205,7 @@ export default function ListenPage() {
         <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Từ sau →</span>
         <div className={`mx-auto flex h-24 w-24 items-center justify-center rounded-full text-4xl ${playing ? "animate-pulse bg-goldpale" : "bg-line/50"}`} aria-hidden="true">{playing ? "🔊" : "⏸"}</div>
         <div className="mt-6 font-serif text-3xl font-bold">{set.type === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}</div>
-        {word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
+        {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
         <div className="mt-4 text-base text-muted">{word.meaning}</div>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button className={`${cx.btn} ${cx.btnGhost}`} disabled={index === 0} onClick={() => setIndex((current) => Math.max(0, current - 1))}>◀ Từ trước</button>

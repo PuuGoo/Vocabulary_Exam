@@ -5,13 +5,16 @@ import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
 
-type SetSummary = { id: number; name: string; type: string; count: number; classId: number | null; className: string | null };
+type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
   id: number;
   meaning: string;
   v1?: string | null;
   v2?: string | null;
   v3?: string | null;
+  ipaV1?: string | null;
+  ipaV2?: string | null;
+  ipaV3?: string | null;
   term?: string | null;
   example?: string | null;
   wtype?: string | null;
@@ -37,15 +40,17 @@ export default function AdminSetsPage() {
   const [creatingSet, setCreatingSet] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [newName, setNewName] = useState("");
+  const [newCategory, setNewCategory] = useState("");
   const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb">("ielts_vocab");
   const [newClassId, setNewClassId] = useState<string>("");
   const [detail, setDetail] = useState<SetDetail | null>(null);
   const [editSetName, setEditSetName] = useState("");
+  const [editCategory, setEditCategory] = useState("");
   const [savingSetName, setSavingSetName] = useState(false);
   const [showAddWord, setShowAddWord] = useState(false);
-  const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
+  const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
   const [editingWordId, setEditingWordId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
+  const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
   const [fetchingIpaId, setFetchingIpaId] = useState<number | null>(null);
   const [bulkIpaLoading, setBulkIpaLoading] = useState(false);
   const [savingClass, setSavingClass] = useState(false);
@@ -56,7 +61,7 @@ export default function AdminSetsPage() {
     const query = normalizeSearch(searchQuery);
     if (!query) return sets;
     return sets.filter((set) =>
-      normalizeSearch(`${set.name} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query)
+      normalizeSearch(`${set.name} ${set.category || ""} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query)
     );
   }, [sets, searchQuery]);
 
@@ -84,7 +89,7 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/sets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), type: newType, classId: newClassId ? Number(newClassId) : null }),
+        body: JSON.stringify({ name: newName.trim(), category: newCategory.trim() || null, type: newType, classId: newClassId ? Number(newClassId) : null }),
       });
       if (!res.ok) return toast("Không thể tạo bộ từ vựng.");
       toast("Đã tạo bộ từ vựng!");
@@ -100,6 +105,7 @@ export default function AdminSetsPage() {
   function closeNewForm() {
     setShowNewForm(false);
     setNewName("");
+    setNewCategory("");
     setNewType("ielts_vocab");
     setNewClassId("");
   }
@@ -149,6 +155,7 @@ export default function AdminSetsPage() {
       const data = await res.json();
       setDetail(data.set);
       setEditSetName(data.set.name);
+      setEditCategory(data.set.category || "");
       setShowAddWord(false);
       setEditingWordId(null);
     } catch {
@@ -162,7 +169,7 @@ export default function AdminSetsPage() {
     if (!detail) return;
     const isVerb = detail.type === "irregular_verb";
     const body = isVerb
-      ? { meaning: wForm.meaning, v1: wForm.v1, v2: wForm.v2, v3: wForm.v3, ipa: wForm.ipa }
+      ? { meaning: wForm.meaning, v1: wForm.v1, v2: wForm.v2, v3: wForm.v3, ipaV1: wForm.ipaV1, ipaV2: wForm.ipaV2, ipaV3: wForm.ipaV3 }
       : { term: wForm.term, meaning: wForm.meaning, example: wForm.example, wtype: wForm.wtype, ipa: wForm.ipa };
     const res = await fetch(`/api/admin/sets/${detail.id}/words`, {
       method: "POST",
@@ -174,7 +181,7 @@ export default function AdminSetsPage() {
       return toast(err.error || "Không thể thêm từ.");
     }
     toast("Đã thêm từ.");
-    setWForm({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
+    setWForm({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
     setShowAddWord(false);
     openDetail(detail.id);
     loadSets();
@@ -203,6 +210,9 @@ export default function AdminSetsPage() {
       v1: w.v1 || "",
       v2: w.v2 || "",
       v3: w.v3 || "",
+      ipaV1: w.ipaV1 || "",
+      ipaV2: w.ipaV2 || "",
+      ipaV3: w.ipaV3 || "",
       term: w.term || "",
       example: w.example || "",
       wtype: w.wtype || "",
@@ -248,6 +258,22 @@ export default function AdminSetsPage() {
     }
   }
 
+  async function saveCategory() {
+    if (!detail) return;
+    const category = editCategory.trim();
+    const res = await fetch(`/api/sets/${detail.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category: category || null }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(data.error || "Không thể cập nhật danh mục.");
+    setDetail((current) => current ? { ...current, category: data.set?.category || null } : current);
+    setEditCategory(data.set?.category || "");
+    await loadSets();
+    toast(category ? `Đã chuyển bộ từ vào danh mục “${category}”.` : "Đã bỏ bộ từ khỏi danh mục.");
+  }
+
   async function fetchIpaForWord(wordId: number) {
     setFetchingIpaId(wordId);
     const res = await fetch(`/api/admin/words/${wordId}/fetch-ipa`, { method: "POST" });
@@ -281,7 +307,7 @@ export default function AdminSetsPage() {
     if (!detail || editingWordId === null) return;
     const isVerb = detail.type === "irregular_verb";
     const body = isVerb
-      ? { meaning: editForm.meaning, v1: editForm.v1, v2: editForm.v2, v3: editForm.v3, ipa: editForm.ipa }
+      ? { meaning: editForm.meaning, v1: editForm.v1, v2: editForm.v2, v3: editForm.v3, ipaV1: editForm.ipaV1, ipaV2: editForm.ipaV2, ipaV3: editForm.ipaV3 }
       : { term: editForm.term, meaning: editForm.meaning, example: editForm.example, wtype: editForm.wtype, ipa: editForm.ipa };
     const res = await fetch(`/api/admin/words/${editingWordId}`, {
       method: "PATCH",
@@ -335,6 +361,17 @@ export default function AdminSetsPage() {
             }}
             autoFocus
           />
+          <label className={cx.label}>Danh mục / thư mục</label>
+          <input
+            className={cx.input}
+            list="set-category-options"
+            placeholder="VD: Vocabulary, Irregular Verbs, Unit 1"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+          />
+          <datalist id="set-category-options">
+            {Array.from(new Set((sets || []).map((set) => set.category).filter(Boolean))).map((item) => <option key={item!} value={item!} />)}
+          </datalist>
           <label className={cx.label}>Loại bài kiểm tra</label>
           <select
             className={cx.input}
@@ -383,6 +420,7 @@ export default function AdminSetsPage() {
               <div className="text-[0.78rem] text-muted mt-0.5">
                 {s.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {s.count} mục ·{" "}
                 {s.className ? <span className={cx.badgeGold}>Lớp: {s.className}</span> : <span className={cx.badgeBlue}>Công khai</span>}
+                {s.category && <span className="ml-2 rounded-full bg-[#F0EDFF] px-2.5 py-0.5 text-[0.7rem] font-semibold text-[#6550DB]">📁 {s.category}</span>}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -492,6 +530,25 @@ export default function AdminSetsPage() {
               </div>
             </div>
           </div>
+          <div className="mb-4 max-w-xl">
+            <label className={cx.label}>Danh mục / thư mục</label>
+            <div className="flex gap-2">
+              <input
+                className={`${cx.input} !mb-0`}
+                list="edit-category-options"
+                placeholder="Không có danh mục"
+                value={editCategory}
+                onChange={(e) => setEditCategory(e.target.value)}
+              />
+              <datalist id="edit-category-options">
+                {Array.from(new Set((sets || []).map((set) => set.category).filter(Boolean))).map((item) => <option key={item!} value={item!} />)}
+              </datalist>
+              <button className={`${cx.btn} ${cx.btnGhost} shrink-0`} disabled={editCategory.trim() === (detail.category || "")} onClick={saveCategory}>
+                Lưu danh mục
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs text-muted">Các bộ cùng tên danh mục sẽ được gom vào một thư mục trên trang học tập.</p>
+          </div>
           <div className="flex gap-2.5 mb-3 flex-wrap">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
@@ -513,7 +570,7 @@ export default function AdminSetsPage() {
               closeOnBackdrop={false}
               onClose={() => {
                 setShowAddWord(false);
-                setWForm({ meaning: "", v1: "", v2: "", v3: "", term: "", example: "", wtype: "", ipa: "" });
+                setWForm({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -535,10 +592,10 @@ export default function AdminSetsPage() {
                       <label className={cx.label}>V3</label>
                       <input className={cx.input} value={wForm.v3} onChange={(e) => setWForm({ ...wForm, v3: e.target.value })} />
                     </div>
-                    <div>
-                      <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
-                      <input className={cx.input} placeholder="/əˈraɪz/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
-                    </div>
+                    {(["ipaV1", "ipaV2", "ipaV3"] as const).map((field, index) => <div key={field}>
+                      <label className={cx.label}>Phiên âm V{index + 1} (không bắt buộc)</label>
+                      <input className={cx.input} placeholder="/.../" value={wForm[field]} onChange={(e) => setWForm({ ...wForm, [field]: e.target.value })} />
+                    </div>)}
                   </>
                 ) : (
                   <>
@@ -622,7 +679,17 @@ export default function AdminSetsPage() {
                       </>
                     )}
                     <td className={cx.td}>
-                      {w.ipa ? (
+                      {detail.type === "irregular_verb" ? (w.ipaV1 || w.ipaV2 || w.ipaV3) ? (
+                        <div className="space-y-1 text-xs text-golddark"><div>V1 {w.ipaV1 || "—"}</div><div>V2 {w.ipaV2 || "—"}</div><div>V3 {w.ipaV3 || "—"}</div></div>
+                      ) : (
+                        <button
+                          className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`}
+                          disabled={fetchingIpaId === w.id}
+                          onClick={() => fetchIpaForWord(w.id)}
+                        >
+                          {fetchingIpaId === w.id ? "..." : "🔤 Lấy"}
+                        </button>
+                      ) : w.ipa ? (
                         <span className="text-golddark">{w.ipa}</span>
                       ) : (
                         <button
@@ -672,10 +739,10 @@ export default function AdminSetsPage() {
                       <label className={cx.label}>V3</label>
                       <input className={`${cx.input} !mb-0`} value={editForm.v3} onChange={(e) => setEditForm({ ...editForm, v3: e.target.value })} />
                     </div>
-                    <div>
-                      <label className={cx.label}>Phiên âm IPA</label>
-                      <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
-                    </div>
+                    {(["ipaV1", "ipaV2", "ipaV3"] as const).map((field, index) => <div key={field}>
+                      <label className={cx.label}>Phiên âm V{index + 1}</label>
+                      <input className={`${cx.input} !mb-0`} value={editForm[field]} onChange={(e) => setEditForm({ ...editForm, [field]: e.target.value })} />
+                    </div>)}
                   </>
                 ) : (
                   <>

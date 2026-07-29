@@ -97,7 +97,27 @@ export default function PomodoroTimer() {
       const next = nextPomodoroPhase(current.phase, current.completedFocus);
       const focusFinished = current.phase === "focus";
       const message = focusFinished ? `Hoàn thành Pomodoro! Đến giờ ${next.phase === "long_break" ? "nghỉ dài" : "nghỉ ngắn"}.` : "Hết giờ nghỉ. Sẵn sàng tập trung trở lại!";
-      window.setTimeout(() => { if (current.soundEnabled) startAlarm(); toast(message); if (typeof Notification !== "undefined" && Notification.permission === "granted") new Notification("IELTS Vocab · Pomodoro", { body: message }); }, 0);
+      window.setTimeout(() => {
+        setOpen(true);
+        if (current.soundEnabled) startAlarm();
+        toast(message);
+        if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+          const targetUrl = window.location.href;
+          const notification = new Notification("Lexora · Pomodoro", {
+            body: message,
+            icon: "/icons/lexora-192.svg",
+            tag: "lexora-pomodoro",
+            requireInteraction: true,
+            data: { url: targetUrl },
+          });
+          notification.onclick = () => {
+            notification.close();
+            window.focus();
+            if (window.location.href !== targetUrl) window.location.href = targetUrl;
+            setOpen(true);
+          };
+        }
+      }, 0);
       return { ...current, phase: next.phase, completedFocus: next.completedFocus, todayCount: current.todayCount + (focusFinished ? 1 : 0), remaining: duration(next.phase, current.settings), running: false, endAt: null };
     });
   }

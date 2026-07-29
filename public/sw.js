@@ -19,3 +19,15 @@ self.addEventListener("fetch", (event) => {
     return response;
   }).catch(() => caches.match(event.request)));
 });
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = event.notification.data?.url || "/";
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    const target = clients.find((client) => client.url === targetUrl) || clients[0];
+    if (target) {
+      if ("navigate" in target && target.url !== targetUrl) void target.navigate(targetUrl);
+      return target.focus();
+    }
+    return self.clients.openWindow(targetUrl);
+  }));
+});

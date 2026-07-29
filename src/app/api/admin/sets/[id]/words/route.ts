@@ -11,7 +11,9 @@ const verbSchema = z.object({
   v1: z.string().trim().min(1),
   v2: z.string().trim().min(1),
   v3: z.string().trim().min(1),
-  ipa: z.string().trim().optional(),
+  ipaV1: z.string().trim().optional(),
+  ipaV2: z.string().trim().optional(),
+  ipaV3: z.string().trim().optional(),
 });
 const vocabSchema = z.object({
   term: z.string().trim().min(1),
@@ -43,7 +45,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         v1: normalizeText(parsed.data.v1),
         v2: normalizeText(parsed.data.v2),
         v3: normalizeText(parsed.data.v3),
-        ipa: parsed.data.ipa ? normalizeText(parsed.data.ipa) : null,
+        ipaV1: parsed.data.ipaV1 ? normalizeText(parsed.data.ipaV1) : null,
+        ipaV2: parsed.data.ipaV2 ? normalizeText(parsed.data.ipaV2) : null,
+        ipaV3: parsed.data.ipaV3 ? normalizeText(parsed.data.ipaV3) : null,
       })
       .returning();
     return NextResponse.json({ word: w });

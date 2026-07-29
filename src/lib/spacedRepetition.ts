@@ -1,4 +1,4 @@
-export const REVIEW_INTERVALS = [1, 3, 7, 14, 30, 60] as const;
+export const REVIEW_INTERVALS = [1, 3, 7, 14, 28] as const;
 
 export type SpacedProgress = {
   reviewStreak: number;

@@ -61,6 +61,7 @@ export const classMembers = pgTable(
 export const vocabSets = pgTable("vocab_sets", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
+  category: varchar("category", { length: 128 }),
   type: varchar("type", { length: 32 }).notNull(), // 'irregular_verb' | 'ielts_vocab'
   classId: integer("class_id").references(() => classes.id, { onDelete: "set null" }), // null = public, visible to all students
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -77,6 +78,9 @@ export const words = pgTable("words", {
   v1: text("v1"),
   v2: text("v2"),
   v3: text("v3"),
+  ipaV1: varchar("ipa_v1", { length: 128 }),
+  ipaV2: varchar("ipa_v2", { length: 128 }),
+  ipaV3: varchar("ipa_v3", { length: 128 }),
   // ielts_vocab fields
   term: text("term"),
   example: text("example"),

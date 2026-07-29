@@ -2,7 +2,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function feynmanIntervalDays(confidence: number, previousReviews: number) {
   if (confidence <= 1) return 1;
-  const intervals = confidence === 2 ? [3, 7, 14, 30] : [7, 14, 30, 60];
+  const intervals = confidence === 2 ? [3, 7, 14, 28] : [7, 14, 28];
   return intervals[Math.min(Math.max(0, previousReviews), intervals.length - 1)];
 }
 
