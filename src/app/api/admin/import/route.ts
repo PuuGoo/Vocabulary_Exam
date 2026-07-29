@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { db } from "@/db";
-import { vocabSets, words } from "@/db/schema";
+import { vocabCategories, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 
@@ -67,6 +67,9 @@ export async function POST(req: NextRequest) {
   if (target === "__new_vocab" || target === "__new_verb") {
     setType = target === "__new_verb" ? "irregular_verb" : "ielts_vocab";
     const name = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
+    if (category) {
+      await db.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
+    }
     const [set] = await db.insert(vocabSets).values({ name, category, type: setType, classId, createdBy: session.userId }).returning();
     setId = set.id;
   } else {

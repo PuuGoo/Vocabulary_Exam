@@ -2,7 +2,7 @@ export const BACKUP_FORMAT = "lexora-backup";
 export const BACKUP_VERSION = 1;
 
 export const BACKUP_COLLECTIONS = [
-  "users", "classes", "classMembers", "vocabSets", "words", "attempts",
+  "users", "classes", "classMembers", "vocabCategories", "vocabSets", "words", "attempts",
   "assignments", "assignmentExtensions", "assignmentSubmissions", "teachBackNotes",
   "mistakes", "wordProgress", "wordBookmarks", "studySessions", "learningGoals",
   "dailyActivities",
@@ -31,6 +31,12 @@ export function parseBackupDocument(value: unknown): BackupDocument {
   const data = {} as BackupData;
   for (const collection of BACKUP_COLLECTIONS) {
     const rows = rawData[collection];
+    // Category records were added without bumping the format version so older
+    // backups remain restorable; their categories are still present on vocabSets.
+    if (collection === "vocabCategories" && rows === undefined) {
+      data[collection] = [];
+      continue;
+    }
     if (!Array.isArray(rows) || rows.some((row) => !row || typeof row !== "object" || Array.isArray(row))) {
       throw new Error(`Nhóm dữ liệu ${collection} không hợp lệ.`);
     }

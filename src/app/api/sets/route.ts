@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, eq, or, isNull, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabSets, words, classMembers, classes } from "@/db/schema";
+import { vocabCategories, vocabSets, words, classMembers, classes } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { z } from "zod";
@@ -59,15 +59,18 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
-  const [set] = await db
-    .insert(vocabSets)
-    .values({
+  const category = parsed.data.category ? normalizeText(parsed.data.category) : null;
+  const [set] = await db.transaction(async (tx) => {
+    if (category) {
+      await tx.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
+    }
+    return tx.insert(vocabSets).values({
       name: normalizeText(parsed.data.name),
-      category: parsed.data.category ? normalizeText(parsed.data.category) : null,
+      category,
       type: parsed.data.type,
       classId: parsed.data.classId ?? null,
       createdBy: session.userId,
-    })
-    .returning();
+    }).returning();
+  });
   return NextResponse.json({ set });
 }

@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 
 type SetSummary = { id: number; name: string; type: string; count: number; category?: string | null };
 type ClassOpt = { id: number; name: string };
+type CategoryOpt = { id: number; name: string };
 
 export default function AdminImportPage() {
   const [sets, setSets] = useState<SetSummary[]>([]);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<CategoryOpt[]>([]);
   const [target, setTarget] = useState("__new_vocab");
   const [newSetName, setNewSetName] = useState("");
   const [category, setCategory] = useState("");
@@ -27,6 +30,9 @@ export default function AdminImportPage() {
     fetch("/api/admin/classes")
       .then((r) => (r.ok ? r.json() : { classes: [] }))
       .then((d) => setClassesOpt((d.classes || []).map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))));
+    fetch("/api/admin/categories")
+      .then((r) => (r.ok ? r.json() : { categories: [] }))
+      .then((d) => setCategoryOptions(d.categories || []));
   }, []);
 
   async function handlePickFile(f: File) {
@@ -103,17 +109,17 @@ export default function AdminImportPage() {
             value={newSetName}
             onChange={(e) => setNewSetName(e.target.value)}
           />
-          <label className={cx.label}>Danh mục / thư mục</label>
-          <input
-            className={cx.input}
-            list="import-category-options"
-            placeholder="VD: Vocabulary, Irregular Verbs, Unit 1"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          />
-          <datalist id="import-category-options">
-            {Array.from(new Set(sets.map((set) => set.category).filter(Boolean))).map((item) => <option key={item!} value={item!} />)}
-          </datalist>
+          <div className="flex items-end gap-2">
+            <label className="min-w-0 flex-1">
+              <span className={cx.label}>Danh mục / thư mục</span>
+              <select className={`${cx.input} !mb-0`} value={category} onChange={(e) => setCategory(e.target.value)}>
+                <option value="">Chưa phân loại</option>
+                {categoryOptions.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+              </select>
+            </label>
+            <Link href="/admin/sets" className={`${cx.btn} ${cx.btnGhost} shrink-0`}>Quản lý</Link>
+          </div>
+          <p className="mb-3 mt-1.5 text-xs text-muted">Danh mục mới được tạo và đổi tên tại trang Bộ từ vựng.</p>
           <label className={cx.label}>Phạm vi hiển thị</label>
           <select className={cx.input} value={classId} onChange={(e) => setClassId(e.target.value)}>
             <option value="">Công khai — mọi học sinh đều thấy</option>
