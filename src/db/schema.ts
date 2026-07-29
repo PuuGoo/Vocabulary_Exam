@@ -58,6 +58,19 @@ export const classMembers = pgTable(
   })
 );
 
+export const vocabCategories = pgTable(
+  "vocab_categories",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    nameIdx: uniqueIndex("vocab_categories_name_idx").on(table.name),
+  })
+);
+
 export const vocabSets = pgTable("vocab_sets", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),

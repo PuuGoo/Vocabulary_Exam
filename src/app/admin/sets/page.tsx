@@ -22,6 +22,7 @@ type Word = {
 };
 type SetDetail = SetSummary & { words: Word[] };
 type ClassOpt = { id: number; name: string };
+type CategorySummary = { id: number; name: string; count: number };
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
 
@@ -38,6 +39,12 @@ function normalizeSearch(value: string) {
 export default function AdminSetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<CategorySummary[]>([]);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [managerNewName, setManagerNewName] = useState("");
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState("");
+  const [categorySubmitting, setCategorySubmitting] = useState(false);
   const [showNewForm, setShowNewForm] = useState(false);
   const [creatingSet, setCreatingSet] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -91,11 +98,87 @@ export default function AdminSetsPage() {
     const data = await res.json();
     setClassesOpt((data.classes || []).map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })));
   }
+  async function loadCategories() {
+    const res = await fetch("/api/admin/categories");
+    if (!res.ok) return;
+    const data = await res.json();
+    setCategoryOptions(data.categories || []);
+  }
 
   useEffect(() => {
     loadSets();
     loadClasses();
+    loadCategories();
   }, []);
+
+  async function createCategory() {
+    const name = managerNewName.trim();
+    if (!name) return toast("Vui lòng nhập tên danh mục.");
+    setCategorySubmitting(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể tạo danh mục.");
+      setManagerNewName("");
+      await loadCategories();
+      toast(`Đã tạo danh mục “${data.category.name}”.`);
+    } catch {
+      toast("Không thể kết nối để tạo danh mục.");
+    } finally {
+      setCategorySubmitting(false);
+    }
+  }
+
+  async function renameCategory(id: number) {
+    const name = editingCategoryName.trim();
+    if (!name) return toast("Tên danh mục không được để trống.");
+    setCategorySubmitting(true);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể đổi tên danh mục.");
+      if (selectedCategory === data.category.oldName) setSelectedCategory(data.category.name);
+      if (newCategory === data.category.oldName) setNewCategory(data.category.name);
+      if (editCategory === data.category.oldName) setEditCategory(data.category.name);
+      setEditingCategoryId(null);
+      await Promise.all([loadCategories(), loadSets()]);
+      toast(`Đã đổi tên thành “${data.category.name}” cho tất cả bộ từ liên quan.`);
+    } catch {
+      toast("Không thể kết nối để đổi tên danh mục.");
+    } finally {
+      setCategorySubmitting(false);
+    }
+  }
+
+  async function deleteCategory(category: CategorySummary) {
+    const detail = category.count
+      ? `${category.count} bộ từ trong danh mục sẽ được chuyển về “Chưa phân loại”.`
+      : "Danh mục này hiện chưa có bộ từ.";
+    if (!confirm(`Xóa danh mục “${category.name}”? ${detail}`)) return;
+    setCategorySubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/categories?id=${category.id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể xóa danh mục.");
+      if (selectedCategory === category.name) setSelectedCategory(ALL_CATEGORIES);
+      if (newCategory === category.name) setNewCategory("");
+      if (editCategory === category.name) setEditCategory("");
+      await Promise.all([loadCategories(), loadSets()]);
+      toast(data.movedSets ? `Đã xóa và chuyển ${data.movedSets} bộ từ về “Chưa phân loại”.` : "Đã xóa danh mục.");
+    } catch {
+      toast("Không thể kết nối để xóa danh mục.");
+    } finally {
+      setCategorySubmitting(false);
+    }
+  }
 
   async function createSet() {
     if (!newName.trim()) return toast("Vui lòng nhập tên bộ từ vựng.");
@@ -109,7 +192,7 @@ export default function AdminSetsPage() {
       if (!res.ok) return toast("Không thể tạo bộ từ vựng.");
       toast("Đã tạo bộ từ vựng!");
       closeNewForm();
-      loadSets();
+      await Promise.all([loadSets(), loadCategories()]);
     } catch {
       toast("Không thể kết nối để tạo bộ từ vựng.");
     } finally {
@@ -285,7 +368,7 @@ export default function AdminSetsPage() {
     if (!res.ok) return toast(data.error || "Không thể cập nhật danh mục.");
     setDetail((current) => current ? { ...current, category: data.set?.category || null } : current);
     setEditCategory(data.set?.category || "");
-    await loadSets();
+    await Promise.all([loadSets(), loadCategories()]);
     toast(category ? `Đã chuyển bộ từ vào danh mục “${category}”.` : "Đã bỏ bộ từ khỏi danh mục.");
   }
 
@@ -358,9 +441,14 @@ export default function AdminSetsPage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-        <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowNewForm(true)}>
-          + Tạo bộ từ vựng mới
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShowCategoryManager(true)}>
+            📁 Quản lý danh mục
+          </button>
+          <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowNewForm(true)}>
+            + Tạo bộ từ vựng mới
+          </button>
+        </div>
       </div>
       {sets && sets.length > 0 && categories.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-2" aria-label="Lọc bộ từ theo danh mục">
@@ -384,17 +472,17 @@ export default function AdminSetsPage() {
             }}
             autoFocus
           />
-          <label className={cx.label}>Danh mục / thư mục</label>
-          <input
-            className={cx.input}
-            list="set-category-options"
-            placeholder="VD: Vocabulary, Irregular Verbs, Unit 1"
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-          />
-          <datalist id="set-category-options">
-            {Array.from(new Set((sets || []).map((set) => set.category).filter(Boolean))).map((item) => <option key={item!} value={item!} />)}
-          </datalist>
+          <div className="flex items-end gap-2">
+            <label className="min-w-0 flex-1">
+              <span className={cx.label}>Danh mục / thư mục</span>
+              <select className={`${cx.input} !mb-0`} value={newCategory} onChange={(e) => setNewCategory(e.target.value)}>
+                <option value="">Chưa phân loại</option>
+                {categoryOptions.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+              </select>
+            </label>
+            <button type="button" className={`${cx.btn} ${cx.btnGhost} shrink-0`} onClick={() => setShowCategoryManager(true)}>Quản lý</button>
+          </div>
+          <p className="mb-3 mt-1.5 text-xs text-muted">Chọn danh mục có sẵn để tránh tạo tên trùng hoặc sai chính tả.</p>
           <label className={cx.label}>Loại bài kiểm tra</label>
           <select
             className={cx.input}
@@ -420,6 +508,60 @@ export default function AdminSetsPage() {
             <button className={`${cx.btn} ${cx.btnGhost}`} disabled={creatingSet} onClick={closeNewForm}>
               Huỷ
             </button>
+          </div>
+        </Modal>
+      )}
+
+      {showCategoryManager && (
+        <Modal title="Quản lý danh mục bộ từ" onClose={() => { if (!categorySubmitting) { setShowCategoryManager(false); setEditingCategoryId(null); } }} closeOnBackdrop={false}>
+          <p className="mb-4 text-sm leading-6 text-muted">Tạo một lần rồi chọn lại khi thêm bộ từ. Đổi tên sẽ cập nhật đồng loạt; xóa sẽ đưa các bộ từ liên quan về “Chưa phân loại”.</p>
+          <div className="mb-5 flex gap-2">
+            <input
+              className={`${cx.input} !mb-0 min-w-0 flex-1`}
+              placeholder="Tên danh mục mới, ví dụ: Vocabulary"
+              value={managerNewName}
+              onChange={(event) => setManagerNewName(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") void createCategory(); }}
+              maxLength={128}
+              autoFocus
+            />
+            <button className={`${cx.btn} ${cx.btnGold} shrink-0`} disabled={categorySubmitting || !managerNewName.trim()} onClick={() => void createCategory()}>
+              {categorySubmitting ? "Đang lưu..." : "+ Thêm"}
+            </button>
+          </div>
+          <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
+            {categoryOptions.length === 0 ? (
+              <div className={cx.empty}>Chưa có danh mục. Hãy tạo danh mục đầu tiên ở phía trên.</div>
+            ) : categoryOptions.map((category) => (
+              <div key={category.id} className="rounded-[12px] border border-line bg-[#FBFAFE] p-3">
+                {editingCategoryId === category.id ? (
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input
+                      className={`${cx.input} !mb-0 min-w-0 flex-1`}
+                      value={editingCategoryName}
+                      onChange={(event) => setEditingCategoryName(event.target.value)}
+                      onKeyDown={(event) => { if (event.key === "Enter") void renameCategory(category.id); }}
+                      maxLength={128}
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <button className={`${cx.btn} ${cx.btnGold}`} disabled={categorySubmitting || !editingCategoryName.trim() || editingCategoryName.trim() === category.name} onClick={() => void renameCategory(category.id)}>Lưu</button>
+                      <button className={`${cx.btn} ${cx.btnGhost}`} disabled={categorySubmitting} onClick={() => setEditingCategoryId(null)}>Hủy</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#EFECFF]" aria-hidden="true">📁</span>
+                    <div className="min-w-0 flex-1">
+                      <b className="block truncate text-sm">{category.name}</b>
+                      <span className="text-xs text-muted">{category.count} bộ từ</span>
+                    </div>
+                    <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} disabled={categorySubmitting} onClick={() => { setEditingCategoryId(category.id); setEditingCategoryName(category.name); }}>Đổi tên</button>
+                    <button className="min-h-9 rounded-[9px] border border-[#F2D6D6] bg-white px-3 text-xs font-bold text-[#B65353] transition hover:bg-[#FFF5F5]" disabled={categorySubmitting} onClick={() => void deleteCategory(category)}>Xóa</button>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </Modal>
       )}
@@ -556,21 +698,22 @@ export default function AdminSetsPage() {
           <div className="mb-4 max-w-xl">
             <label className={cx.label}>Danh mục / thư mục</label>
             <div className="flex gap-2">
-              <input
+              <select
                 className={`${cx.input} !mb-0`}
-                list="edit-category-options"
-                placeholder="Không có danh mục"
                 value={editCategory}
                 onChange={(e) => setEditCategory(e.target.value)}
-              />
-              <datalist id="edit-category-options">
-                {Array.from(new Set((sets || []).map((set) => set.category).filter(Boolean))).map((item) => <option key={item!} value={item!} />)}
-              </datalist>
+              >
+                <option value="">Chưa phân loại</option>
+                {categoryOptions.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+              </select>
               <button className={`${cx.btn} ${cx.btnGhost} shrink-0`} disabled={editCategory.trim() === (detail.category || "")} onClick={saveCategory}>
                 Lưu danh mục
               </button>
             </div>
-            <p className="mt-1.5 text-xs text-muted">Các bộ cùng tên danh mục sẽ được gom vào một thư mục trên trang học tập.</p>
+            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted">Các bộ cùng danh mục được gom thành một thư mục trên trang học tập.</p>
+              <button type="button" className="text-xs font-bold text-gold hover:underline" onClick={() => setShowCategoryManager(true)}>Quản lý danh mục</button>
+            </div>
           </div>
           <div className="flex gap-2.5 mb-3 flex-wrap">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>

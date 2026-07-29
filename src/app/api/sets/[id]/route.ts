@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { vocabSets, words, wordProgress } from "@/db/schema";
+import { vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 
@@ -55,7 +55,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     ...(parsed.data.category !== undefined ? { category: parsed.data.category ? normalizeText(parsed.data.category) : null } : {}),
   };
 
-  await db.update(vocabSets).set(patch).where(eq(vocabSets.id, setId));
+  await db.transaction(async (tx) => {
+    if (patch.category) {
+      await tx.insert(vocabCategories).values({ name: patch.category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
+    }
+    await tx.update(vocabSets).set(patch).where(eq(vocabSets.id, setId));
+  });
   const updated = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
   return NextResponse.json({ set: updated });
 }

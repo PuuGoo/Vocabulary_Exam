@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import {
   assignmentExtensions, assignments, assignmentSubmissions, attempts, classes, classMembers,
-  dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabSets,
+  dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
   wordBookmarks, wordProgress, words,
 } from "@/db/schema";
 import { getSession } from "@/lib/auth";
@@ -80,6 +80,20 @@ export async function POST(request: Request) {
         classMap.set(id, mapped);
       }
 
+      const existingCategories = await tx.select().from(vocabCategories);
+      const categoriesByName = new Map(existingCategories.map((item) => [item.name.trim().toLocaleLowerCase("vi"), item.id]));
+      for (const row of backup.data.vocabCategories) {
+        const name = text(row, "name").trim();
+        if (!name || categoriesByName.has(name.toLocaleLowerCase("vi"))) { report.skipped.vocabCategories++; continue; }
+        const [created] = await tx.insert(vocabCategories).values({
+          name,
+          createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null,
+          createdAt: date(row, "createdAt"),
+        }).returning({ id: vocabCategories.id });
+        categoriesByName.set(name.toLocaleLowerCase("vi"), created.id);
+        report.added.vocabCategories++;
+      }
+
       const setMap = new Map<number, number>();
       const existingSets = await tx.select().from(vocabSets);
       const setsByKey = new Map(existingSets.map((item) => [setKey(item.name, item.type, item.classId), item.id]));
@@ -89,7 +103,12 @@ export async function POST(request: Request) {
         if (id == null || !name || !type || (oldClassId != null && classId == null)) { report.skipped.vocabSets++; continue; }
         const key = setKey(name, type, classId ?? null); let mapped = setsByKey.get(key);
         if (mapped == null) {
-          const [created] = await tx.insert(vocabSets).values({ name, category: nullableText(row, "category"), type, classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
+          const category = nullableText(row, "category");
+          if (category && !categoriesByName.has(category.trim().toLocaleLowerCase("vi"))) {
+            const [createdCategory] = await tx.insert(vocabCategories).values({ name: category }).returning({ id: vocabCategories.id });
+            categoriesByName.set(category.trim().toLocaleLowerCase("vi"), createdCategory.id);
+          }
+          const [created] = await tx.insert(vocabSets).values({ name, category, type, classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
           mapped = created.id; setsByKey.set(key, mapped); report.added.vocabSets++;
         } else report.skipped.vocabSets++;
         setMap.set(id, mapped);

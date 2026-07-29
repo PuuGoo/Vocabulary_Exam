@@ -9,7 +9,7 @@ const CONFIRMATION = "KHOI PHUC";
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const LABELS: Record<BackupCollection, string> = {
-  users: "Tài khoản", classes: "Lớp học", classMembers: "Thành viên lớp", vocabSets: "Bộ từ",
+  users: "Tài khoản", classes: "Lớp học", classMembers: "Thành viên lớp", vocabCategories: "Danh mục", vocabSets: "Bộ từ",
   words: "Từ vựng", attempts: "Lượt luyện tập", assignments: "Bài tập", assignmentExtensions: "Gia hạn",
   assignmentSubmissions: "Bài nộp", teachBackNotes: "Ghi chú giảng lại", mistakes: "Từ hay sai",
   wordProgress: "Tiến độ từ", wordBookmarks: "Từ đã lưu", studySessions: "Phiên học",
