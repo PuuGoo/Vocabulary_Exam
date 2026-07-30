@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
@@ -8,12 +8,16 @@ import { toast } from "@/components/Toast";
 type SetSummary = { id: number; name: string; type: string; count: number; category?: string | null };
 type ClassOpt = { id: number; name: string };
 type CategoryOpt = { id: number; name: string };
+const ALL_CATEGORIES = "__all__";
+const UNCATEGORIZED = "__uncategorized__";
 
 export default function AdminImportPage() {
   const [sets, setSets] = useState<SetSummary[]>([]);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOpt[]>([]);
   const [target, setTarget] = useState("__new_vocab");
+  const [destinationCategory, setDestinationCategory] = useState(ALL_CATEGORIES);
+  const [destinationSearch, setDestinationSearch] = useState("");
   const [newSetName, setNewSetName] = useState("");
   const [category, setCategory] = useState("");
   const [classId, setClassId] = useState("");
@@ -26,7 +30,16 @@ export default function AdminImportPage() {
   useEffect(() => {
     fetch("/api/sets")
       .then((r) => r.json())
-      .then((d) => setSets(d.sets || []));
+      .then((d) => {
+        const loadedSets: SetSummary[] = d.sets || [];
+        setSets(loadedSets);
+        const requestedTarget = new URLSearchParams(window.location.search).get("target");
+        const requestedSet = loadedSets.find((item) => String(item.id) === requestedTarget);
+        if (requestedSet) {
+          setTarget(String(requestedSet.id));
+          setDestinationCategory(requestedSet.category?.trim() || UNCATEGORIZED);
+        }
+      });
     fetch("/api/admin/classes")
       .then((r) => (r.ok ? r.json() : { classes: [] }))
       .then((d) => setClassesOpt((d.classes || []).map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))));
@@ -34,6 +47,36 @@ export default function AdminImportPage() {
       .then((r) => (r.ok ? r.json() : { categories: [] }))
       .then((d) => setCategoryOptions(d.categories || []));
   }, []);
+
+  const destinationCategories = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const set of sets) {
+      const key = set.category?.trim() || UNCATEGORIZED;
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return Array.from(counts.entries()).sort(([left], [right]) => {
+      if (left === UNCATEGORIZED) return 1;
+      if (right === UNCATEGORIZED) return -1;
+      return left.localeCompare(right, "vi");
+    });
+  }, [sets]);
+
+  const filteredDestinationSets = useMemo(() => {
+    const query = destinationSearch.trim().toLocaleLowerCase("vi");
+    return sets.filter((set) => {
+      const categoryKey = set.category?.trim() || UNCATEGORIZED;
+      const categoryMatches = destinationCategory === ALL_CATEGORIES || destinationCategory === categoryKey;
+      const searchMatches = !query || `${set.name} ${set.category || ""}`.toLocaleLowerCase("vi").includes(query);
+      return categoryMatches && searchMatches;
+    });
+  }, [destinationCategory, destinationSearch, sets]);
+
+  const destinationSets = useMemo(() => {
+    const selected = sets.find((set) => String(set.id) === target);
+    return selected && !filteredDestinationSets.some((set) => set.id === selected.id)
+      ? [selected, ...filteredDestinationSets]
+      : filteredDestinationSets;
+  }, [filteredDestinationSets, sets, target]);
 
   async function handlePickFile(f: File) {
     setFile(f);
@@ -89,16 +132,39 @@ export default function AdminImportPage() {
         Tải lên file .csv hoặc .xlsx để nhập nhanh từ vựng vào một bộ mới hoặc bộ đã có.
       </div>
 
-      <label className={cx.label}>Chọn đích nhập dữ liệu</label>
+      <div className="mb-3 grid gap-3 rounded-[14px] border border-line bg-[#FBFAFE] p-3 sm:grid-cols-2">
+        <label>
+          <span className={cx.label}>Lọc theo danh mục</span>
+          <select className={`${cx.input} !mb-0`} value={destinationCategory} onChange={(event) => setDestinationCategory(event.target.value)}>
+            <option value={ALL_CATEGORIES}>Tất cả danh mục ({sets.length})</option>
+            {destinationCategories.map(([name, count]) => (
+              <option key={name} value={name}>{name === UNCATEGORIZED ? "Chưa phân loại" : name} ({count})</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className={cx.label}>Tìm bộ từ</span>
+          <input className={`${cx.input} !mb-0`} type="search" placeholder="Nhập tên bộ từ..." value={destinationSearch} onChange={(event) => setDestinationSearch(event.target.value)} />
+        </label>
+      </div>
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <label className={cx.label}>Chọn đích nhập dữ liệu</label>
+        <span className="text-xs font-semibold text-muted">{filteredDestinationSets.length}/{sets.length} bộ phù hợp</span>
+      </div>
       <select className={cx.input} value={target} onChange={(e) => setTarget(e.target.value)}>
         <option value="__new_vocab">+ Tạo bộ mới — Từ vựng IELTS</option>
         <option value="__new_verb">+ Tạo bộ mới — Động từ bất quy tắc</option>
-        {sets.map((s) => (
+        {destinationSets.map((s) => (
           <option key={s.id} value={s.id}>
-            Thêm vào: {s.name}
+            Thêm vào: {s.name}{s.category ? ` · ${s.category}` : " · Chưa phân loại"}
           </option>
         ))}
       </select>
+      {sets.length > 0 && filteredDestinationSets.length === 0 && (
+        <div className="mb-3 rounded-[10px] border border-[#E4DFFC] bg-[#F7F5FF] px-3 py-2.5 text-xs text-muted">
+          Không có bộ từ khớp bộ lọc. Hãy đổi danh mục hoặc xóa từ khóa tìm kiếm.
+        </div>
+      )}
 
       {(target === "__new_vocab" || target === "__new_verb") && (
         <>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
@@ -719,6 +720,9 @@ export default function AdminSetsPage() {
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
             </button>
+            <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}`}>
+              ↑ Nhập CSV / Excel vào bộ này
+            </Link>
             <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(false)}>
               {bulkIpaLoading ? "Đang lấy phiên âm..." : "🔤 Lấy phiên âm còn thiếu (Gemini)"}
             </button>
