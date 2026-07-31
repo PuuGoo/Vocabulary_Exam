@@ -7,7 +7,7 @@ import SpeakButton from "@/components/SpeakButton";
 import StudyModeNav from "@/components/StudyModeNav";
 import VerbIpa from "@/components/VerbIpa";
 import { toast } from "@/components/Toast";
-import { groupIndexForQuestion, circleStatus } from "@/lib/quizGroups";
+import { groupIndexForQuestion, circleStatus, wordIdsNeedingRetry } from "@/lib/quizGroups";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
 type Word = {
@@ -80,6 +80,7 @@ function QuizPlayerInner() {
 
   // grading, keyed by group index so a group's graded state survives navigating away and back
   const [checkedGroups, setCheckedGroups] = useState<Record<number, { score: number; total: number }>>({});
+  const [retryWordIdsByGroup, setRetryWordIdsByGroup] = useState<Record<number, number[]>>({});
   const [grading, setGrading] = useState(false);
 
   // timed mode grading (whole-set, single submit)
@@ -136,13 +137,23 @@ function QuizPlayerInner() {
   const start = group * GROUP_SIZE;
   const end = set ? Math.min(start + GROUP_SIZE, set.words.length) : 0;
   const isVerb = set?.type === "irregular_verb";
-  const effectiveChecked = timedMode ? timedSubmitted : checkedGroups[group] !== undefined;
+  const retryWordIds = retryWordIdsByGroup[group];
+  const retryActive = retryWordIds !== undefined;
+  const effectiveChecked = timedMode ? timedSubmitted : checkedGroups[group] !== undefined && !retryActive;
   const gradedGroups = Object.values(checkedGroups);
-  const allGroupsGraded = !timedMode && totalGroups > 0 && gradedGroups.length === totalGroups;
+  const allGroupsGraded = !timedMode && totalGroups > 0 && gradedGroups.length === totalGroups && Object.keys(retryWordIdsByGroup).length === 0;
   const overallScore = gradedGroups.reduce((sum, result) => sum + result.score, 0);
   const overallTotal = gradedGroups.reduce((sum, result) => sum + result.total, 0);
 
-  const currentWords = useMemo(() => (set ? set.words.slice(start, end) : []), [set, start, end]);
+  const groupWords = useMemo(() => (set ? set.words.slice(start, end) : []), [set, start, end]);
+  const currentWords = useMemo(
+    () => retryWordIds ? groupWords.filter((word) => retryWordIds.includes(word.id)) : groupWords,
+    [groupWords, retryWordIds]
+  );
+  const questionNumberByWordId = useMemo(
+    () => new Map((set?.words || []).map((word, index) => [word.id, index + 1])),
+    [set]
+  );
   const answeredInGroup = useMemo(
     () => currentWords.filter((word) => Object.values(answers[word.id] || {}).some((value) => value.trim() !== "")).length,
     [currentWords, answers]
@@ -157,9 +168,10 @@ function QuizPlayerInner() {
       const answer = answers[word.id];
       const answered = answer && Object.values(answer).some((value) => value.trim() !== "");
       if (!answered) return false;
-      return timedMode || checkedGroups[groupIndexForQuestion(index + 1, GROUP_SIZE)] === undefined;
+      const answerGroup = groupIndexForQuestion(index + 1, GROUP_SIZE);
+      return timedMode || checkedGroups[answerGroup] === undefined || retryWordIdsByGroup[answerGroup] !== undefined;
     });
-  }, [set, answers, checkedGroups, timedMode, timedSubmitted]);
+  }, [set, answers, checkedGroups, retryWordIdsByGroup, timedMode, timedSubmitted]);
 
   const leaveWarning = "Bạn còn câu đã nhập nhưng chưa nộp. Rời trang sẽ làm mất các câu trả lời này. Bạn vẫn muốn rời đi?";
   useUnsavedChangesWarning(hasUnsubmittedAnswers, leaveWarning);
@@ -234,9 +246,21 @@ function QuizPlayerInner() {
       delete next[group];
       return next;
     });
+    setRetryWordIdsByGroup((prev) => {
+      const next = { ...prev };
+      delete next[group];
+      return next;
+    });
   }
 
   function goGroup(g: number, focusWordId?: number) {
+    if (focusWordId != null && retryWordIdsByGroup[g] && !retryWordIdsByGroup[g].includes(focusWordId)) {
+      setRetryWordIdsByGroup((prev) => {
+        const next = { ...prev };
+        delete next[g];
+        return next;
+      });
+    }
     setGroup(g);
     setPendingFocus(focusWordId ?? "first");
   }
@@ -271,6 +295,31 @@ function QuizPlayerInner() {
     return Boolean(a.term || a.mc);
   }
 
+  const wrongWordIdsInGroup = wordIdsNeedingRetry(groupWords, isWordCorrect);
+  const wrongWordsInGroup = groupWords.filter((word) => wrongWordIdsInGroup.includes(word.id));
+  const supportsWrongOnlyRetry = mode === "fill" || isVerb;
+
+  function retryWrongWords() {
+    const wrongIds = wrongWordIdsInGroup;
+    if (wrongIds.length === 0) return;
+    setAnswers((prev) => {
+      const next = { ...prev };
+      wrongIds.forEach((wordId) => delete next[wordId]);
+      return next;
+    });
+    setRetryWordIdsByGroup((prev) => ({ ...prev, [group]: wrongIds }));
+    setPendingFocus(wrongIds[0] ?? "first");
+  }
+
+  function stopRetryWrongWords() {
+    setRetryWordIdsByGroup((prev) => {
+      const next = { ...prev };
+      delete next[group];
+      return next;
+    });
+    setPendingFocus("first");
+  }
+
   async function clearSolvedMistakes(list: Word[]) {
     const solved = list.filter((w) => isWordCorrect(w) && mistakeIdByWordId[w.id] != null);
     if (solved.length === 0) return;
@@ -282,9 +331,9 @@ function QuizPlayerInner() {
     });
   }
 
-  async function postResult(score: number, total: number, durationSeconds?: number): Promise<boolean> {
+  async function postResult(score: number, total: number, durationSeconds?: number, practicedOverride?: Word[]): Promise<boolean> {
     if (!set) return false;
-    const practicedWords = set.words.slice(timedMode ? 0 : start, timedMode ? set.words.length : end);
+    const practicedWords = practicedOverride ?? set.words.slice(timedMode ? 0 : start, timedMode ? set.words.length : end);
     const wrongWordIds = practicedWords
       .filter((w) => !isWordCorrect(w))
       .map((w) => w.id);
@@ -314,6 +363,7 @@ function QuizPlayerInner() {
   function restartAllGroups() {
     setAnswers({});
     setCheckedGroups({});
+    setRetryWordIdsByGroup({});
     setGroup(0);
     setJumpQuestion("");
     startedAtRef.current = Date.now();
@@ -338,8 +388,25 @@ function QuizPlayerInner() {
         correct += answers[w.id]?.mc === w.meaning ? 1 : 0;
       }
     }
-    setCheckedGroups((prev) => ({ ...prev, [group]: { score: correct, total } }));
-    const saved = await postResult(correct, total);
+    let groupCorrect = 0;
+    let groupTotal = 0;
+    for (const w of groupWords) {
+      if (isVerb) {
+        groupTotal += 3;
+        const a = answers[w.id] || {};
+        groupCorrect += (checkMatch(a.v1, w.v1) ? 1 : 0) + (checkMatch(a.v2, w.v2) ? 1 : 0) + (checkMatch(a.v3, w.v3) ? 1 : 0);
+      } else {
+        groupTotal += 1;
+        groupCorrect += isWordCorrect(w) ? 1 : 0;
+      }
+    }
+    setCheckedGroups((prev) => ({ ...prev, [group]: { score: groupCorrect, total: groupTotal } }));
+    setRetryWordIdsByGroup((prev) => {
+      const next = { ...prev };
+      delete next[group];
+      return next;
+    });
+    const saved = await postResult(correct, total, undefined, currentWords);
     if (!saved) toast("Đã chấm trên màn hình nhưng chưa lưu được vào lịch sử.");
     if (retest || quickMode) {
       try {
@@ -529,6 +596,16 @@ function QuizPlayerInner() {
         </button>
       </div>
 
+      {retryActive && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#E5DFFC] bg-[#F7F5FF] px-4 py-3" role="status">
+          <div>
+            <div className="font-semibold text-golddark">Đang làm lại {currentWords.length} từ sai</div>
+            <div className="mt-0.5 text-xs text-muted">Các câu đã đúng trong nhóm được giữ nguyên và không cần làm lại.</div>
+          </div>
+          <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={stopRetryWrongWords}>Xem lại cả nhóm</button>
+        </div>
+      )}
+
       <div className="mb-4">
         <div className="mb-1.5 flex justify-between text-[0.76rem] text-muted">
           <span>Tiến độ nhóm hiện tại</span>
@@ -545,7 +622,8 @@ function QuizPlayerInner() {
       <div className="flex flex-wrap gap-1.5 justify-center mb-4">
         {set.words.map((w, idx) => {
           const g = groupIndexForQuestion(idx + 1, GROUP_SIZE);
-          const graded = timedMode ? timedSubmitted : checkedGroups[g] !== undefined;
+          const retryingWord = retryWordIdsByGroup[g]?.includes(w.id) ?? false;
+          const graded = timedMode ? timedSubmitted : checkedGroups[g] !== undefined && !retryingWord;
           const status = circleStatus(graded, isWordAnswered(w), graded ? isWordCorrect(w) : false);
           const cls =
             status === "correct"
@@ -583,7 +661,7 @@ function QuizPlayerInner() {
             }}
             className="grid grid-cols-[30px_1fr] gap-2.5 items-start py-3.5 border-b border-dashed border-line last:border-none"
           >
-            <div className="text-muted text-[0.88rem] text-right pt-1">{start + idx + 1}.</div>
+            <div className="text-muted text-[0.88rem] text-right pt-1">{questionNumberByWordId.get(w.id) ?? start + idx + 1}.</div>
             <div>
               {isVerb ? (
                 <>
@@ -708,7 +786,7 @@ function QuizPlayerInner() {
         ))}
       </div>
 
-      {!timedMode && checkedGroups[group] && (
+      {!timedMode && checkedGroups[group] && !retryActive && (
         <div className="flex justify-center my-4">
           <div className="w-[110px] h-[110px] rounded-full border-[3px] border-dashed border-golddark flex flex-col items-center justify-center -rotate-[8deg] text-golddark font-serif text-center leading-tight">
             <div className="text-2xl font-bold">
@@ -721,16 +799,29 @@ function QuizPlayerInner() {
 
       {!timedMode && (
         <div className="flex gap-2.5 justify-center mt-3.5 flex-wrap">
-          <button className={`${cx.btn} ${cx.btnGold}`} disabled={effectiveChecked || grading || answeredInGroup === 0} onClick={grade}>
-            {grading ? "Đang chấm..." : answeredInGroup === 0 ? "Hãy trả lời ít nhất 1 câu" : "Kiểm tra đáp án"}
-          </button>
-          <button
-            className={`${cx.btn} ${cx.btnGhost}`}
-            disabled={answeredInGroup === 0 && checkedGroups[group] === undefined}
-            onClick={resetGroup}
-          >
-            Làm lại nhóm này
-          </button>
+          {effectiveChecked ? (
+            <>
+              {supportsWrongOnlyRetry && wrongWordsInGroup.length > 0 && (
+                <button className={`${cx.btn} ${cx.btnGold}`} onClick={retryWrongWords}>
+                  Làm lại {wrongWordsInGroup.length} từ sai
+                </button>
+              )}
+              <button className={`${cx.btn} ${cx.btnGhost}`} onClick={resetGroup}>
+                {wrongWordsInGroup.length > 0 ? "Làm lại cả nhóm" : "Làm lại nhóm này"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button className={`${cx.btn} ${cx.btnGold}`} disabled={grading || answeredInGroup === 0} onClick={grade}>
+                {grading ? "Đang chấm..." : answeredInGroup === 0 ? "Hãy trả lời ít nhất 1 câu" : retryActive ? "Kiểm tra lại từ sai" : "Kiểm tra đáp án"}
+              </button>
+              {!retryActive && (
+                <button className={`${cx.btn} ${cx.btnGhost}`} disabled={answeredInGroup === 0} onClick={resetGroup}>
+                  Xóa câu trả lời
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
       <div className="sticky bottom-[5.75rem] z-20 -mx-4 mt-3.5 flex justify-between gap-3 border-t border-line bg-[#FBFAFE]/95 px-4 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">

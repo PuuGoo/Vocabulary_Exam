@@ -8,3 +8,10 @@ export function circleStatus(graded: boolean, answered: boolean, correct: boolea
   if (graded) return correct ? "correct" : "wrong";
   return answered ? "answered" : "empty";
 }
+
+export function wordIdsNeedingRetry<T extends { id: number }>(
+  words: T[],
+  isCorrect: (word: T) => boolean,
+): number[] {
+  return words.filter((word) => !isCorrect(word)).map((word) => word.id);
+}
