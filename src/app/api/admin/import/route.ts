@@ -7,6 +7,7 @@ import { vocabCategories, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
+import { dedupeImportRows, importWordKey } from "@/lib/importDedup";
 
 export const runtime = "nodejs";
 
@@ -82,40 +83,65 @@ export async function POST(req: NextRequest) {
     setType = set.type;
   }
 
+  const existingWords = await db
+    .select({ term: words.term, v1: words.v1, v2: words.v2, v3: words.v3 })
+    .from(words)
+    .where(eq(words.setId, setId));
+  const existingKeys = existingWords.map((row) => importWordKey(row, setType));
+
   let added = 0;
+  let invalidCount = 0;
   const toInsert: (typeof words.$inferInsert)[] = [];
+  const validRows: Row[] = [];
   for (const r of rows) {
     if (setType === "irregular_verb") {
       if (r.meaning && r.v1 && r.v2 && r.v3) {
-        toInsert.push({
-          setId,
-          meaning: r.meaning,
-          v1: r.v1,
-          v2: r.v2,
-          v3: r.v3,
-          ipaV1: r.ipa_v1 || r.ipav1 || null,
-          ipaV2: r.ipa_v2 || r.ipav2 || null,
-          ipaV3: r.ipa_v3 || r.ipav3 || null,
-        });
-        added++;
+        validRows.push(r);
+      } else {
+        invalidCount++;
       }
     } else {
       if (r.term && r.meaning) {
-        toInsert.push({
-          setId,
-          meaning: r.meaning,
-          term: r.term,
-          example: r.example || "",
-          wtype: r.wtype || r.type || "",
-          ipa: r.ipa || null,
-        });
-        added++;
+        validRows.push(r);
+      } else {
+        invalidCount++;
       }
     }
   }
+  const deduped = dedupeImportRows(validRows, setType, existingKeys);
+  for (const r of deduped.rows) {
+    if (setType === "irregular_verb") {
+      toInsert.push({
+        setId,
+        meaning: r.meaning,
+        v1: r.v1,
+        v2: r.v2,
+        v3: r.v3,
+        ipaV1: r.ipa_v1 || r.ipav1 || null,
+        ipaV2: r.ipa_v2 || r.ipav2 || null,
+        ipaV3: r.ipa_v3 || r.ipav3 || null,
+      });
+    } else {
+      toInsert.push({
+        setId,
+        meaning: r.meaning,
+        term: r.term,
+        example: r.example || "",
+        wtype: r.wtype || r.type || "",
+        ipa: r.ipa || null,
+      });
+    }
+  }
+  added = toInsert.length;
   if (toInsert.length > 0) {
     await db.insert(words).values(toInsert);
   }
 
-  return NextResponse.json({ setId, added, total: rows.length });
+  return NextResponse.json({
+    setId,
+    added,
+    total: rows.length,
+    skippedDuplicates: deduped.duplicateCount,
+    skippedInvalid: invalidCount,
+  });
 }

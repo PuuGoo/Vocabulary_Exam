@@ -115,7 +115,9 @@ export default function AdminImportPage() {
       toast(data.error || "Nhập dữ liệu thất bại.");
       return;
     }
-    toast(`Đã nhập ${data.added}/${data.total} dòng thành công!`);
+    const duplicateNote = data.skippedDuplicates ? ` Bỏ qua ${data.skippedDuplicates} từ đã tồn tại hoặc bị lặp.` : "";
+    const invalidNote = data.skippedInvalid ? ` Bỏ qua ${data.skippedInvalid} dòng thiếu dữ liệu bắt buộc.` : "";
+    toast(`Đã thêm ${data.added} từ trên ${data.total} dòng.${duplicateNote}${invalidNote}`);
     setFile(null);
     setPreviewRows(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
