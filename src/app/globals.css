@@ -145,3 +145,50 @@ html.lexora-native-app body {
 html.lexora-native-app :is(a, button, [role="button"]) {
   -webkit-tap-highlight-color: rgba(120, 101, 238, 0.14);
 }
+
+.flashcard-flipper {
+  transform-style: preserve-3d;
+  transition: transform 260ms cubic-bezier(.2, .72, .25, 1);
+}
+
+.flashcard-flipper.is-flipped {
+  transform: rotateY(180deg);
+}
+
+.flashcard-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.flashcard-back {
+  transform: rotateY(180deg);
+}
+
+@keyframes lexora-undo-in {
+  from { opacity: 0; transform: translateY(12px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes lexora-undo-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.lexora-undo-snackbar {
+  animation: lexora-undo-in 220ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+.lexora-undo-timer {
+  animation: lexora-undo-countdown 5s linear both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flashcard-flipper {
+    transition: none;
+  }
+
+  .lexora-undo-snackbar,
+  .lexora-undo-timer {
+    animation: none;
+  }
+}

@@ -33,6 +33,47 @@ export async function verifySessionToken(token: string): Promise<SessionPayload 
   }
 }
 
+export type FlashcardUndoPayload = {
+  scope: "flashcard-undo";
+  userId: number;
+  wordId: number;
+  setId: number;
+  mistake: {
+    setId: number;
+    timesWrong: number;
+    lastWrongAt: string;
+  } | null;
+  progress: {
+    known: boolean;
+    intervalDays: number;
+    reviewStreak: number;
+    correctCount: number;
+    wrongCount: number;
+    lastMode: string | null;
+    lastReviewedAt: string | null;
+    nextReviewAt: string | null;
+    updatedAt: string;
+  } | null;
+};
+
+export async function signFlashcardUndo(payload: Omit<FlashcardUndoPayload, "scope">): Promise<string> {
+  return new SignJWT({ ...payload, scope: "flashcard-undo" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("60s")
+    .sign(secretKey);
+}
+
+export async function verifyFlashcardUndo(token: string): Promise<FlashcardUndoPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, secretKey);
+    if (payload.scope !== "flashcard-undo") return null;
+    return payload as unknown as FlashcardUndoPayload;
+  } catch {
+    return null;
+  }
+}
+
 export function sessionCookieOptions() {
   return {
     httpOnly: true,
