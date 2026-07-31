@@ -87,6 +87,16 @@ export default function AdminSetsPage() {
       && (!query || normalizeSearch(`${set.name} ${set.category || ""} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query))
     );
   }, [sets, searchQuery, selectedCategory]);
+  const categorySiblings = useMemo(() => {
+    if (!sets || !detail) return [];
+    const categoryKey = detail.category?.trim() || UNCATEGORIZED;
+    return sets
+      .filter((set) => (set.category?.trim() || UNCATEGORIZED) === categoryKey)
+      .sort((left, right) => left.name.localeCompare(right.name, "vi", { numeric: true, sensitivity: "base" }));
+  }, [detail, sets]);
+  const siblingIndex = detail ? categorySiblings.findIndex((set) => set.id === detail.id) : -1;
+  const previousSibling = siblingIndex > 0 ? categorySiblings[siblingIndex - 1] : null;
+  const nextSibling = siblingIndex >= 0 && siblingIndex < categorySiblings.length - 1 ? categorySiblings[siblingIndex + 1] : null;
 
   async function loadSets() {
     const res = await fetch("/api/sets");
@@ -111,6 +121,22 @@ export default function AdminSetsPage() {
     loadClasses();
     loadCategories();
   }, []);
+
+  useEffect(() => {
+    function handleSetNavigation(event: KeyboardEvent) {
+      if (!detail || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (showAddWord || editingWordId !== null || showCategoryManager || showNewForm || openingDetailId !== null) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      const sibling = event.key === "ArrowLeft" ? previousSibling : nextSibling;
+      if (!sibling) return;
+      event.preventDefault();
+      void navigateToSibling(sibling.id);
+    }
+    window.addEventListener("keydown", handleSetNavigation);
+    return () => window.removeEventListener("keydown", handleSetNavigation);
+  }, [detail, editingWordId, nextSibling, openingDetailId, previousSibling, showAddWord, showCategoryManager, showNewForm]);
 
   async function createCategory() {
     const name = managerNewName.trim();
@@ -262,6 +288,17 @@ export default function AdminSetsPage() {
     } finally {
       setOpeningDetailId(null);
     }
+  }
+
+  async function navigateToSibling(id: number) {
+    if (!detail || openingDetailId !== null) return;
+    const hasUnsavedName = editSetName.trim() !== detail.name;
+    const hasUnsavedCategory = editCategory.trim() !== (detail.category || "");
+    if (hasUnsavedName || hasUnsavedCategory) {
+      toast("Hãy lưu hoặc hoàn tác thay đổi trước khi chuyển sang bộ khác.");
+      return;
+    }
+    await openDetail(id);
   }
 
   async function saveWord() {
@@ -644,6 +681,35 @@ export default function AdminSetsPage() {
           <div>
           <div className={cx.desc}>
             {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {detail.words.length} mục
+          </div>
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-[12px] border border-line bg-[#FBFAFE] p-2.5">
+            <button
+              type="button"
+              className={`${cx.btn} ${cx.btnGhost} min-h-10 shrink-0 !px-3`}
+              disabled={!previousSibling || openingDetailId !== null}
+              onClick={() => previousSibling && void navigateToSibling(previousSibling.id)}
+              aria-label="Mở bộ từ trước trong cùng danh mục"
+              title={previousSibling ? `Bộ trước: ${previousSibling.name}` : "Đây là bộ đầu tiên"}
+            >
+              ← <span className="hidden sm:inline">Bộ trước</span>
+            </button>
+            <div className="min-w-0 text-center">
+              <div className="truncate text-xs font-bold text-ink">📁 {detail.category || "Chưa phân loại"}</div>
+              <div className="mt-0.5 text-[0.7rem] text-muted">
+                Bộ {siblingIndex + 1}/{categorySiblings.length}
+                <span className="hidden sm:inline"> · Dùng phím ← → để chuyển</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              className={`${cx.btn} ${cx.btnGhost} min-h-10 shrink-0 !px-3`}
+              disabled={!nextSibling || openingDetailId !== null}
+              onClick={() => nextSibling && void navigateToSibling(nextSibling.id)}
+              aria-label="Mở bộ từ sau trong cùng danh mục"
+              title={nextSibling ? `Bộ sau: ${nextSibling.name}` : "Đây là bộ cuối cùng"}
+            >
+              <span className="hidden sm:inline">Bộ sau</span> →
+            </button>
           </div>
           <div className="mb-4 grid grid-cols-1 items-end gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
             <div>
