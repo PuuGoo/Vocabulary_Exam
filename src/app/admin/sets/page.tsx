@@ -22,6 +22,22 @@ type Word = {
   ipa?: string | null;
 };
 type SetDetail = SetSummary & { words: Word[] };
+type WordMatch = {
+  wordId: number;
+  setId: number;
+  setName: string;
+  category: string | null;
+  setType: string;
+  term: string | null;
+  meaning: string;
+  v1: string | null;
+  v2: string | null;
+  v3: string | null;
+  ipa: string | null;
+  ipaV1: string | null;
+  ipaV2: string | null;
+  ipaV3: string | null;
+};
 type ClassOpt = { id: number; name: string };
 type CategorySummary = { id: number; name: string; count: number };
 const ALL_CATEGORIES = "__all__";
@@ -49,6 +65,9 @@ export default function AdminSetsPage() {
   const [showNewForm, setShowNewForm] = useState(false);
   const [creatingSet, setCreatingSet] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [wordSearchQuery, setWordSearchQuery] = useState("");
+  const [wordMatches, setWordMatches] = useState<WordMatch[]>([]);
+  const [wordSearchLoading, setWordSearchLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
@@ -66,6 +85,7 @@ export default function AdminSetsPage() {
   const [bulkIpaLoading, setBulkIpaLoading] = useState(false);
   const [savingClass, setSavingClass] = useState(false);
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
+  const [detailWordQuery, setDetailWordQuery] = useState("");
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -87,6 +107,14 @@ export default function AdminSetsPage() {
       && (!query || normalizeSearch(`${set.name} ${set.category || ""} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query))
     );
   }, [sets, searchQuery, selectedCategory]);
+  const filteredDetailWords = useMemo(() => {
+    if (!detail) return [];
+    const query = normalizeSearch(detailWordQuery);
+    if (!query) return detail.words;
+    return detail.words.filter((word) => normalizeSearch([
+      word.term, word.meaning, word.v1, word.v2, word.v3, word.example,
+    ].filter(Boolean).join(" ")).includes(query));
+  }, [detail, detailWordQuery]);
   const categorySiblings = useMemo(() => {
     if (!sets || !detail) return [];
     const categoryKey = detail.category?.trim() || UNCATEGORIZED;
@@ -121,6 +149,33 @@ export default function AdminSetsPage() {
     loadClasses();
     loadCategories();
   }, []);
+
+  useEffect(() => {
+    const query = wordSearchQuery.trim();
+    if (query.length < 2) {
+      setWordMatches([]);
+      setWordSearchLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setWordSearchLoading(true);
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/admin/words/search?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+        if (!res.ok) throw new Error("search");
+        const data = await res.json();
+        setWordMatches(data.matches || []);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") toast("Không thể tìm kiếm từ lúc này.");
+      } finally {
+        if (!controller.signal.aborted) setWordSearchLoading(false);
+      }
+    }, 280);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [wordSearchQuery]);
 
   useEffect(() => {
     function handleSetNavigation(event: KeyboardEvent) {
@@ -281,6 +336,7 @@ export default function AdminSetsPage() {
       setDetail(data.set);
       setEditSetName(data.set.name);
       setEditCategory(data.set.category || "");
+      setDetailWordQuery("");
       setShowAddWord(false);
       setEditingWordId(null);
     } catch {
@@ -365,6 +421,7 @@ export default function AdminSetsPage() {
     if (showAddWord || editingWordId !== null) return;
     if (detail && editSetName.trim() !== detail.name && !confirm("Tên bộ từ chưa được lưu. Bạn có muốn đóng và bỏ thay đổi?")) return;
     setDetail(null);
+    setDetailWordQuery("");
   }
 
   async function saveSetName() {
@@ -496,6 +553,66 @@ export default function AdminSetsPage() {
           ))}
         </div>
       )}
+
+      <section className="mb-6 rounded-[14px] border border-line bg-[#FBFAFE] p-4">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-bold text-ink">Tìm từ trong tất cả bộ</h3>
+            <p className="mt-1 text-xs text-muted">Tìm theo từ, nghĩa, V1/V2/V3 hoặc tên bộ để biết từ đang thuộc bộ nào.</p>
+          </div>
+          {wordSearchQuery.trim().length >= 2 && !wordSearchLoading && (
+            <span className="text-xs font-semibold text-muted">{wordMatches.length} kết quả</span>
+          )}
+        </div>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            className={`${cx.input} !mb-0 !pl-9`}
+            placeholder="Ví dụ: environment, môi trường, went..."
+            aria-label="Tìm từ trong tất cả bộ"
+            value={wordSearchQuery}
+            onChange={(event) => setWordSearchQuery(event.target.value)}
+          />
+        </div>
+        {wordSearchLoading && <p className="mt-3 text-xs text-muted">Đang tìm...</p>}
+        {!wordSearchLoading && wordSearchQuery.trim().length > 0 && wordSearchQuery.trim().length < 2 && (
+          <p className="mt-3 text-xs text-muted">Nhập ít nhất 2 ký tự để bắt đầu tìm.</p>
+        )}
+        {!wordSearchLoading && wordSearchQuery.trim().length >= 2 && wordMatches.length === 0 && (
+          <p className="mt-3 text-sm text-muted">Không tìm thấy từ phù hợp trong các bộ hiện có.</p>
+        )}
+        {wordMatches.length > 0 && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {wordMatches.map((match) => {
+              const label = match.setType === "irregular_verb"
+                ? [match.v1, match.v2, match.v3].filter(Boolean).join(" · ") || match.meaning
+                : match.term || match.meaning;
+              return (
+                <div key={`${match.setId}-${match.wordId}`} className="rounded-[11px] border border-line bg-white p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-ink">{label}</div>
+                      <div className="mt-0.5 truncate text-xs text-muted">{match.meaning}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`${cx.btn} ${cx.btnGhost} shrink-0 !px-2.5 !py-1.5 text-xs`}
+                      onClick={() => void openDetail(match.setId)}
+                    >
+                      Mở bộ
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="font-semibold text-[#6550DB]">Thuộc bộ: {match.setName}</span>
+                    {match.category && <span className="rounded-full bg-[#F0EDFF] px-2 py-0.5 text-[#6550DB]">📁 {match.category}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {showNewForm && (
         <Modal title="Tạo bộ từ vựng mới" onClose={closeNewForm} closeOnBackdrop={false}>
@@ -782,6 +899,20 @@ export default function AdminSetsPage() {
               <button type="button" className="text-xs font-bold text-gold hover:underline" onClick={() => setShowCategoryManager(true)}>Quản lý danh mục</button>
             </div>
           </div>
+          <div className="mb-4 rounded-[11px] border border-line bg-[#FBFAFE] p-3">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold text-ink" htmlFor="detail-word-search">Tìm trong bộ này</label>
+              {detailWordQuery.trim() && <span className="text-xs text-muted">Hiển thị {filteredDetailWords.length}/{detail.words.length} từ</span>}
+            </div>
+            <input
+              id="detail-word-search"
+              type="search"
+              className={`${cx.input} !mb-0`}
+              placeholder={detail.type === "irregular_verb" ? "Tìm nghĩa hoặc V1, V2, V3..." : "Tìm từ, nghĩa hoặc ví dụ..."}
+              value={detailWordQuery}
+              onChange={(event) => setDetailWordQuery(event.target.value)}
+            />
+          </div>
           <div className="flex gap-2.5 mb-3 flex-wrap">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
@@ -870,6 +1001,10 @@ export default function AdminSetsPage() {
             <div className="rounded-lg border border-dashed border-line bg-[#fffefb] px-4 py-8 text-center text-[0.88rem] text-muted">
               Bộ này chưa có từ nào. Chọn “Thêm từ thủ công” để bắt đầu.
             </div>
+          ) : filteredDetailWords.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-line bg-[#fffefb] px-4 py-8 text-center text-[0.88rem] text-muted">
+              Không tìm thấy từ phù hợp trong bộ này.
+            </div>
           ) : (
           <div className="max-h-[52vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white">
             <table className={cx.table}>
@@ -897,7 +1032,7 @@ export default function AdminSetsPage() {
                 </tr>
               </thead>
               <tbody>
-                {detail.words.map((w) => (
+                {filteredDetailWords.map((w) => (
                   <tr key={w.id} className="hover:bg-goldpale/30">
                     {detail.type === "irregular_verb" ? (
                       <>
