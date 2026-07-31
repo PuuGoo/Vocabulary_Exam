@@ -18,6 +18,9 @@ type UndoState = {
 };
 
 function shuffle<T>(arr: T[]) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function Shortcut({ children }: { children: string }) {
+  return <kbd className="ml-2 inline-flex min-w-6 items-center justify-center rounded-md border border-[#DCD8F3] bg-[#F8F7FF] px-1.5 py-0.5 text-[0.68rem] font-semibold text-[#6550DB]">{children}</kbd>;
+}
 
 export default function LearnPage() {
   const params = useParams<{ setId: string }>(); const router = useRouter();
@@ -29,6 +32,7 @@ export default function LearnPage() {
   const [swipe, setSwipe] = useState(0); const swipeRef = useRef<{x:number;y:number;t:number}|null>(null); const suppressClick = useRef(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null); const savingRef = useRef(false);
   const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null); const menuRef = useRef<HTMLDivElement>(null); const jumpInputRef = useRef<HTMLInputElement>(null);
 
   async function loadSet() {
     setLoading(true); setError(false);
@@ -108,7 +112,62 @@ export default function LearnPage() {
   function touchStart(e: TouchEvent<HTMLDivElement>) { if (e.touches.length===1 && !(e.target as HTMLElement).closest("button")) swipeRef.current={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}; }
   function touchMove(e: TouchEvent<HTMLDivElement>) { const s=swipeRef.current; if(!s||e.touches.length!==1)return; const dx=e.touches[0].clientX-s.x,dy=e.touches[0].clientY-s.y; if(Math.abs(dx)>Math.abs(dy)&&Math.abs(dx)>8)setSwipe(Math.max(-110,Math.min(110,dx))); }
   function touchEnd(e: TouchEvent<HTMLDivElement>) { const s=swipeRef.current; if(!s)return; const dx=e.changedTouches[0].clientX-s.x,dy=e.changedTouches[0].clientY-s.y; if(Math.abs(dx)>Math.abs(dy)*1.25&&Math.abs(dx)>45){suppressClick.current=true;dx<0?next():prev();} swipeRef.current=null;setSwipe(0); }
-  useEffect(() => { function key(e:KeyboardEvent) { if ((e.target as HTMLElement)?.closest("button,a,input,textarea,select")) return; if(e.key==="Escape"){setMenuOpen(false);return;} if(e.key==="ArrowLeft"){e.preventDefault();prev();} else if(e.key==="ArrowRight"){e.preventDefault();next();} else if(e.key===" "||e.key==="Enter"){e.preventDefault();setFlipped(f=>!f);} else if(e.key==="1"&&flipped){e.preventDefault();void mark(false);} else if(e.key==="2"&&flipped){e.preventDefault();void mark(true);} } window.addEventListener("keydown",key); return()=>window.removeEventListener("keydown",key); });
+  function openMenuFromKeyboard() {
+    setMenuOpen(true);
+    window.setTimeout(() => menuRef.current?.querySelector<HTMLElement>("[data-menu-item]")?.focus(), 0);
+  }
+  function closeMenuAndRestoreFocus() {
+    setMenuOpen(false);
+    window.setTimeout(() => menuButtonRef.current?.focus(), 0);
+  }
+  useEffect(() => {
+    function key(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const isTyping = Boolean(target?.closest("input,textarea,select,[contenteditable=true]"));
+      const pressed = e.key.toLowerCase();
+
+      if (!isTyping && (pressed === "m" || e.key === ".")) {
+        e.preventDefault();
+        if (menuOpen) closeMenuAndRestoreFocus(); else openMenuFromKeyboard();
+        return;
+      }
+      if (menuOpen) {
+        if (e.key === "Escape") { e.preventDefault(); closeMenuAndRestoreFocus(); return; }
+        if (isTyping) return;
+        const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>("[data-menu-item]:not(:disabled)") || []);
+        const activeIndex = items.indexOf(document.activeElement as HTMLElement);
+        if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+          e.preventDefault();
+          const nextIndex = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1 : e.key === "ArrowDown" ? (activeIndex + 1 + items.length) % items.length : (activeIndex - 1 + items.length) % items.length;
+          items[nextIndex]?.focus();
+          return;
+        }
+        if (pressed === "b") { e.preventDefault(); void toggleBookmark(); setMenuOpen(false); }
+        else if (pressed === "a") { e.preventDefault(); chooseMode("all"); }
+        else if (pressed === "u" && unknown > 0) { e.preventDefault(); chooseMode("unknown"); }
+        else if (pressed === "n" && unrated > 0) { e.preventDefault(); chooseMode("unrated"); }
+        else if (pressed === "j") { e.preventDefault(); jumpInputRef.current?.focus(); }
+        else if (pressed === "r") { e.preventDefault(); restart(); }
+        else if (pressed === "s") { e.preventDefault(); reshuffle(); }
+        else if (pressed === "f") { e.preventDefault(); router.push(`/quiz/${set?.id}?mode=fill`); }
+        else if (pressed === "q" && !isVerb) { e.preventDefault(); router.push(`/quiz/${set?.id}?mode=mc`); }
+        else if (pressed === "d") { e.preventDefault(); router.push(`/dictation/${set?.id}`); }
+        else if (pressed === "g") { e.preventDefault(); router.push(`/match/${set?.id}`); }
+        else if (pressed === "t") { e.preventDefault(); router.push(`/quiz/${set?.id}?mode=fill&timed=1&minutes=15`); }
+        else if (pressed === "x") { e.preventDefault(); router.push("/study"); }
+        return;
+      }
+      if (isTyping || target?.closest("button,a")) return;
+      if (e.key === "ArrowLeft") { e.preventDefault(); prev(); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); next(); }
+      else if (e.key === " " || e.key === "Enter") { e.preventDefault(); setFlipped(f=>!f); }
+      else if (e.key === "1" && flipped) { e.preventDefault(); void mark(false); }
+      else if (e.key === "2" && flipped) { e.preventDefault(); void mark(true); }
+    }
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
 
   if (loading) return <main className="fixed inset-0 z-[80] grid place-items-center bg-[#F8F8FC] text-muted">Đang tải bộ từ…</main>;
   if (error || !set) return <main className="fixed inset-0 z-[80] grid place-items-center bg-[#F8F8FC] p-6 text-center"><div>Không thể tải bộ từ.<div className="mt-4 flex gap-2 justify-center"><button className="rounded-xl bg-[#7865EE] px-4 py-2 text-white" onClick={()=>void loadSet()}>Thử lại</button><button className="rounded-xl border px-4 py-2" onClick={()=>router.push("/study")}>Chọn bộ khác</button></div></div></main>;
@@ -117,23 +176,29 @@ export default function LearnPage() {
   const answer = isVerb ? `${word.v1 || ""} — ${word.v2 || ""} — ${word.v3 || ""}` : word.term || "";
   return <main className="fixed inset-0 z-[80] flex flex-col overflow-hidden bg-[#F8F8FC] text-[#242337]">
     <header className="relative shrink-0 border-b border-[#EBEAF2] bg-white/95 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))] backdrop-blur">
-      <div className="mx-auto flex max-w-4xl items-center justify-between gap-3"><button onClick={()=>router.push("/study")} className="rounded-xl border px-3 py-2 text-sm">← Thoát</button><div className="min-w-0 text-center"><div className="truncate text-sm font-bold">{set.name}</div><div className="text-xs text-[#8B899F]">Thẻ {index+1}/{total}</div></div><button aria-label="Tùy chọn" onClick={()=>setMenuOpen(v=>!v)} className="rounded-xl border px-3 py-2 text-lg">⋯</button></div>
+      <div className="mx-auto flex max-w-4xl items-center justify-between gap-3"><button onClick={()=>router.push("/study")} className="rounded-xl border px-3 py-2 text-sm">← Thoát</button><div className="min-w-0 text-center"><div className="truncate text-sm font-bold">{set.name}</div><div className="text-xs text-[#8B899F]">Thẻ {index+1}/{total}</div></div><button ref={menuButtonRef} type="button" aria-label="Mở tùy chọn và phím tắt" aria-haspopup="menu" aria-expanded={menuOpen} aria-controls="flashcard-quick-menu" aria-keyshortcuts="M ." title="Mở menu (phím M hoặc dấu chấm)" onClick={()=>setMenuOpen(v=>!v)} className="relative z-[90] flex min-h-10 items-center rounded-xl border px-3 py-2 text-lg">⋯<span className="hidden sm:inline"><Shortcut>M</Shortcut></span></button></div>
       <div className="mx-auto mt-3 h-1.5 max-w-4xl overflow-hidden rounded-full bg-[#EBEAF2]"><div className="h-full rounded-full bg-[#7865EE] transition-[width] duration-300" style={{width:`${total?((index+1)/total)*100:0}%`}} /></div>
       {menuOpen && <button type="button" aria-label="Đóng menu tùy chọn" className="fixed inset-0 z-[85] cursor-default" onClick={()=>setMenuOpen(false)} />}
-      {menuOpen && <div className="absolute right-4 top-16 z-[90] max-h-[calc(100dvh-90px)] w-72 overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">
-        <button className="mb-3 w-full rounded-lg border px-3 py-2 text-left text-sm" onClick={()=>{void toggleBookmark();setMenuOpen(false);}}>{bookmarks[word.id] ? "★ Bỏ khỏi sổ tay" : "☆ Lưu từ vào sổ tay"}</button>
+      {menuOpen && <div ref={menuRef} id="flashcard-quick-menu" role="menu" aria-label="Tùy chọn học nhanh" className="absolute right-4 top-16 z-[90] max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">
+        <button data-menu-item role="menuitem" aria-keyshortcuts="B" className="mb-3 flex min-h-11 w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm hover:bg-[#F8F7FF] focus:bg-[#F0EDFF]" onClick={()=>{void toggleBookmark();setMenuOpen(false);}}><span>{bookmarks[word.id] ? "★ Bỏ khỏi sổ tay" : "☆ Lưu từ vào sổ tay"}</span><Shortcut>B</Shortcut></button>
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#8B899F]">Lọc lượt học</div>
-        <div className="grid grid-cols-3 gap-1"><button className="rounded-lg px-2 py-2 text-xs hover:bg-[#F0EDFF]" onClick={()=>chooseMode("all")}>Tất cả</button><button className="rounded-lg px-2 py-2 text-xs hover:bg-[#F0EDFF]" onClick={()=>chooseMode("unknown")}>Chưa nhớ ({unknown})</button><button className="rounded-lg px-2 py-2 text-xs hover:bg-[#F0EDFF]" onClick={()=>chooseMode("unrated")}>Chưa đánh giá ({unrated})</button></div>
-        <div className="my-3 flex gap-2"><input aria-label="Số thẻ" value={jump} onChange={e=>setJump(e.target.value)} placeholder="Số thẻ" type="number" className="min-w-0 flex-1 rounded-lg border px-2 py-2 text-sm"/><button className="rounded-lg bg-[#7865EE] px-3 text-sm text-white" onClick={()=>{const n=Number(jump);if(n)go(n-1);setJump("");setMenuOpen(false);}}>Đi tới</button></div>
-        <div className="grid grid-cols-2 gap-2"><button className="rounded-lg border px-2 py-2 text-sm" onClick={restart}>↺ Học lại</button><button className="rounded-lg border px-2 py-2 text-sm" onClick={reshuffle}>🔀 Xáo trộn</button></div>
+        <div className="grid gap-1">
+          <button data-menu-item role="menuitem" aria-keyshortcuts="A" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>chooseMode("all")}><span>Tất cả từ</span><Shortcut>A</Shortcut></button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="U" disabled={unknown===0} className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF] disabled:cursor-not-allowed disabled:opacity-40" onClick={()=>chooseMode("unknown")}><span>Chưa nhớ ({unknown})</span><Shortcut>U</Shortcut></button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="N" disabled={unrated===0} className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF] disabled:cursor-not-allowed disabled:opacity-40" onClick={()=>chooseMode("unrated")}><span>Chưa đánh giá ({unrated})</span><Shortcut>N</Shortcut></button>
+        </div>
+        <div className="my-3 flex gap-2"><div className="relative min-w-0 flex-1"><input ref={jumpInputRef} aria-label="Số thẻ, phím tắt J" value={jump} onChange={e=>setJump(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const n=Number(jump);if(n)go(n-1);setJump("");setMenuOpen(false);}}} placeholder="Đi tới thẻ…" type="number" className="h-11 w-full rounded-lg border py-2 pl-3 pr-9 text-sm"/><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"><Shortcut>J</Shortcut></span></div><button data-menu-item role="menuitem" className="rounded-lg bg-[#7865EE] px-3 text-sm font-semibold text-white" onClick={()=>{const n=Number(jump);if(n)go(n-1);setJump("");setMenuOpen(false);}}>Đi</button></div>
+        <div className="grid grid-cols-2 gap-2"><button data-menu-item role="menuitem" aria-keyshortcuts="R" className="flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm hover:bg-[#F8F7FF]" onClick={restart}>↺ Học lại <Shortcut>R</Shortcut></button><button data-menu-item role="menuitem" aria-keyshortcuts="S" className="flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm hover:bg-[#F8F7FF]" onClick={reshuffle}>🔀 Xáo trộn <Shortcut>S</Shortcut></button></div>
         <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-[#8B899F]">Chuyển chế độ</div>
         <div className="grid gap-1">
-          <button className="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={()=>router.push(`/quiz/${set.id}?mode=fill`)}>Điền từ tiếng Anh</button>
-          {!isVerb && <button className="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={()=>router.push(`/quiz/${set.id}?mode=mc`)}>Trắc nghiệm</button>}
-          <button className="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={()=>router.push(`/dictation/${set.id}`)}>Nghe và viết</button>
-          <button className="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={()=>router.push(`/match/${set.id}`)}>Ghép cặp</button>
-          <button className="rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={()=>router.push(`/quiz/${set.id}?mode=fill&timed=1&minutes=15`)}>Thi thử tính giờ</button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="F" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>router.push(`/quiz/${set.id}?mode=fill`)}><span>Điền từ tiếng Anh</span><Shortcut>F</Shortcut></button>
+          {!isVerb && <button data-menu-item role="menuitem" aria-keyshortcuts="Q" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>router.push(`/quiz/${set.id}?mode=mc`)}><span>Trắc nghiệm</span><Shortcut>Q</Shortcut></button>}
+          <button data-menu-item role="menuitem" aria-keyshortcuts="D" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>router.push(`/dictation/${set.id}`)}><span>Nghe và viết</span><Shortcut>D</Shortcut></button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="G" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>router.push(`/match/${set.id}`)}><span>Ghép cặp</span><Shortcut>G</Shortcut></button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="T" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>router.push(`/quiz/${set.id}?mode=fill&timed=1&minutes=15`)}><span>Thi thử tính giờ</span><Shortcut>T</Shortcut></button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="X" className="mt-1 flex min-h-10 items-center justify-between rounded-lg border-t border-[#EBEAF2] px-3 py-2 text-left text-sm text-[#7A4350] hover:bg-[#FFF4F5] focus:bg-[#FFF4F5]" onClick={()=>router.push("/study")}><span>Thoát về danh sách bộ từ</span><Shortcut>X</Shortcut></button>
         </div>
+        <div className="mt-3 border-t border-[#EBEAF2] pt-3 text-[0.72rem] leading-5 text-[#8B899F]"><b className="text-[#5E5B75]">Điều khiển:</b> <Shortcut>↑↓</Shortcut> chọn · <Shortcut>Enter</Shortcut> mở · <Shortcut>Esc</Shortcut> đóng</div>
       </div>}
     </header>
     <section className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-3 py-3 sm:px-6">
