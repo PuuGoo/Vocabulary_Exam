@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { groupIndexForQuestion, circleStatus } from "./quizGroups";
+import { groupIndexForQuestion, circleStatus, wordIdsNeedingRetry } from "./quizGroups";
 
 test("groupIndexForQuestion maps a 1-based question number to a 0-based group index", () => {
   assert.equal(groupIndexForQuestion(1, 10), 0);
@@ -15,4 +15,9 @@ test("circleStatus reflects graded/answered/correct state", () => {
   assert.equal(circleStatus(true, true, true), "correct");
   assert.equal(circleStatus(true, true, false), "wrong");
   assert.equal(circleStatus(true, false, false), "wrong");
+});
+
+test("wordIdsNeedingRetry keeps only wrong words from the current group", () => {
+  const words = [{ id: 11 }, { id: 12 }, { id: 13 }];
+  assert.deepEqual(wordIdsNeedingRetry(words, (word) => word.id === 11), [12, 13]);
 });
