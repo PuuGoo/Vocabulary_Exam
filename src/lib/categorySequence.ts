@@ -3,6 +3,11 @@ import { vocabSets } from "@/db/schema";
 
 const PREFIX = /^\d+_/;
 
+export function getCategoryPrefixNumber(name: string) {
+  const match = name.trim().match(/^(\d+)_/);
+  return match ? Number(match[1]) : null;
+}
+
 export function removeCategoryPrefix(name: string) {
   return name.replace(PREFIX, "").trim();
 }
@@ -13,6 +18,13 @@ export function hasCategoryPrefix(name: string) {
 
 export function formatCategorySetName(order: number, name: string) {
   return `${String(order).padStart(2, "0")}_${removeCategoryPrefix(name)}`;
+}
+
+export function prepareCategorySetRename(currentName: string, requestedName: string) {
+  const requested = requestedName.trim();
+  if (hasCategoryPrefix(requested)) return requested;
+  const currentPrefix = currentName.trim().match(/^(\d+)_/)?.[1];
+  return currentPrefix ? `${currentPrefix}_${removeCategoryPrefix(requested)}` : requested;
 }
 
 /**

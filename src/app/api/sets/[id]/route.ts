@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
-import { formatCategorySetName, hasCategoryPrefix, nextCategoryOrder, removeCategoryPrefix } from "@/lib/categorySequence";
+import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -62,20 +62,38 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const nextCategory = patch.category === undefined ? current.category : patch.category;
     const categoryChanged = nextCategory !== current.category;
     if (patch.name && !categoryChanged && current.category) {
-      const currentPrefix = current.name.match(/^\d+_/)?.[0];
-      patch.name = currentPrefix ? `${currentPrefix}${removeCategoryPrefix(patch.name)}` : patch.name;
+      patch.name = prepareCategorySetRename(current.name, patch.name);
     }
     if (categoryChanged && nextCategory) {
       patch.name = formatCategorySetName(await nextCategoryOrder(tx, nextCategory), patch.name || current.name);
+    }
+    const finalName = patch.name || current.name;
+    const prefixNumber = nextCategory ? getCategoryPrefixNumber(finalName) : null;
+    if (nextCategory && prefixNumber !== null) {
+      const [duplicate] = await tx
+        .select({ id: vocabSets.id })
+        .from(vocabSets)
+        .where(and(
+          eq(vocabSets.category, nextCategory),
+          ne(vocabSets.id, current.id),
+          sql`${vocabSets.name} ~ '^[0-9]+_' and cast(substring(${vocabSets.name} from '^[0-9]+') as integer) = ${prefixNumber}`
+        ))
+        .limit(1);
+      if (duplicate) return { conflict: true as const, prefixNumber, category: nextCategory };
     }
     if (patch.category) {
       await tx.insert(vocabCategories).values({ name: patch.category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
     await tx.update(vocabSets).set(patch).where(eq(vocabSets.id, setId));
-    return tx.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
+    return { set: await tx.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) }) };
   });
   if (!updated) return NextResponse.json({ error: "Không tìm thấy bộ từ vựng." }, { status: 404 });
-  return NextResponse.json({ set: updated });
+  if ("conflict" in updated) {
+    return NextResponse.json({
+      error: `Số thứ tự ${String(updated.prefixNumber).padStart(2, "0")} đã được dùng trong danh mục “${updated.category}”.`,
+    }, { status: 409 });
+  }
+  return NextResponse.json({ set: updated.set });
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
