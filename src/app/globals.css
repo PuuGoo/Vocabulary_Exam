@@ -164,6 +164,77 @@ html.lexora-native-app :is(a, button, [role="button"]) {
   transform: rotateY(180deg);
 }
 
+.flashcard-dock-trigger {
+  position: fixed;
+  top: 50%;
+  right: max(1rem, env(safe-area-inset-right));
+  z-index: 96;
+  display: inline-flex;
+  min-height: 3.25rem;
+  min-width: 3.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: .1rem;
+  border: 1px solid #ebeaf2;
+  border-radius: 999px;
+  background: #fff;
+  color: #6550db;
+  box-shadow: 0 10px 26px rgba(36, 35, 55, .14);
+  transform: translateY(-50%);
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.flashcard-dock-trigger:hover,
+.flashcard-dock-trigger[aria-expanded="true"] {
+  background: #f0edff;
+  box-shadow: 0 12px 30px rgba(120, 101, 238, .22);
+}
+
+.flashcard-dock-trigger:active {
+  transform: translateY(-50%) scale(.96);
+}
+
+.flashcard-dock-panel {
+  position: fixed;
+  top: 50%;
+  right: max(5.25rem, calc(env(safe-area-inset-right) + 4.25rem));
+  z-index: 97;
+  transform: translateY(-50%);
+  transform-origin: right center;
+  animation: lexora-dock-in 180ms cubic-bezier(.2, .8, .2, 1) both;
+}
+
+@keyframes lexora-dock-in {
+  from { opacity: 0; transform: translateY(-50%) translateX(8px) scale(.97); }
+  to { opacity: 1; transform: translateY(-50%) translateX(0) scale(1); }
+}
+
+@media (max-width: 767px) {
+  .flashcard-dock-trigger {
+    top: auto;
+    right: max(.75rem, env(safe-area-inset-right));
+    bottom: calc(5.6rem + env(safe-area-inset-bottom));
+    transform: none;
+  }
+
+  .flashcard-dock-trigger:active {
+    transform: scale(.96);
+  }
+
+  .flashcard-dock-panel {
+    top: auto;
+    right: max(.75rem, env(safe-area-inset-right));
+    bottom: calc(9.9rem + env(safe-area-inset-bottom));
+    transform: none;
+    transform-origin: right bottom;
+  }
+
+  @keyframes lexora-dock-in {
+    from { opacity: 0; transform: translateY(8px) scale(.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+}
+
 @keyframes lexora-undo-in {
   from { opacity: 0; transform: translateY(12px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -187,8 +258,11 @@ html.lexora-native-app :is(a, button, [role="button"]) {
     transition: none;
   }
 
+  .flashcard-dock-trigger,
+  .flashcard-dock-panel,
   .lexora-undo-snackbar,
   .lexora-undo-timer {
     animation: none;
+    transition: none;
   }
 }
