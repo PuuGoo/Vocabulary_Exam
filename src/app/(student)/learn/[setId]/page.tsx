@@ -44,12 +44,15 @@ export default function LearnPage() {
     try {
       const [a,b,c] = await Promise.all([fetch(`/api/sets/${params.setId}`), fetch("/api/bookmarks").catch(() => null), fetch("/api/study-sessions").catch(() => null)]);
       if (!a.ok) throw new Error(); const data = await a.json(); if (!data.set) throw new Error();
-      let resumeIndex = 0;
+      const progress = data.progress || {};
+      const firstUnratedIndex = data.set.words.findIndex((x: Word) => progress[x.id] === undefined);
+      let resumeIndex = firstUnratedIndex >= 0 ? firstUnratedIndex : 0;
       if (c?.ok) {
         const sessions = await c.json(); const saved = (sessions.sessions || []).find((x: {setId:number}) => x.setId === data.set.id);
-        const found = saved ? data.set.words.findIndex((x: Word) => x.id === saved.wordId) : -1; if (found > 0) resumeIndex = found;
+        const found = saved ? data.set.words.findIndex((x: Word) => x.id === saved.wordId) : -1;
+        if (firstUnratedIndex < 0 && found > 0) resumeIndex = found;
       }
-      setSet(data.set); setOrder(data.set.words); setKnown(data.progress || {}); setIndex(resumeIndex); setFlipped(false); setFinished(false);
+      setSet(data.set); setOrder(data.set.words); setKnown(progress); setIndex(resumeIndex); setFlipped(false); setFinished(false);
       if (b?.ok) { const d = await b.json(); setBookmarks(Object.fromEntries((d.bookmarks || []).map((x: {wordId:number;id:number}) => [x.wordId,x.id]))); }
     } catch { setError(true); } finally { setLoading(false); }
   }

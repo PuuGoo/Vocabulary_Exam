@@ -88,19 +88,22 @@ export default function AdminSetsPage() {
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
   const [detailWordQuery, setDetailWordQuery] = useState("");
   const [previewSetId, setPreviewSetId] = useState<number | null>(null);
+  const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
+  const [movingSetId, setMovingSetId] = useState<number | null>(null);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
+    for (const category of categoryOptions) counts.set(category.name, category.count);
     for (const set of sets || []) {
       const category = set.category?.trim() || UNCATEGORIZED;
-      counts.set(category, (counts.get(category) || 0) + 1);
+      if (!counts.has(category)) counts.set(category, 1);
     }
     return Array.from(counts.entries()).sort(([left], [right]) => {
       if (left === UNCATEGORIZED) return 1;
       if (right === UNCATEGORIZED) return -1;
       return left.localeCompare(right, "vi");
     });
-  }, [sets]);
+  }, [categoryOptions, sets]);
   const filteredSets = useMemo(() => {
     if (!sets) return [];
     const query = normalizeSearch(searchQuery);
@@ -144,6 +147,31 @@ export default function AdminSetsPage() {
     if (!res.ok) return;
     const data = await res.json();
     setCategoryOptions(data.categories || []);
+  }
+
+  async function moveSetToCategory(setId: number, category: string) {
+    const target = category === UNCATEGORIZED ? null : category;
+    const source = sets?.find((item) => item.id === setId);
+    if (!source || (source.category?.trim() || UNCATEGORIZED) === category) return;
+    setMovingSetId(setId);
+    try {
+      const res = await fetch(`/api/sets/${setId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: target }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể chuyển bộ từ vào danh mục.");
+      setSets((current) => current ? current.map((item) => item.id === setId ? { ...item, category: data.set?.category ?? target } : item) : current);
+      setDetail((current) => current?.id === setId ? { ...current, category: data.set?.category ?? target } : current);
+      await loadCategories();
+      toast(`Đã chuyển “${source.name}” vào ${target || "Chưa phân loại"}.`);
+    } catch {
+      toast("Không thể kết nối để chuyển bộ từ.");
+    } finally {
+      setMovingSetId(null);
+      setDraggingSetId(null);
+    }
   }
 
   useEffect(() => {
@@ -567,11 +595,27 @@ export default function AdminSetsPage() {
         </div>
       </div>
       {sets && sets.length > 0 && categories.length > 0 && (
-        <div className="mb-5 flex flex-wrap gap-2" aria-label="Lọc bộ từ theo danh mục">
+        <div className="mb-5 flex flex-wrap items-center gap-2" aria-label="Lọc bộ từ theo danh mục">
           <CategoryFilter label="Tất cả" count={sets.length} active={selectedCategory === ALL_CATEGORIES} onClick={() => setSelectedCategory(ALL_CATEGORIES)} />
           {categories.map(([category, count]) => (
-            <CategoryFilter key={category} label={category === UNCATEGORIZED ? "Chưa phân loại" : category} count={count} active={selectedCategory === category} onClick={() => setSelectedCategory(category)} />
+            <CategoryFilter
+              key={category}
+              label={category === UNCATEGORIZED ? "Chưa phân loại" : category}
+              count={count}
+              active={selectedCategory === category}
+              onClick={() => setSelectedCategory(category)}
+              onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, category) : undefined}
+            />
           ))}
+          {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
+            <button
+              type="button"
+              className={`${cx.btn} ${cx.btnGhost} !min-h-9 !rounded-full !px-3 !py-1.5 text-xs`}
+              onClick={() => { setManagerParentPath(selectedCategory); setManagerNewName(""); setShowCategoryManager(true); }}
+            >
+              + Tạo thư mục con
+            </button>
+          )}
         </div>
       )}
 
@@ -763,7 +807,13 @@ export default function AdminSetsPage() {
         </div>
       ) : (
         filteredSets.map((s) => (
-          <div className={cx.setcard} key={s.id}>
+          <div
+            className={`${cx.setcard} ${draggingSetId === s.id ? "opacity-60 ring-2 ring-[#7865EE]/30" : ""}`}
+            key={s.id}
+            draggable
+            onDragStart={(event) => { setDraggingSetId(s.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(s.id)); }}
+            onDragEnd={() => setDraggingSetId(null)}
+          >
             <div>
               <div className="font-semibold">{s.name}</div>
               <div className="text-[0.78rem] text-muted mt-0.5">
@@ -775,7 +825,7 @@ export default function AdminSetsPage() {
             <div className="flex items-center gap-2 flex-wrap">
               <button
                 className={`${cx.btn} ${cx.btnGold}`}
-                disabled={openingDetailId !== null}
+                disabled={openingDetailId !== null || movingSetId === s.id}
                 onClick={() => openDetail(s.id)}
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
@@ -1201,12 +1251,14 @@ export default function AdminSetsPage() {
   );
 }
 
-function CategoryFilter({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+function CategoryFilter({ label, count, active, onClick, onDrop }: { label: string; count: number; active: boolean; onClick: () => void; onDrop?: () => void }) {
   return (
     <button
       type="button"
       aria-pressed={active}
       onClick={onClick}
+      onDragOver={onDrop ? (event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } : undefined}
+      onDrop={onDrop ? (event) => { event.preventDefault(); onDrop(); } : undefined}
       className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
         active
           ? "border-[#7865EE] bg-[#7865EE] text-white shadow-[0_4px_12px_rgba(120,101,238,0.2)]"
