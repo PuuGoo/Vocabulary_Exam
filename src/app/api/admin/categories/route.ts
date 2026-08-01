@@ -25,6 +25,20 @@ function buildPath(name: string, parentPath?: string | null) {
   return parent ? `${parent} / ${leaf}` : leaf;
 }
 
+async function nextCategoryNumber(parentPath?: string | null) {
+  const rows = await db.select({ name: vocabCategories.name }).from(vocabCategories);
+  const prefix = parentPath ? `${parentPath} / ` : "";
+  let max = 0;
+  for (const row of rows) {
+    if (parentPath ? !row.name.startsWith(prefix) : row.name.includes(" / ")) continue;
+    const rest = parentPath ? row.name.slice(prefix.length) : row.name;
+    if (rest.includes(" / ")) continue;
+    const match = /^(\d+)_/.exec(rest);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return max + 1;
+}
+
 export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -59,7 +73,9 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = categoryPathSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Tên danh mục phải có từ 1 đến 128 ký tự." }, { status: 400 });
-  const name = buildPath(parsed.data.name, parsed.data.parentPath);
+  const number = await nextCategoryNumber(parsed.data.parentPath);
+  const leaf = parsed.data.name.replace(/^\d+_/, "").trim();
+  const name = buildPath(`${String(number).padStart(2, "0")}_${leaf}`, parsed.data.parentPath);
   if (name.length > 128) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
   if (await findDuplicate(name)) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
   const [category] = await db.insert(vocabCategories).values({ name, createdBy: session.userId }).returning();
@@ -75,7 +91,11 @@ export async function PATCH(request: NextRequest) {
     const [current] = await tx.select().from(vocabCategories).where(eq(vocabCategories.id, parsed.data.id)).limit(1);
     if (!current) return null;
     const parent = current.name.includes(" / ") ? current.name.slice(0, current.name.lastIndexOf(" / ")) : "";
-    const name = buildPath(parsed.data.name, parent || null);
+    const currentLeaf = current.name.split(" / ").pop() || current.name;
+    const currentNumber = /^(\d+)_/.exec(currentLeaf)?.[1];
+    const cleanRequestedLeaf = parsed.data.name.replace(/^\d+_/, "").trim();
+    const requestedLeaf = currentNumber ? `${currentNumber}_${cleanRequestedLeaf}` : cleanRequestedLeaf;
+    const name = buildPath(requestedLeaf, parent || null);
     if (name.length > 128) return { tooLong: true as const };
     if (await findDuplicate(name, parsed.data.id)) return { conflict: true as const };
     const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} like ${`${current.name} / %`}`);
