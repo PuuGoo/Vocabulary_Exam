@@ -7,6 +7,7 @@ import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 
 const nameSchema = z.object({ name: z.string().trim().min(1).max(128) });
+const categoryPathSchema = nameSchema.extend({ parentPath: z.string().trim().max(256).nullable().optional() });
 
 async function requireAdmin() {
   const session = await getSession();
@@ -16,6 +17,12 @@ async function requireAdmin() {
 async function findDuplicate(name: string, excludedId?: number) {
   const matches = await db.select({ id: vocabCategories.id }).from(vocabCategories).where(ilike(vocabCategories.name, name)).limit(2);
   return matches.find((item) => item.id !== excludedId);
+}
+
+function buildPath(name: string, parentPath?: string | null) {
+  const leaf = normalizeText(name).replace(/\s*\/\s*/g, "").trim();
+  const parent = parentPath ? normalizeText(parentPath).replace(/\s*\/\s*/g, " / ").trim() : "";
+  return parent ? `${parent} / ${leaf}` : leaf;
 }
 
 export async function GET() {
@@ -41,7 +48,7 @@ export async function GET() {
       createdAt: vocabCategories.createdAt,
     })
     .from(vocabCategories)
-    .leftJoin(vocabSets, eq(vocabSets.category, vocabCategories.name))
+    .leftJoin(vocabSets, sql`${vocabSets.category} = ${vocabCategories.name} or ${vocabSets.category} like ${vocabCategories.name} || ' / %'`)
     .groupBy(vocabCategories.id)
     .orderBy(asc(vocabCategories.name));
   return NextResponse.json({ categories });
@@ -50,9 +57,10 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const parsed = nameSchema.safeParse(await request.json().catch(() => null));
+  const parsed = categoryPathSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Tên danh mục phải có từ 1 đến 128 ký tự." }, { status: 400 });
-  const name = normalizeText(parsed.data.name);
+  const name = buildPath(parsed.data.name, parsed.data.parentPath);
+  if (name.length > 128) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
   if (await findDuplicate(name)) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
   const [category] = await db.insert(vocabCategories).values({ name, createdBy: session.userId }).returning();
   return NextResponse.json({ category }, { status: 201 });
@@ -63,17 +71,26 @@ export async function PATCH(request: NextRequest) {
   const body = await request.json().catch(() => null);
   const parsed = nameSchema.extend({ id: z.number().int().positive() }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu danh mục không hợp lệ." }, { status: 400 });
-  const name = normalizeText(parsed.data.name);
-  if (await findDuplicate(name, parsed.data.id)) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
-
   const result = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(vocabCategories).where(eq(vocabCategories.id, parsed.data.id)).limit(1);
     if (!current) return null;
+    const parent = current.name.includes(" / ") ? current.name.slice(0, current.name.lastIndexOf(" / ")) : "";
+    const name = buildPath(parsed.data.name, parent || null);
+    if (name.length > 128) return { tooLong: true as const };
+    if (await findDuplicate(name, parsed.data.id)) return { conflict: true as const };
+    const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} like ${`${current.name} / %`}`);
     await tx.update(vocabCategories).set({ name }).where(eq(vocabCategories.id, current.id));
     await tx.update(vocabSets).set({ category: name }).where(eq(vocabSets.category, current.name));
+    for (const child of descendants) {
+      const childName = `${name}${child.name.slice(current.name.length)}`;
+      await tx.update(vocabCategories).set({ name: childName }).where(eq(vocabCategories.id, child.id));
+      await tx.update(vocabSets).set({ category: childName }).where(eq(vocabSets.category, child.name));
+    }
     return { ...current, name, oldName: current.name };
   });
   if (!result) return NextResponse.json({ error: "Không tìm thấy danh mục." }, { status: 404 });
+  if ("tooLong" in result) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
+  if ("conflict" in result) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
   return NextResponse.json({ category: result });
 }
 
@@ -85,9 +102,11 @@ export async function DELETE(request: NextRequest) {
   const result = await db.transaction(async (tx) => {
     const [current] = await tx.select().from(vocabCategories).where(eq(vocabCategories.id, id)).limit(1);
     if (!current) return null;
-    const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` }).from(vocabSets).where(eq(vocabSets.category, current.name));
-    await tx.update(vocabSets).set({ category: null }).where(eq(vocabSets.category, current.name));
-    await tx.delete(vocabCategories).where(eq(vocabCategories.id, id));
+    const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} = ${current.name} or ${vocabCategories.name} like ${`${current.name} / %`}`);
+    const names = descendants.map((item) => item.name);
+    const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` }).from(vocabSets).where(sql`${vocabSets.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
+    await tx.update(vocabSets).set({ category: null }).where(sql`${vocabSets.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
+    await tx.delete(vocabCategories).where(sql`${vocabCategories.name} = ${current.name} or ${vocabCategories.name} like ${`${current.name} / %`}`);
     return { name: current.name, movedSets: count };
   });
   if (!result) return NextResponse.json({ error: "Không tìm thấy danh mục." }, { status: 404 });

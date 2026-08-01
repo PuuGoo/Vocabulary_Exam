@@ -7,6 +7,8 @@ import { cx } from "@/components/ui";
 import { formatTimer, nextPomodoroPhase, PomodoroPhase, remainingSeconds } from "@/lib/pomodoro";
 
 const STORAGE_KEY = "ivc_pomodoro_v1";
+const ALARM_SIGNAL_KEY = "ivc_pomodoro_alarm_signal_v1";
+const ALARM_CHANNEL = "lexora-pomodoro-alarm";
 type Settings = { focus: number; short: number; long: number };
 type SavedState = { phase: PomodoroPhase; remaining: number; running: boolean; endAt: number | null; task: string; completedFocus: number; todayCount: number; today: string; soundEnabled: boolean; settings: Settings };
 const defaults: SavedState = { phase: "focus", remaining: 25 * 60, running: false, endAt: null, task: "Học từ vựng", completedFocus: 0, todayCount: 0, today: "", soundEnabled: true, settings: { focus: 25, short: 5, long: 20 } };
@@ -36,6 +38,7 @@ export default function PomodoroTimer() {
   const [alarmActive, setAlarmActive] = useState(false);
   const originalTitle = useRef("");
   const alarmTimerRef = useRef<number | null>(null);
+  const alarmChannelRef = useRef<BroadcastChannel | null>(null);
 
   useEffect(() => {
     originalTitle.current = document.title;
@@ -59,12 +62,17 @@ export default function PomodoroTimer() {
     return () => { document.title = originalTitle.current; };
   }, []);
 
-  function stopAlarm() {
+  function stopAlarm(syncTabs = true) {
     if (alarmTimerRef.current !== null) {
       window.clearInterval(alarmTimerRef.current);
       alarmTimerRef.current = null;
     }
     setAlarmActive(false);
+    if (syncTabs) {
+      const signal = { type: "alarm-stop", at: Date.now() };
+      try { localStorage.setItem(ALARM_SIGNAL_KEY, JSON.stringify(signal)); } catch { /* Storage is optional. */ }
+      try { alarmChannelRef.current?.postMessage(signal); } catch { /* BroadcastChannel is optional. */ }
+    }
   }
 
   function startAlarm() {
@@ -76,6 +84,30 @@ export default function PomodoroTimer() {
 
   useEffect(() => () => {
     if (alarmTimerRef.current !== null) window.clearInterval(alarmTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    function receiveAlarmStop() { stopAlarm(false); }
+    function receiveStorageSignal(event: StorageEvent) {
+      if (event.key !== ALARM_SIGNAL_KEY || !event.newValue) return;
+      try {
+        const signal = JSON.parse(event.newValue) as { type?: string };
+        if (signal.type === "alarm-stop") receiveAlarmStop();
+      } catch { /* Ignore malformed events from old versions. */ }
+    }
+    if (typeof BroadcastChannel !== "undefined") {
+      const channel = new BroadcastChannel(ALARM_CHANNEL);
+      alarmChannelRef.current = channel;
+      channel.addEventListener("message", (event: MessageEvent<{ type?: string }>) => {
+        if (event.data?.type === "alarm-stop") receiveAlarmStop();
+      });
+    }
+    window.addEventListener("storage", receiveStorageSignal);
+    return () => {
+      window.removeEventListener("storage", receiveStorageSignal);
+      alarmChannelRef.current?.close();
+      alarmChannelRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
@@ -152,7 +184,7 @@ export default function PomodoroTimer() {
   return <>
     <button type="button" onClick={() => alarmActive ? stopAlarm() : setOpen(true)} className={`flex h-10 items-center gap-1.5 rounded-[12px] border px-2.5 text-[0.8rem] font-semibold transition-colors ${alarmActive ? "border-bad bg-bad text-white hover:bg-[#B84242]" : state.running ? "border-[#7865EE] bg-[#7865EE] text-white hover:bg-[#6550DB]" : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-gold"}`} title={alarmActive ? "Tắt chuông Pomodoro" : `Pomodoro · ${phaseLabels[state.phase]} ${formatTimer(state.remaining)} · Alt+P`} aria-label={alarmActive ? "Tắt chuông Pomodoro" : `Mở đồng hồ Pomodoro, còn ${formatTimer(state.remaining)}`} aria-keyshortcuts="Alt+P"><span aria-hidden="true">{alarmActive ? "🔔" : "🍅"}</span><span className="hidden md:inline"> {alarmActive ? "Tắt chuông" : state.running ? formatTimer(state.remaining) : "Pomodoro"}</span></button>
     {open && <Modal title="Đồng hồ Pomodoro" onClose={() => setOpen(false)}>
-      {alarmActive && <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-bad bg-badbg px-3 py-2.5 text-sm text-bad" role="alert"><span>Đã hết giờ. Chuông đang lặp lại.</span><button type="button" className={`${cx.btn} !min-h-10 !px-3 !py-1.5 border border-bad text-bad`} onClick={stopAlarm}>Tắt chuông</button></div>}
+      {alarmActive && <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-bad bg-badbg px-3 py-2.5 text-sm text-bad" role="alert"><span>Đã hết giờ. Chuông đang lặp lại.</span><button type="button" className={`${cx.btn} !min-h-10 !px-3 !py-1.5 border border-bad text-bad`} onClick={() => stopAlarm()}>Tắt chuông</button></div>}
       <div className="text-center"><div className={`mx-auto mb-3 inline-flex rounded-full px-3 py-1 text-[0.75rem] font-semibold ${state.phase === "focus" ? "bg-badbg text-bad" : "bg-[#e5f4ea] text-ok"}`}>{phaseLabels[state.phase]}</div>
         <div className={`mx-auto flex h-52 w-52 items-center justify-center rounded-full p-3 ${state.running ? "lexora-timer-pulse" : ""}`} style={{ background: `conic-gradient(#a87913 ${percent}%, #e3dccb ${percent}% 100%)` }}><div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white"><div className="font-serif text-5xl font-bold tabular-nums text-ink" aria-live="polite" aria-atomic="true">{formatTimer(state.remaining)}</div><div className="mt-2 max-w-36 truncate text-[0.76rem] font-medium text-inksoft">{state.task || "Chưa chọn nhiệm vụ"}</div></div></div>
         <div className="mt-4 flex justify-center gap-2">{[0,1,2,3].map((dot) => <span key={dot} className={`h-2.5 w-2.5 rounded-full ${dot < cycleProgress ? "bg-[#9a6b08]" : "bg-[#c9c0ad]"}`} />)}</div><div className="mt-1 text-[0.72rem] font-medium text-inksoft">{cycleProgress}/4 trước kỳ nghỉ dài · {state.todayCount} Pomodoro hôm nay</div>
