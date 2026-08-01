@@ -59,6 +59,7 @@ export default function AdminSetsPage() {
   const [categoryOptions, setCategoryOptions] = useState<CategorySummary[]>([]);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [managerNewName, setManagerNewName] = useState("");
+  const [managerParentPath, setManagerParentPath] = useState("");
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState("");
   const [categorySubmitting, setCategorySubmitting] = useState(false);
@@ -86,6 +87,7 @@ export default function AdminSetsPage() {
   const [savingClass, setSavingClass] = useState(false);
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
   const [detailWordQuery, setDetailWordQuery] = useState("");
+  const [previewSetId, setPreviewSetId] = useState<number | null>(null);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -193,6 +195,23 @@ export default function AdminSetsPage() {
     return () => window.removeEventListener("keydown", handleSetNavigation);
   }, [detail, editingWordId, nextSibling, openingDetailId, previousSibling, showAddWord, showCategoryManager, showNewForm]);
 
+  useEffect(() => {
+    if (previewSetId === null) return;
+    function closePreview(event: PointerEvent) {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest("[data-preview-menu]")) setPreviewSetId(null);
+    }
+    function closePreviewWithEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setPreviewSetId(null);
+    }
+    document.addEventListener("pointerdown", closePreview);
+    window.addEventListener("keydown", closePreviewWithEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closePreview);
+      window.removeEventListener("keydown", closePreviewWithEscape);
+    };
+  }, [previewSetId]);
+
   async function createCategory() {
     const name = managerNewName.trim();
     if (!name) return toast("Vui lòng nhập tên danh mục.");
@@ -201,11 +220,12 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/admin/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, parentPath: managerParentPath || null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể tạo danh mục.");
       setManagerNewName("");
+      setManagerParentPath("");
       await loadCategories();
       toast(`Đã tạo danh mục “${data.category.name}”.`);
     } catch {
@@ -328,6 +348,7 @@ export default function AdminSetsPage() {
   }
 
   async function openDetail(id: number) {
+    setPreviewSetId(null);
     setOpeningDetailId(id);
     try {
       const res = await fetch(`/api/sets/${id}`);
@@ -684,6 +705,14 @@ export default function AdminSetsPage() {
               {categorySubmitting ? "Đang lưu..." : "+ Thêm"}
             </button>
           </div>
+          <label className="mb-4 block">
+            <span className={cx.label}>Danh mục cha (không bắt buộc)</span>
+            <select className={`${cx.input} !mb-0`} value={managerParentPath} onChange={(event) => setManagerParentPath(event.target.value)}>
+              <option value="">Tạo ở cấp cao nhất</option>
+              {categoryOptions.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+            </select>
+            <span className="mt-1.5 block text-xs text-muted">Ví dụ: chọn Vocabulary rồi nhập Sức khỏe.</span>
+          </label>
           <div className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
             {categoryOptions.length === 0 ? (
               <div className={cx.empty}>Chưa có danh mục. Hãy tạo danh mục đầu tiên ở phía trên.</div>
@@ -700,7 +729,7 @@ export default function AdminSetsPage() {
                       autoFocus
                     />
                     <div className="flex gap-2">
-                      <button className={`${cx.btn} ${cx.btnGold}`} disabled={categorySubmitting || !editingCategoryName.trim() || editingCategoryName.trim() === category.name} onClick={() => void renameCategory(category.id)}>Lưu</button>
+                      <button className={`${cx.btn} ${cx.btnGold}`} disabled={categorySubmitting || !editingCategoryName.trim() || editingCategoryName.trim() === category.name.split(" / ").pop()} onClick={() => void renameCategory(category.id)}>Lưu</button>
                       <button className={`${cx.btn} ${cx.btnGhost}`} disabled={categorySubmitting} onClick={() => setEditingCategoryId(null)}>Hủy</button>
                     </div>
                   </div>
@@ -708,10 +737,10 @@ export default function AdminSetsPage() {
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-[#EFECFF]" aria-hidden="true">📁</span>
                     <div className="min-w-0 flex-1">
-                      <b className="block truncate text-sm">{category.name}</b>
+                      <b className="block truncate text-sm" style={{ paddingLeft: `${Math.max(0, category.name.split(" / ").length - 1) * 16}px` }}>{category.name}</b>
                       <span className="text-xs text-muted">{category.count} bộ từ</span>
                     </div>
-                    <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} disabled={categorySubmitting} onClick={() => { setEditingCategoryId(category.id); setEditingCategoryName(category.name); }}>Đổi tên</button>
+                    <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} disabled={categorySubmitting} onClick={() => { setEditingCategoryId(category.id); setEditingCategoryName(category.name.split(" / ").pop() || category.name); }}>Đổi tên</button>
                     <button className="min-h-9 rounded-[9px] border border-[#F2D6D6] bg-white px-3 text-xs font-bold text-[#B65353] transition hover:bg-[#FFF5F5]" disabled={categorySubmitting} onClick={() => void deleteCategory(category)}>Xóa</button>
                   </div>
                 )}
@@ -751,13 +780,24 @@ export default function AdminSetsPage() {
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
-              <details className="relative">
-                <summary className={`${cx.btn} ${cx.btnGhost} list-none select-none`}>Xem thử ▾</summary>
-                <div className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-56 rounded-lg border border-line bg-white p-1.5 shadow-lg">
+              <div className="relative" data-preview-menu>
+                <button
+                  type="button"
+                  className={`${cx.btn} ${cx.btnGhost} select-none`}
+                  aria-haspopup="menu"
+                  aria-expanded={previewSetId === s.id}
+                  aria-controls={`preview-menu-${s.id}`}
+                  onClick={() => setPreviewSetId((current) => current === s.id ? null : s.id)}
+                >
+                  Xem thử <span aria-hidden="true">{previewSetId === s.id ? "▴" : "▾"}</span>
+                </button>
+                {previewSetId === s.id && <div id={`preview-menu-${s.id}`} role="menu" className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-56 rounded-lg border border-line bg-white p-1.5 shadow-lg">
                   <a
                     href={`/learn/${s.id}`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    role="menuitem"
+                    onClick={() => setPreviewSetId(null)}
                     className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
                   >
                     📖 Học bài
@@ -766,6 +806,8 @@ export default function AdminSetsPage() {
                     href={`/quiz/${s.id}?mode=fill`}
                     target="_blank"
                     rel="noopener noreferrer"
+                    role="menuitem"
+                    onClick={() => setPreviewSetId(null)}
                     className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
                   >
                     ✍️ {s.type === "ielts_vocab" ? "Điền từ tiếng Anh" : "Điền V1/V2/V3"}
@@ -775,13 +817,15 @@ export default function AdminSetsPage() {
                       href={`/quiz/${s.id}?mode=mc`}
                       target="_blank"
                       rel="noopener noreferrer"
+                      role="menuitem"
+                      onClick={() => setPreviewSetId(null)}
                       className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
                     >
                       ☑️ Trắc nghiệm
                     </a>
                   )}
-                </div>
-              </details>
+                </div>}
+              </div>
               <button
                 className="px-2 py-2 text-[0.8rem] text-bad hover:underline"
                 onClick={() => deleteSet(s.id)}
