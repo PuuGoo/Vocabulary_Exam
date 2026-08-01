@@ -13,8 +13,9 @@ type Word = {
   ipaV1?: string | null; ipaV2?: string | null; ipaV3?: string | null;
 };
 type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
+type ReviewMode = "all" | "unknown" | "known" | "unrated";
 type UndoState = {
-  token: string; message: string; known: Record<number, boolean>; order: Word[]; index: number; flipped: boolean;
+  token: string; message: string; known: Record<number, boolean>; order: Word[]; index: number; flipped: boolean; finished: boolean;
 };
 
 function shuffle<T>(arr: T[]) { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
@@ -29,7 +30,8 @@ export default function LearnPage() {
   const params = useParams<{ setId: string }>(); const router = useRouter();
   const [set, setSet] = useState<SetDetail | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(false);
   const [order, setOrder] = useState<Word[]>([]); const [index, setIndex] = useState(0); const [flipped, setFlipped] = useState(false);
-  const [known, setKnown] = useState<Record<number, boolean>>({}); const [mode, setMode] = useState<"all"|"unknown"|"unrated">("all");
+  const [known, setKnown] = useState<Record<number, boolean>>({}); const [mode, setMode] = useState<ReviewMode>("all");
+  const [finished, setFinished] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false); const [jump, setJump] = useState(""); const [saving, setSaving] = useState(false);
   const [bookmarks, setBookmarks] = useState<Record<number, number>>({}); const [undo, setUndo] = useState<UndoState | null>(null);
   const [swipe, setSwipe] = useState(0); const swipeRef = useRef<{x:number;y:number;t:number}|null>(null); const suppressClick = useRef(false);
@@ -47,7 +49,7 @@ export default function LearnPage() {
         const sessions = await c.json(); const saved = (sessions.sessions || []).find((x: {setId:number}) => x.setId === data.set.id);
         const found = saved ? data.set.words.findIndex((x: Word) => x.id === saved.wordId) : -1; if (found > 0) resumeIndex = found;
       }
-      setSet(data.set); setOrder(data.set.words); setKnown(data.progress || {}); setIndex(resumeIndex); setFlipped(false);
+      setSet(data.set); setOrder(data.set.words); setKnown(data.progress || {}); setIndex(resumeIndex); setFlipped(false); setFinished(false);
       if (b?.ok) { const d = await b.json(); setBookmarks(Object.fromEntries((d.bookmarks || []).map((x: {wordId:number;id:number}) => [x.wordId,x.id]))); }
     } catch { setError(true); } finally { setLoading(false); }
   }
@@ -66,17 +68,17 @@ export default function LearnPage() {
     sessionTimer.current = setTimeout(() => { void fetch("/api/study-sessions", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({setId:set.id,wordId:word.id,position}) }).catch(() => undefined); }, 500);
     return () => { if (sessionTimer.current) clearTimeout(sessionTimer.current); };
   }, [set, word]);
-  const go = (n:number) => { if (!total) return; setIndex(Math.min(Math.max(n,0), total-1)); setFlipped(false); };
-  const next = () => go(index + 1); const prev = () => go(index - 1);
-  const filtered = (m: "all"|"unknown"|"unrated") => set?.words.filter(w => m === "all" || (m === "unknown" ? known[w.id] === false : known[w.id] === undefined)) || [];
-  const chooseMode = (m: "all"|"unknown"|"unrated") => { setMode(m); setOrder(m === "all" ? (set?.words || []) : filtered(m)); setIndex(0); setFlipped(false); setMenuOpen(false); };
-  const restart = () => { setOrder(filtered(mode)); setIndex(0); setFlipped(false); setMenuOpen(false); };
-  const reshuffle = () => { setOrder(shuffle(filtered(mode))); setIndex(0); setFlipped(false); setMenuOpen(false); };
+  const go = (n:number) => { if (!total) return; setFinished(false); setIndex(Math.min(Math.max(n,0), total-1)); setFlipped(false); };
+  const next = () => { if (index >= total - 1) { setFinished(true); setFlipped(false); } else go(index + 1); }; const prev = () => go(index - 1);
+  const filtered = (m: ReviewMode) => set?.words.filter(w => m === "all" || (m === "unknown" ? known[w.id] === false : m === "known" ? known[w.id] === true : known[w.id] === undefined)) || [];
+  const chooseMode = (m: ReviewMode) => { setMode(m); setOrder(m === "all" ? (set?.words || []) : filtered(m)); setIndex(0); setFlipped(false); setFinished(false); setMenuOpen(false); };
+  const restart = () => { setOrder(filtered(mode)); setIndex(0); setFlipped(false); setFinished(false); setMenuOpen(false); };
+  const reshuffle = () => { setOrder(shuffle(filtered(mode))); setIndex(0); setFlipped(false); setFinished(false); setMenuOpen(false); };
 
   async function mark(learned: boolean) {
     if (!set || !word || !flipped || savingRef.current) return;
     if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(18);
-    const previous = { known, order, index, flipped }; const marked = word; savingRef.current = true; setSaving(true);
+    const previous = { known, order, index, flipped, finished }; const marked = word; const wasLast = index >= order.length - 1; savingRef.current = true; setSaving(true);
     setKnown(v => ({ ...v, [marked.id]: learned }));
     if (mode !== "all" && (mode === "unrated" || learned)) {
       setOrder(v => {
@@ -88,6 +90,7 @@ export default function LearnPage() {
       setIndex(i => Math.min(i + 1, Math.max(0, total - 1)));
     }
     setFlipped(false);
+    if (wasLast) setFinished(true);
     try {
       const res = await fetch("/api/mistakes", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({wordId:marked.id,setId:set.id,learned}) });
       if (!res.ok) throw new Error(); const data = await res.json();
@@ -95,7 +98,7 @@ export default function LearnPage() {
       setUndo({ token: data.undoToken, message: learned ? "Đã đánh dấu Đã nhớ" : "Đã đánh dấu Chưa nhớ", ...previous });
       undoTimer.current = setTimeout(() => setUndo(null), 5000);
     } catch {
-      setKnown(previous.known); setOrder(previous.order); setIndex(previous.index); setFlipped(previous.flipped);
+      setKnown(previous.known); setOrder(previous.order); setIndex(previous.index); setFlipped(previous.flipped); setFinished(previous.finished);
       toast("Không thể lưu đánh giá. Thẻ đã được khôi phục.");
     } finally { savingRef.current = false; setSaving(false); }
   }
@@ -103,7 +106,7 @@ export default function LearnPage() {
     if (!undo) return; const current = undo; setUndo(null); if (undoTimer.current) clearTimeout(undoTimer.current);
     const res = await fetch("/api/mistakes", { method:"PATCH", headers:{"Content-Type":"application/json"}, body:JSON.stringify({undoToken:current.token}) });
     if (!res.ok) { toast("Hoàn tác đã hết hạn hoặc không thành công."); return; }
-    setKnown(current.known); setOrder(current.order); setIndex(current.index); setFlipped(current.flipped); toast("Đã hoàn tác đánh giá");
+    setKnown(current.known); setOrder(current.order); setIndex(current.index); setFlipped(current.flipped); setFinished(current.finished); toast("Đã hoàn tác đánh giá");
   }
   async function toggleBookmark() {
     if (!word || saving) return; const id = bookmarks[word.id]; setSaving(true);
@@ -149,6 +152,7 @@ export default function LearnPage() {
         if (pressed === "b") { e.preventDefault(); void toggleBookmark(); setMenuOpen(false); }
         else if (pressed === "a") { e.preventDefault(); chooseMode("all"); }
         else if (pressed === "u" && unknown > 0) { e.preventDefault(); chooseMode("unknown"); }
+        else if (pressed === "k" && mastered > 0) { e.preventDefault(); chooseMode("known"); }
         else if (pressed === "n" && unrated > 0) { e.preventDefault(); chooseMode("unrated"); }
         else if (pressed === "j") { e.preventDefault(); jumpInputRef.current?.focus(); }
         else if (pressed === "r") { e.preventDefault(); restart(); }
@@ -174,7 +178,34 @@ export default function LearnPage() {
 
   if (loading) return <main className="fixed inset-0 z-[80] grid place-items-center bg-[#F8F8FC] text-muted">Đang tải bộ từ…</main>;
   if (error || !set) return <main className="fixed inset-0 z-[80] grid place-items-center bg-[#F8F8FC] p-6 text-center"><div>Không thể tải bộ từ.<div className="mt-4 flex gap-2 justify-center"><button className="rounded-xl bg-[#7865EE] px-4 py-2 text-white" onClick={()=>void loadSet()}>Thử lại</button><button className="rounded-xl border px-4 py-2" onClick={()=>router.push("/study")}>Chọn bộ khác</button></div></div></main>;
-  if (!word) return <main className="fixed inset-0 z-[80] grid place-items-center bg-[#F8F8FC] p-6 text-center"><div><div className="text-3xl">🎉</div><p className="mt-2 font-semibold">Bạn đã hoàn thành lượt ôn này.</p><p className="mt-1 text-sm text-[#8B899F]">Đánh giá vừa rồi vẫn có thể hoàn tác trong 5 giây.</p><button className="mt-4 rounded-xl border bg-white px-4 py-2" onClick={()=>chooseMode("all")}>Xem tất cả từ</button></div>{undo&&<div className="lexora-undo-snackbar fixed inset-x-3 bottom-[max(20px,env(safe-area-inset-bottom))] z-[100] mx-auto flex max-w-md items-center justify-between gap-3 overflow-hidden rounded-2xl bg-[#242337] px-4 py-3 text-left text-sm text-white shadow-2xl"><span>{undo.message}</span><button onClick={()=>void undoLast()} className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold text-white hover:bg-white/25">Hoàn tác</button><span aria-hidden="true" className="lexora-undo-timer absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[#AFA2FF]"/></div>}</main>;
+  if (!word || finished) return <main className="fixed inset-0 z-[80] overflow-y-auto bg-[#F8F8FC] p-4 pb-[max(24px,env(safe-area-inset-bottom))] pt-[max(24px,env(safe-area-inset-top))] text-[#242337]">
+    <div className="mx-auto flex min-h-full max-w-lg items-center justify-center">
+      <section className="w-full rounded-3xl border border-[#EBEAF2] bg-white p-5 text-center shadow-[0_18px_50px_rgba(36,35,55,0.08)] sm:p-8">
+        <div className="text-4xl" aria-hidden="true">{set.words.length ? "🎉" : "📭"}</div>
+        <h1 className="mt-3 text-xl font-extrabold">{set.words.length ? "Bạn đã hoàn thành lượt học" : "Bộ này chưa có từ"}</h1>
+        {set.words.length > 0 && <>
+          <p className="mt-2 text-sm leading-6 text-[#8B899F]">{unknown > 0 ? `Còn ${unknown} từ chưa nhớ. Ôn lại ngay một lượt ngắn sẽ giúp ghi nhớ tốt hơn.` : "Tuyệt vời, hiện không còn từ nào được đánh dấu Chưa nhớ."}</p>
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-[#FFF1F1] p-3"><b className="block text-lg text-[#B64242]">{unknown}</b><span className="text-[0.7rem] text-[#8B5555]">Chưa nhớ</span></div>
+            <div className="rounded-2xl bg-[#EEFBF3] p-3"><b className="block text-lg text-[#277A4B]">{mastered}</b><span className="text-[0.7rem] text-[#47735A]">Đã nhớ</span></div>
+            <div className="rounded-2xl bg-[#F0EDFF] p-3"><b className="block text-lg text-[#6550DB]">{unrated}</b><span className="text-[0.7rem] text-[#716B91]">Chưa đánh giá</span></div>
+          </div>
+          <div className="mt-5 grid gap-2">
+            {unknown > 0 && <button className="min-h-12 rounded-xl bg-[#B64242] px-4 font-bold text-white transition active:scale-[.98]" onClick={()=>chooseMode("unknown")}>Ôn lại {unknown} từ chưa nhớ</button>}
+            {mastered > 0 && <button className="min-h-12 rounded-xl border border-[#B6DEC8] bg-[#EEFBF3] px-4 font-bold text-[#277A4B] transition active:scale-[.98]" onClick={()=>chooseMode("known")}>Ôn lại {mastered} từ đã nhớ</button>}
+            {unrated > 0 && <button className="min-h-12 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] px-4 font-bold text-[#6550DB] transition active:scale-[.98]" onClick={()=>chooseMode("unrated")}>Đánh giá {unrated} từ còn lại</button>}
+          </div>
+        </>}
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          {word && <button className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold" onClick={()=>setFinished(false)}>Quay lại thẻ cuối</button>}
+          {set.words.length > 0 && <button className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold" onClick={()=>chooseMode("all")}>Học lại tất cả</button>}
+          <button className="rounded-xl border bg-white px-4 py-2 text-sm font-semibold" onClick={()=>router.push("/study")}>Chọn bộ khác</button>
+        </div>
+        {undo && <p className="mt-4 text-xs text-[#8B899F]">Đánh giá vừa rồi vẫn có thể hoàn tác trong 5 giây.</p>}
+      </section>
+    </div>
+    {undo&&<div className="lexora-undo-snackbar fixed inset-x-3 bottom-[max(20px,env(safe-area-inset-bottom))] z-[100] mx-auto flex max-w-md items-center justify-between gap-3 overflow-hidden rounded-2xl bg-[#242337] px-4 py-3 text-left text-sm text-white shadow-2xl"><span>{undo.message}</span><button onClick={()=>void undoLast()} className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold text-white hover:bg-white/25">Hoàn tác</button><span aria-hidden="true" className="lexora-undo-timer absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[#AFA2FF]"/></div>}
+  </main>;
 
   const answer = isVerb ? `${word.v1 || ""} — ${word.v2 || ""} — ${word.v3 || ""}` : word.term || "";
   return <main className="fixed inset-0 z-[80] flex flex-col overflow-hidden bg-[#F8F8FC] text-[#242337]">
@@ -189,6 +220,7 @@ export default function LearnPage() {
         <div className="grid gap-1">
           <button data-menu-item role="menuitem" aria-keyshortcuts="A" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>chooseMode("all")}><ActionLabel icon="▦">Tất cả từ</ActionLabel><Shortcut>A</Shortcut></button>
           <button data-menu-item role="menuitem" aria-keyshortcuts="U" disabled={unknown===0} className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF] disabled:cursor-not-allowed disabled:opacity-40" onClick={()=>chooseMode("unknown")}><ActionLabel icon="◌">Ôn từ chưa nhớ ({unknown})</ActionLabel><Shortcut>U</Shortcut></button>
+          <button data-menu-item role="menuitem" aria-keyshortcuts="K" disabled={mastered===0} className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF] disabled:cursor-not-allowed disabled:opacity-40" onClick={()=>chooseMode("known")}><ActionLabel icon="✓">Ôn lại từ đã nhớ ({mastered})</ActionLabel><Shortcut>K</Shortcut></button>
           <button data-menu-item role="menuitem" aria-keyshortcuts="N" disabled={unrated===0} className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF] disabled:cursor-not-allowed disabled:opacity-40" onClick={()=>chooseMode("unrated")}><ActionLabel icon="◍">Đánh giá từ chưa thuộc ({unrated})</ActionLabel><Shortcut>N</Shortcut></button>
         </div>
         <div className="my-3 flex gap-2"><div className="relative min-w-0 flex-1"><input ref={jumpInputRef} aria-label="Số thẻ, phím tắt J" value={jump} onChange={e=>setJump(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const n=Number(jump);if(n)go(n-1);setJump("");setMenuOpen(false);}}} placeholder="Đi tới thẻ…" type="number" className="h-11 w-full rounded-lg border py-2 pl-3 pr-9 text-sm"/><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"><Shortcut>J</Shortcut></span></div><button data-menu-item role="menuitem" className="rounded-lg bg-[#7865EE] px-3 text-sm font-semibold text-white" onClick={()=>{const n=Number(jump);if(n)go(n-1);setJump("");setMenuOpen(false);}}>Đi</button></div>
