@@ -93,10 +93,23 @@ export default function AdminSetsPage() {
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const category of categoryOptions) counts.set(category.name, category.count);
+    for (const category of categoryOptions) {
+      const parts = category.name.split(" / ");
+      for (let index = 1; index <= parts.length; index += 1) {
+        const path = parts.slice(0, index).join(" / ");
+        if (!counts.has(path)) counts.set(path, 0);
+      }
+    }
     for (const set of sets || []) {
       const category = set.category?.trim() || UNCATEGORIZED;
-      if (!counts.has(category)) counts.set(category, 1);
+      if (category === UNCATEGORIZED) counts.set(category, (counts.get(category) || 0) + 1);
+      else {
+        const parts = category.split(" / ");
+        for (let index = 1; index <= parts.length; index += 1) {
+          const path = parts.slice(0, index).join(" / ");
+          counts.set(path, (counts.get(path) || 0) + 1);
+        }
+      }
     }
     return Array.from(counts.entries()).sort(([left], [right]) => {
       if (left === UNCATEGORIZED) return 1;
@@ -104,6 +117,19 @@ export default function AdminSetsPage() {
       return left.localeCompare(right, "vi");
     });
   }, [categoryOptions, sets]);
+  const childCategories = useMemo(() => {
+    if (selectedCategory === UNCATEGORIZED) return [];
+    const parent = selectedCategory === ALL_CATEGORIES ? "" : `${selectedCategory} / `;
+    return categories.filter(([path]) => {
+      if (path === UNCATEGORIZED || !path.startsWith(parent) || path === selectedCategory) return false;
+      return !path.slice(parent.length).includes(" / ");
+    });
+  }, [categories, selectedCategory]);
+  const categoryBreadcrumbs = useMemo(() => {
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) return [];
+    const parts = selectedCategory.split(" / ");
+    return parts.map((label, index) => ({ label, path: parts.slice(0, index + 1).join(" / ") }));
+  }, [selectedCategory]);
   const filteredSets = useMemo(() => {
     if (!sets) return [];
     const query = normalizeSearch(searchQuery);
@@ -594,29 +620,23 @@ export default function AdminSetsPage() {
           </button>
         </div>
       </div>
-      {sets && sets.length > 0 && categories.length > 0 && (
-        <div className="mb-5 flex flex-wrap items-center gap-2" aria-label="Lọc bộ từ theo danh mục">
-          <CategoryFilter label="Tất cả" count={sets.length} active={selectedCategory === ALL_CATEGORIES} onClick={() => setSelectedCategory(ALL_CATEGORIES)} />
-          {categories.map(([category, count]) => (
-            <CategoryFilter
-              key={category}
-              label={category === UNCATEGORIZED ? "Chưa phân loại" : category}
-              count={count}
-              active={selectedCategory === category}
-              onClick={() => setSelectedCategory(category)}
-              onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, category) : undefined}
-            />
-          ))}
-          {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
-            <button
-              type="button"
-              className={`${cx.btn} ${cx.btnGhost} !min-h-9 !rounded-full !px-3 !py-1.5 text-xs`}
-              onClick={() => { setManagerParentPath(selectedCategory); setManagerNewName(""); setShowCategoryManager(true); }}
-            >
-              + Tạo thư mục con
-            </button>
-          )}
-        </div>
+      {sets && categories.length > 0 && (
+        <section className="mb-5 rounded-[14px] border border-line bg-[#FBFAFE] p-3 sm:p-4" aria-label="Trình duyệt thư mục bộ từ">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm" aria-label="Đường dẫn thư mục">
+              <button type="button" className={`rounded-lg px-2 py-1 font-bold ${selectedCategory === ALL_CATEGORIES ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => setSelectedCategory(ALL_CATEGORIES)}>Tất cả bộ từ</button>
+              {selectedCategory === UNCATEGORIZED && <><span className="text-muted">/</span><span className="rounded-lg bg-[#7865EE] px-2 py-1 font-bold text-white">Chưa phân loại</span></>}
+              {categoryBreadcrumbs.map((item, index) => <span key={item.path} className="flex items-center gap-1.5"><span className="text-muted">/</span><button type="button" className={`max-w-[190px] truncate rounded-lg px-2 py-1 font-bold ${index === categoryBreadcrumbs.length - 1 ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => setSelectedCategory(item.path)}>{item.label}</button></span>)}
+            </nav>
+            {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3 !py-1.5 text-xs`} onClick={() => { setManagerParentPath(selectedCategory); setManagerNewName(""); setShowCategoryManager(true); }}>+ Tạo thư mục con</button>}
+          </div>
+          {(childCategories.length > 0 || selectedCategory === ALL_CATEGORIES) && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {childCategories.map(([path, count]) => <FolderCard key={path} name={path.split(" / ").pop() || path} count={count} dragging={draggingSetId !== null} onClick={() => setSelectedCategory(path)} onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, path) : undefined} />)}
+            {selectedCategory === ALL_CATEGORIES && categories.some(([path]) => path === UNCATEGORIZED) && <FolderCard name="Chưa phân loại" count={categories.find(([path]) => path === UNCATEGORIZED)?.[1] || 0} dragging={draggingSetId !== null} onClick={() => setSelectedCategory(UNCATEGORIZED)} onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, UNCATEGORIZED) : undefined} muted />}
+          </div>}
+          {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && childCategories.length === 0 && <p className="text-xs text-muted">Thư mục này chưa có thư mục con. Bạn có thể tạo mới hoặc xem các bộ từ bên dưới.</p>}
+          {draggingSetId !== null && <p className="mt-2 text-xs font-semibold text-[#6550DB]">Thả bộ từ vào thư mục đích để di chuyển.</p>}
+        </section>
       )}
 
       <section className="mb-6 rounded-[14px] border border-line bg-[#FBFAFE] p-4">
@@ -800,10 +820,8 @@ export default function AdminSetsPage() {
         <div className={cx.empty}>Chưa có bộ từ vựng nào.</div>
       ) : filteredSets.length === 0 ? (
         <div className={cx.empty}>
-          Không tìm thấy bộ từ phù hợp với bộ lọc hiện tại.
-          <div className="mt-3">
-            <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setSearchQuery(""); setSelectedCategory(ALL_CATEGORIES); }}>Xoá bộ lọc</button>
-          </div>
+          {childCategories.length > 0 && !searchQuery.trim() ? "Thư mục này chưa chứa bộ từ trực tiếp. Hãy mở một thư mục con ở phía trên." : "Không tìm thấy bộ từ phù hợp với bộ lọc hiện tại."}
+          {!(childCategories.length > 0 && !searchQuery.trim()) && <div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setSearchQuery(""); setSelectedCategory(ALL_CATEGORIES); }}>Xoá bộ lọc</button></div>}
         </div>
       ) : (
         filteredSets.map((s) => (
@@ -1251,22 +1269,18 @@ export default function AdminSetsPage() {
   );
 }
 
-function CategoryFilter({ label, count, active, onClick, onDrop }: { label: string; count: number; active: boolean; onClick: () => void; onDrop?: () => void }) {
+function FolderCard({ name, count, dragging, muted = false, onClick, onDrop }: { name: string; count: number; dragging: boolean; muted?: boolean; onClick: () => void; onDrop?: () => void }) {
   return (
     <button
       type="button"
-      aria-pressed={active}
       onClick={onClick}
       onDragOver={onDrop ? (event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } : undefined}
       onDrop={onDrop ? (event) => { event.preventDefault(); onDrop(); } : undefined}
-      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition ${
-        active
-          ? "border-[#7865EE] bg-[#7865EE] text-white shadow-[0_4px_12px_rgba(120,101,238,0.2)]"
-          : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-ink"
-      }`}
+      className={`flex min-h-[68px] items-center gap-3 rounded-xl border bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm ${dragging && onDrop ? "border-dashed border-[#7865EE] bg-[#F5F2FF]" : "border-line"}`}
     >
-      <span className="max-w-[180px] truncate">{label}</span>
-      <span className={`rounded-full px-1.5 py-0.5 text-[0.62rem] ${active ? "bg-white/20 text-white" : "bg-[#F1EFF8] text-muted"}`}>{count}</span>
+      <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg ${muted ? "bg-[#F1EFF8]" : "bg-[#EFECFF]"}`} aria-hidden="true">{muted ? "◫" : "📁"}</span>
+      <span className="min-w-0 flex-1"><b className="block truncate text-sm text-ink">{name}</b><span className="mt-0.5 block text-xs text-muted">{count} bộ từ</span></span>
+      <span className="text-lg text-muted" aria-hidden="true">›</span>
     </button>
   );
 }
