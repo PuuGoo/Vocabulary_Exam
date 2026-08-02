@@ -55,7 +55,7 @@ function normalizeSearch(value: string) {
     .trim();
 }
 
-function normalizePdfFileName(value: string) {
+function normalizeNumberedName(value: string) {
   const trimmed = value.trim();
   const match = /^(\d+)\s*[._-]\s*/.exec(trimmed);
   if (!match) return trimmed;
@@ -876,7 +876,7 @@ export default function AdminSetsPage() {
         <Modal title="Đổi tên tài liệu PDF" onClose={() => { if (!savingDocumentName) setEditingDocument(null); }}>
           <div className="grid gap-4">
             <label><span className={cx.label}>Tên hiển thị</span><input autoFocus className={`${cx.input} !mb-0`} value={editDocumentTitle} maxLength={256} onChange={(event) => setEditDocumentTitle(event.target.value)} /></label>
-            <div><span className={cx.label}>Tên file PDF</span><div className="flex gap-2"><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><button type="button" className={`${cx.btn} ${cx.btnGhost} shrink-0 !px-3`} disabled={!/^(\d+)\s*[._-]\s*/.test(editDocumentFileName.trim())} onClick={() => setEditDocumentFileName(normalizePdfFileName(editDocumentFileName))}>Chuẩn hóa</button></div><span className="mt-1 block text-xs text-muted">Ví dụ: 01.exam.pdf → 01_exam.pdf. Hệ thống tự thêm đuôi .pdf nếu còn thiếu.</span></div>
+            <div><span className={cx.label}>Tên file PDF</span><div className="flex flex-col gap-2 sm:flex-row"><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><button type="button" className={`${cx.btn} ${cx.btnGhost} w-full shrink-0 !px-3 sm:w-auto`} disabled={!/^(\d+)\s*[._-]\s*/.test(editDocumentFileName.trim()) && !/^(\d+)\s*[._-]\s*/.test(editDocumentTitle.trim())} onClick={() => { setEditDocumentTitle(normalizeNumberedName(editDocumentTitle)); setEditDocumentFileName(normalizeNumberedName(editDocumentFileName)); }}>Chuẩn hóa cả hai</button></div><span className="mt-1 block text-xs text-muted">Tên hiển thị và tên file sẽ được chuẩn hóa cùng lúc, ví dụ: 01.exam → 01_exam.</span></div>
             <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} disabled={savingDocumentName} onClick={() => setEditingDocument(null)}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={savingDocumentName || !editDocumentTitle.trim() || !editDocumentFileName.trim()} onClick={() => void saveDocumentName()}>{savingDocumentName ? "Đang lưu..." : "Lưu tên mới"}</button></div>
           </div>
         </Modal>
