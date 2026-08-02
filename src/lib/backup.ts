@@ -2,7 +2,7 @@ export const BACKUP_FORMAT = "lexora-backup";
 export const BACKUP_VERSION = 1;
 
 export const BACKUP_COLLECTIONS = [
-  "users", "classes", "classMembers", "vocabCategories", "vocabSets", "words", "attempts",
+  "users", "classes", "classMembers", "vocabCategories", "categoryDocuments", "vocabSets", "words", "attempts",
   "assignments", "assignmentExtensions", "assignmentSubmissions", "teachBackNotes",
   "mistakes", "wordProgress", "wordBookmarks", "studySessions", "learningGoals",
   "dailyActivities",
@@ -33,7 +33,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
     const rows = rawData[collection];
     // Category records were added without bumping the format version so older
     // backups remain restorable; their categories are still present on vocabSets.
-    if (collection === "vocabCategories" && rows === undefined) {
+    if ((collection === "vocabCategories" || collection === "categoryDocuments") && rows === undefined) {
       data[collection] = [];
       continue;
     }
@@ -62,6 +62,8 @@ export function serializeSubmissionFiles(rows: SubmissionWithFile[]) {
     fileDataBase64: fileData ? Buffer.from(fileData).toString("base64") : null,
   }));
 }
+
+export const serializeCategoryDocuments = serializeSubmissionFiles;
 
 export function backupFilename(now = new Date()) {
   return `lexora-backup-${now.toISOString().replace(/[:.]/g, "-")}.json`;
