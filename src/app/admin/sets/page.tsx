@@ -95,7 +95,7 @@ export default function AdminSetsPage() {
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentUploading, setDocumentUploading] = useState(false);
   const [documentTitle, setDocumentTitle] = useState("");
-  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [viewingDocument, setViewingDocument] = useState<CategoryDocument | null>(null);
 
   const categories = useMemo(() => {
@@ -208,19 +208,19 @@ export default function AdminSetsPage() {
   }
 
   async function uploadCategoryDocument() {
-    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || !documentFile || documentUploading) return;
-    if (documentFile.size > 4 * 1024 * 1024) return toast("File PDF không được vượt quá 4 MB.");
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || documentFiles.length === 0 || documentUploading) return;
+    if (documentFiles.some((file) => file.size > 4 * 1024 * 1024)) return toast("Mỗi file PDF không được vượt quá 4 MB.");
     const form = new FormData();
     form.append("category", selectedCategory);
     form.append("title", documentTitle.trim());
-    form.append("file", documentFile);
+    documentFiles.forEach((file) => form.append("files", file));
     setDocumentUploading(true);
     try {
       const res = await fetch("/api/admin/category-documents", { method: "POST", body: form });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể tải PDF lên.");
-      setCategoryDocuments((current) => [...current, { ...data.document, category: selectedCategory }]);
-      setDocumentFile(null);
+      setCategoryDocuments((current) => [...current, ...(data.documents || []).map((document: CategoryDocument) => ({ ...document, category: selectedCategory }))]);
+      setDocumentFiles([]);
       setDocumentTitle("");
       const input = document.getElementById("category-pdf-file") as HTMLInputElement | null;
       if (input) input.value = "";
@@ -249,7 +249,7 @@ export default function AdminSetsPage() {
   }, []);
 
   useEffect(() => {
-    setDocumentFile(null);
+    setDocumentFiles([]);
     setDocumentTitle("");
     setViewingDocument(null);
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) {
@@ -707,8 +707,8 @@ export default function AdminSetsPage() {
           </div>
           <div className="grid gap-2 rounded-xl border border-dashed border-[#CFC7FF] bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
             <label><span className={cx.label}>Tên tài liệu</span><input className={`${cx.input} !mb-0`} placeholder="VD: Tổng quan từ vựng sức khỏe" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={256} /></label>
-            <label><span className={cx.label}>Chọn file PDF · tối đa 4 MB</span><input id="category-pdf-file" type="file" accept="application/pdf,.pdf" className={`${cx.input} !mb-0 !py-2`} onChange={(event) => { const file = event.target.files?.[0] || null; if (file && file.size > 4 * 1024 * 1024) { toast("File PDF không được vượt quá 4 MB."); event.target.value = ""; setDocumentFile(null); return; } setDocumentFile(file); }} /></label>
-            <button type="button" className={`${cx.btn} ${cx.btnGold} min-h-11`} disabled={!documentFile || documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : "↑ Tải PDF lên"}</button>
+            <label><span className={cx.label}>Chọn nhiều file PDF · tối đa 4 MB/file</span><input id="category-pdf-file" multiple type="file" accept="application/pdf,.pdf" className={`${cx.input} !mb-0 !py-2`} onChange={(event) => { const files = Array.from(event.target.files || []); if (files.some((file) => file.size > 4 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); event.target.value = ""; setDocumentFiles([]); return; } setDocumentFiles(files); }} /></label>
+            <button type="button" className={`${cx.btn} ${cx.btnGold} min-h-11`} disabled={documentFiles.length === 0 || documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : `↑ Tải ${documentFiles.length || ""} PDF lên`}</button>
           </div>
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này chưa có tài liệu PDF.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {categoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">

@@ -7,6 +7,7 @@ import { normalizeText } from "@/lib/text";
 
 export const runtime = "nodejs";
 const MAX_PDF_BYTES = 4 * 1024 * 1024;
+const MAX_BATCH_BYTES = 16 * 1024 * 1024;
 
 async function requireAdmin() {
   const session = await getSession();
@@ -33,27 +34,34 @@ export async function POST(request: NextRequest) {
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const form = await request.formData();
   const category = normalizeText(String(form.get("category") || "").trim());
-  const file = form.get("file");
+  const files = form.getAll("files").filter((item): item is File => item instanceof File);
+  const legacyFile = form.get("file");
+  if (files.length === 0 && legacyFile instanceof File) files.push(legacyFile);
   const requestedTitle = normalizeText(String(form.get("title") || "").trim());
   if (!category || category.length > 128) return NextResponse.json({ error: "Thư mục không hợp lệ." }, { status: 400 });
-  if (!(file instanceof File)) return NextResponse.json({ error: "Hãy chọn một file PDF." }, { status: 400 });
-  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) return NextResponse.json({ error: "Chỉ chấp nhận file PDF." }, { status: 415 });
-  if (file.size < 1 || file.size > MAX_PDF_BYTES) return NextResponse.json({ error: "File PDF phải nhỏ hơn hoặc bằng 4 MB." }, { status: 413 });
+  if (files.length === 0) return NextResponse.json({ error: "Hãy chọn ít nhất một file PDF." }, { status: 400 });
+  if (files.reduce((total, file) => total + file.size, 0) > MAX_BATCH_BYTES) return NextResponse.json({ error: "Tổng dung lượng mỗi lần import không được vượt quá 16 MB." }, { status: 413 });
+  if (files.some((file) => file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"))) return NextResponse.json({ error: "Chỉ chấp nhận file PDF." }, { status: 415 });
+  if (files.some((file) => file.size < 1 || file.size > MAX_PDF_BYTES)) return NextResponse.json({ error: "Mỗi file PDF phải nhỏ hơn hoặc bằng 4 MB." }, { status: 413 });
   const [folder] = await db.select({ id: vocabCategories.id }).from(vocabCategories).where(eq(vocabCategories.name, category)).limit(1);
   if (!folder) return NextResponse.json({ error: "Không tìm thấy thư mục đích." }, { status: 404 });
-  const fileData = Buffer.from(await file.arrayBuffer());
-  if (fileData.subarray(0, 5).toString("ascii") !== "%PDF-") return NextResponse.json({ error: "Nội dung file không phải PDF hợp lệ." }, { status: 415 });
-  const title = requestedTitle || file.name.replace(/\.pdf$/i, "");
-  const [document] = await db.insert(categoryDocuments).values({
-    category,
-    title: title.slice(0, 256),
-    fileName: normalizeText(file.name).slice(0, 256),
-    fileType: "application/pdf",
-    fileSize: fileData.byteLength,
-    fileData,
-    createdBy: session.userId,
-  }).returning({ id: categoryDocuments.id, title: categoryDocuments.title, fileName: categoryDocuments.fileName, fileSize: categoryDocuments.fileSize, createdAt: categoryDocuments.createdAt });
-  return NextResponse.json({ document }, { status: 201 });
+  const documents = [];
+  for (const file of files) {
+    const fileData = Buffer.from(await file.arrayBuffer());
+    if (fileData.subarray(0, 5).toString("ascii") !== "%PDF-") return NextResponse.json({ error: `Nội dung “${file.name}” không phải PDF hợp lệ.` }, { status: 415 });
+    const title = files.length === 1 && requestedTitle ? requestedTitle : file.name.replace(/\.pdf$/i, "");
+    const [document] = await db.insert(categoryDocuments).values({
+      category,
+      title: title.slice(0, 256),
+      fileName: normalizeText(file.name).slice(0, 256),
+      fileType: "application/pdf",
+      fileSize: fileData.byteLength,
+      fileData,
+      createdBy: session.userId,
+    }).returning({ id: categoryDocuments.id, title: categoryDocuments.title, fileName: categoryDocuments.fileName, fileSize: categoryDocuments.fileSize, createdAt: categoryDocuments.createdAt });
+    documents.push(document);
+  }
+  return NextResponse.json({ documents, document: documents[0] }, { status: 201 });
 }
 
 export async function DELETE(request: NextRequest) {
