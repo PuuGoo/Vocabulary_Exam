@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, like, or } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryDocuments, vocabCategories } from "@/db/schema";
 import { getSession } from "@/lib/auth";
@@ -18,6 +18,8 @@ export async function GET(request: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const category = request.nextUrl.searchParams.get("category")?.trim();
   if (!category) return NextResponse.json({ documents: [] });
+  // A parent folder acts as a document library for its entire subtree.
+  // Keep the stored category on each row so the UI can show where a file came from.
   const documents = await db.select({
     id: categoryDocuments.id,
     category: categoryDocuments.category,
@@ -25,7 +27,10 @@ export async function GET(request: NextRequest) {
     fileName: categoryDocuments.fileName,
     fileSize: categoryDocuments.fileSize,
     createdAt: categoryDocuments.createdAt,
-  }).from(categoryDocuments).where(eq(categoryDocuments.category, category)).orderBy(asc(categoryDocuments.createdAt));
+  }).from(categoryDocuments).where(or(
+    eq(categoryDocuments.category, category),
+    like(categoryDocuments.category, `${category} / %`),
+  )).orderBy(asc(categoryDocuments.createdAt));
   return NextResponse.json({ documents });
 }
 
