@@ -69,6 +69,27 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ documents, document: documents[0] }, { status: 201 });
 }
 
+export async function PATCH(request: NextRequest) {
+  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const body = await request.json().catch(() => null);
+  const id = Number(body?.id);
+  const title = normalizeText(String(body?.title || "").trim());
+  let fileName = normalizeText(String(body?.fileName || "").trim()).replace(/[\\/]/g, "");
+  if (!Number.isInteger(id) || id < 1 || !title || !fileName) return NextResponse.json({ error: "Tên tài liệu và tên file không được để trống." }, { status: 400 });
+  if (!fileName.toLowerCase().endsWith(".pdf")) fileName += ".pdf";
+  if (title.length > 256 || fileName.length > 256) return NextResponse.json({ error: "Tên tài liệu hoặc tên file quá dài." }, { status: 400 });
+  const [document] = await db.update(categoryDocuments).set({ title, fileName }).where(eq(categoryDocuments.id, id)).returning({
+    id: categoryDocuments.id,
+    category: categoryDocuments.category,
+    title: categoryDocuments.title,
+    fileName: categoryDocuments.fileName,
+    fileSize: categoryDocuments.fileSize,
+    createdAt: categoryDocuments.createdAt,
+  });
+  if (!document) return NextResponse.json({ error: "Không tìm thấy tài liệu PDF." }, { status: 404 });
+  return NextResponse.json({ document });
+}
+
 export async function DELETE(request: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const id = Number(request.nextUrl.searchParams.get("id"));

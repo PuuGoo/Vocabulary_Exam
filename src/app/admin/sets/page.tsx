@@ -94,13 +94,17 @@ export default function AdminSetsPage() {
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
   const [categoryDocuments, setCategoryDocuments] = useState<CategoryDocument[]>([]);
   const [documentQuery, setDocumentQuery] = useState("");
-  const [documentSort, setDocumentSort] = useState<DocumentSort>("newest");
+  const [documentSort, setDocumentSort] = useState<DocumentSort>("name");
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentUploading, setDocumentUploading] = useState(false);
   const [documentTitle, setDocumentTitle] = useState("");
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [documentDragActive, setDocumentDragActive] = useState(false);
   const [viewingDocument, setViewingDocument] = useState<CategoryDocument | null>(null);
+  const [editingDocument, setEditingDocument] = useState<CategoryDocument | null>(null);
+  const [editDocumentTitle, setEditDocumentTitle] = useState("");
+  const [editDocumentFileName, setEditDocumentFileName] = useState("");
+  const [savingDocumentName, setSavingDocumentName] = useState(false);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -268,6 +272,34 @@ export default function AdminSetsPage() {
     toast("Đã xóa tài liệu PDF.");
   }
 
+  function startRenameDocument(document: CategoryDocument) {
+    setEditingDocument(document);
+    setEditDocumentTitle(document.title);
+    setEditDocumentFileName(document.fileName);
+  }
+
+  async function saveDocumentName() {
+    if (!editingDocument || savingDocumentName || !editDocumentTitle.trim() || !editDocumentFileName.trim()) return;
+    setSavingDocumentName(true);
+    try {
+      const res = await fetch("/api/admin/category-documents", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingDocument.id, title: editDocumentTitle, fileName: editDocumentFileName }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể đổi tên tài liệu PDF.");
+      setCategoryDocuments((current) => current.map((item) => item.id === data.document.id ? data.document : item));
+      setViewingDocument((current) => current?.id === data.document.id ? data.document : current);
+      setEditingDocument(null);
+      toast("Đã đổi tên tài liệu PDF.");
+    } catch {
+      toast("Không thể kết nối để đổi tên tài liệu.");
+    } finally {
+      setSavingDocumentName(false);
+    }
+  }
+
   useEffect(() => {
     loadSets();
     loadClasses();
@@ -279,7 +311,7 @@ export default function AdminSetsPage() {
     setDocumentDragActive(false);
     setDocumentTitle("");
     setDocumentQuery("");
-    setDocumentSort("newest");
+    setDocumentSort("name");
     setViewingDocument(null);
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) {
       setCategoryDocuments([]);
@@ -760,7 +792,7 @@ export default function AdminSetsPage() {
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
               <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><b className="block truncate text-sm text-ink" title={document.title}>{document.title}</b><span className="mt-0.5 block truncate text-xs text-muted">{document.fileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span>}</div></div>
-              <div className="mt-3 flex gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
+              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
           </div>}
         </section>
@@ -830,6 +862,16 @@ export default function AdminSetsPage() {
         <Modal title={viewingDocument.title} onClose={() => setViewingDocument(null)} wide>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted"><span>{viewingDocument.fileName} · {(viewingDocument.fileSize / 1024 / 1024).toFixed(2)} MB</span><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${viewingDocument.id}/file`} target="_blank" rel="noopener noreferrer">Mở trong tab mới</a></div>
           <iframe title={`Tài liệu ${viewingDocument.title}`} src={`/api/admin/category-documents/${viewingDocument.id}/file`} className="h-[70vh] min-h-[480px] w-full rounded-xl border border-line bg-[#F8F8FC]" />
+        </Modal>
+      )}
+
+      {editingDocument && (
+        <Modal title="Đổi tên tài liệu PDF" onClose={() => { if (!savingDocumentName) setEditingDocument(null); }}>
+          <div className="grid gap-4">
+            <label><span className={cx.label}>Tên hiển thị</span><input autoFocus className={`${cx.input} !mb-0`} value={editDocumentTitle} maxLength={256} onChange={(event) => setEditDocumentTitle(event.target.value)} /></label>
+            <label><span className={cx.label}>Tên file PDF</span><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><span className="mt-1 block text-xs text-muted">Hệ thống tự thêm đuôi .pdf nếu còn thiếu.</span></label>
+            <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} disabled={savingDocumentName} onClick={() => setEditingDocument(null)}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={savingDocumentName || !editDocumentTitle.trim() || !editDocumentFileName.trim()} onClick={() => void saveDocumentName()}>{savingDocumentName ? "Đang lưu..." : "Lưu tên mới"}</button></div>
+          </div>
         </Modal>
       )}
 
