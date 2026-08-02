@@ -25,6 +25,46 @@ function buildPath(name: string, parentPath?: string | null) {
   return parent ? `${parent} / ${leaf}` : leaf;
 }
 
+function parseNumberedLeaf(value: string) {
+  const normalized = normalizeText(value).trim();
+  const match = /^(\d+)\s*[._-]\s*/.exec(normalized);
+  return {
+    number: match ? Number(match[1]) : null,
+    label: (match ? normalized.slice(match[0].length) : normalized).replace(/\s+/g, " ").trim(),
+  };
+}
+
+function canonicalizeCategoryPath(path: string) {
+  return path.split(" / ").map((part) => {
+    const parsed = parseNumberedLeaf(part);
+    return parsed.number !== null ? `${String(parsed.number).padStart(2, "0")}_${parsed.label}` : parsed.label;
+  }).join(" / ");
+}
+
+async function normalizeLegacyCategoryPaths() {
+  await db.transaction(async (tx) => {
+    const rows = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories);
+    rows.sort((left, right) => left.name.split(" / ").length - right.name.split(" / ").length);
+    for (const row of rows) {
+      const name = canonicalizeCategoryPath(row.name);
+      if (!name || name === row.name) continue;
+      const [conflict] = await tx.select({ id: vocabCategories.id }).from(vocabCategories).where(eq(vocabCategories.name, name)).limit(1);
+      if (conflict && conflict.id !== row.id) continue;
+      const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} like ${`${row.name} / %`}`);
+      await tx.update(vocabCategories).set({ name }).where(eq(vocabCategories.id, row.id));
+      await tx.update(vocabSets).set({ category: name }).where(eq(vocabSets.category, row.name));
+      await tx.update(categoryDocuments).set({ category: name }).where(eq(categoryDocuments.category, row.name));
+      for (const child of descendants) {
+        const childName = `${name}${child.name.slice(row.name.length)}`;
+        const canonicalChildName = canonicalizeCategoryPath(childName);
+        await tx.update(vocabCategories).set({ name: canonicalChildName }).where(eq(vocabCategories.id, child.id));
+        await tx.update(vocabSets).set({ category: canonicalChildName }).where(eq(vocabSets.category, child.name));
+        await tx.update(categoryDocuments).set({ category: canonicalChildName }).where(eq(categoryDocuments.category, child.name));
+      }
+    }
+  });
+}
+
 async function nextCategoryNumber(parentPath?: string | null) {
   const rows = await db.select({ name: vocabCategories.name }).from(vocabCategories);
   const prefix = parentPath ? `${parentPath} / ` : "";
@@ -53,6 +93,7 @@ export async function GET() {
       .values(legacyRows.map((item) => ({ name: item.name! })))
       .onConflictDoNothing({ target: vocabCategories.name });
   }
+  await normalizeLegacyCategoryPaths();
 
   const categories = await db
     .select({
@@ -74,7 +115,7 @@ export async function POST(request: NextRequest) {
   const parsed = categoryPathSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Tên danh mục phải có từ 1 đến 128 ký tự." }, { status: 400 });
   const number = await nextCategoryNumber(parsed.data.parentPath);
-  const leaf = parsed.data.name.replace(/^\d+_/, "").trim();
+  const leaf = parseNumberedLeaf(parsed.data.name).label;
   const name = buildPath(`${String(number).padStart(2, "0")}_${leaf}`, parsed.data.parentPath);
   if (name.length > 128) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
   if (await findDuplicate(name)) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
@@ -92,9 +133,10 @@ export async function PATCH(request: NextRequest) {
     if (!current) return null;
     const parent = current.name.includes(" / ") ? current.name.slice(0, current.name.lastIndexOf(" / ")) : "";
     const currentLeaf = current.name.split(" / ").pop() || current.name;
-    const currentNumber = /^(\d+)_/.exec(currentLeaf)?.[1];
-    const cleanRequestedLeaf = parsed.data.name.replace(/^\d+_/, "").trim();
-    const requestedLeaf = currentNumber ? `${currentNumber}_${cleanRequestedLeaf}` : cleanRequestedLeaf;
+    const currentNumber = parseNumberedLeaf(currentLeaf).number;
+    const requested = parseNumberedLeaf(parsed.data.name);
+    const number = requested.number ?? currentNumber;
+    const requestedLeaf = number !== null ? `${String(number).padStart(2, "0")}_${requested.label}` : requested.label;
     const name = buildPath(requestedLeaf, parent || null);
     if (name.length > 128) return { tooLong: true as const };
     if (await findDuplicate(name, parsed.data.id)) return { conflict: true as const };
