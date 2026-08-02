@@ -55,6 +55,13 @@ function normalizeSearch(value: string) {
     .trim();
 }
 
+function normalizePdfFileName(value: string) {
+  const trimmed = value.trim();
+  const match = /^(\d+)\s*[._-]\s*/.exec(trimmed);
+  if (!match) return trimmed;
+  return `${String(Number(match[1])).padStart(2, "0")}_${trimmed.slice(match[0].length)}`;
+}
+
 export default function AdminSetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
@@ -869,7 +876,7 @@ export default function AdminSetsPage() {
         <Modal title="Đổi tên tài liệu PDF" onClose={() => { if (!savingDocumentName) setEditingDocument(null); }}>
           <div className="grid gap-4">
             <label><span className={cx.label}>Tên hiển thị</span><input autoFocus className={`${cx.input} !mb-0`} value={editDocumentTitle} maxLength={256} onChange={(event) => setEditDocumentTitle(event.target.value)} /></label>
-            <label><span className={cx.label}>Tên file PDF</span><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><span className="mt-1 block text-xs text-muted">Hệ thống tự thêm đuôi .pdf nếu còn thiếu.</span></label>
+            <div><span className={cx.label}>Tên file PDF</span><div className="flex gap-2"><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><button type="button" className={`${cx.btn} ${cx.btnGhost} shrink-0 !px-3`} disabled={!/^(\d+)\s*[._-]\s*/.test(editDocumentFileName.trim())} onClick={() => setEditDocumentFileName(normalizePdfFileName(editDocumentFileName))}>Chuẩn hóa</button></div><span className="mt-1 block text-xs text-muted">Ví dụ: 01.exam.pdf → 01_exam.pdf. Hệ thống tự thêm đuôi .pdf nếu còn thiếu.</span></div>
             <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} disabled={savingDocumentName} onClick={() => setEditingDocument(null)}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={savingDocumentName || !editDocumentTitle.trim() || !editDocumentFileName.trim()} onClick={() => void saveDocumentName()}>{savingDocumentName ? "Đang lưu..." : "Lưu tên mới"}</button></div>
           </div>
         </Modal>
