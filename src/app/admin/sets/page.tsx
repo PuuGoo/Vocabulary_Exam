@@ -41,6 +41,7 @@ type WordMatch = {
 type ClassOpt = { id: number; name: string };
 type CategorySummary = { id: number; name: string; count: number };
 type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileSize: number; createdAt: string };
+type DocumentSort = "newest" | "oldest" | "name" | "size";
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
 
@@ -92,6 +93,8 @@ export default function AdminSetsPage() {
   const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
   const [categoryDocuments, setCategoryDocuments] = useState<CategoryDocument[]>([]);
+  const [documentQuery, setDocumentQuery] = useState("");
+  const [documentSort, setDocumentSort] = useState<DocumentSort>("newest");
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentUploading, setDocumentUploading] = useState(false);
   const [documentTitle, setDocumentTitle] = useState("");
@@ -154,6 +157,18 @@ export default function AdminSetsPage() {
       word.term, word.meaning, word.v1, word.v2, word.v3, word.example,
     ].filter(Boolean).join(" ")).includes(query));
   }, [detail, detailWordQuery]);
+  const visibleCategoryDocuments = useMemo(() => {
+    const query = normalizeSearch(documentQuery);
+    return categoryDocuments
+      .filter((document) => !query || normalizeSearch(`${document.title} ${document.fileName} ${document.category}`).includes(query))
+      .sort((left, right) => {
+        if (documentSort === "name") return left.title.localeCompare(right.title, "vi", { numeric: true, sensitivity: "base" });
+        if (documentSort === "size") return right.fileSize - left.fileSize;
+        const leftTime = new Date(left.createdAt).getTime();
+        const rightTime = new Date(right.createdAt).getTime();
+        return documentSort === "oldest" ? leftTime - rightTime : rightTime - leftTime;
+      });
+  }, [categoryDocuments, documentQuery, documentSort]);
   const categorySiblings = useMemo(() => {
     if (!sets || !detail) return [];
     const categoryKey = detail.category?.trim() || UNCATEGORIZED;
@@ -263,6 +278,8 @@ export default function AdminSetsPage() {
     setDocumentFiles([]);
     setDocumentDragActive(false);
     setDocumentTitle("");
+    setDocumentQuery("");
+    setDocumentSort("newest");
     setViewingDocument(null);
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) {
       setCategoryDocuments([]);
@@ -734,8 +751,14 @@ export default function AdminSetsPage() {
             </div>
           </div>
           {documentFiles.length > 0 && <div className="mt-3 rounded-xl border border-line bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-bold text-ink">Đã chọn {documentFiles.length} file · {(documentFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB</span><button type="button" className="text-xs font-bold text-bad hover:underline" onClick={() => setDocumentFiles([])}>Xóa tất cả</button></div><div className="grid gap-1.5 sm:grid-cols-2">{documentFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FBFAFE] px-2.5 py-2 text-xs"><span className="font-bold text-[#B64242]">PDF</span><span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span><span className="shrink-0 text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" className="px-1 text-muted hover:text-bad" aria-label={`Xóa ${file.name}`} onClick={() => setDocumentFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div><button type="button" className={`${cx.btn} ${cx.btnGold} mt-3 min-h-11 w-full`} disabled={documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : `↑ Tải ${documentFiles.length} PDF lên`}</button></div>}
-          {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {categoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
+          {!documentsLoading && categoryDocuments.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
+            <input type="search" value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className={`${cx.input} !mb-0`} placeholder="Tìm theo tên tài liệu, file hoặc thư mục..." aria-label="Tìm tài liệu PDF" />
+            <select value={documentSort} onChange={(event) => setDocumentSort(event.target.value as DocumentSort)} className={`${cx.input} !mb-0`} aria-label="Sắp xếp tài liệu PDF">
+              <option value="newest">Mới tải lên trước</option><option value="oldest">Cũ nhất trước</option><option value="name">Tên A → Z</option><option value="size">Dung lượng lớn trước</option>
+            </select>
+          </div>}
+          {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
               <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><b className="block truncate text-sm text-ink" title={document.title}>{document.title}</b><span className="mt-0.5 block truncate text-xs text-muted">{document.fileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span>}</div></div>
               <div className="mt-3 flex gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
