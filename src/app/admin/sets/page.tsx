@@ -96,6 +96,7 @@ export default function AdminSetsPage() {
   const [documentUploading, setDocumentUploading] = useState(false);
   const [documentTitle, setDocumentTitle] = useState("");
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [documentDragActive, setDocumentDragActive] = useState(false);
   const [viewingDocument, setViewingDocument] = useState<CategoryDocument | null>(null);
 
   const categories = useMemo(() => {
@@ -232,6 +233,16 @@ export default function AdminSetsPage() {
     }
   }
 
+  function addDocumentFiles(incoming: File[]) {
+    const pdfs = incoming.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
+    if (pdfs.length !== incoming.length) toast("Chỉ các file PDF được thêm vào danh sách.");
+    if (pdfs.some((file) => file.size > 4 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); return; }
+    setDocumentFiles((current) => {
+      const existing = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+      return [...current, ...pdfs.filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))];
+    });
+  }
+
   async function deleteCategoryDocument(document: CategoryDocument) {
     if (!confirm(`Xóa tài liệu “${document.title}”?`)) return;
     const res = await fetch(`/api/admin/category-documents?id=${document.id}`, { method: "DELETE" });
@@ -250,6 +261,7 @@ export default function AdminSetsPage() {
 
   useEffect(() => {
     setDocumentFiles([]);
+    setDocumentDragActive(false);
     setDocumentTitle("");
     setViewingDocument(null);
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) {
@@ -705,11 +717,23 @@ export default function AdminSetsPage() {
             <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF</h3><p className="mt-1 text-xs text-muted">Tải tài liệu lý thuyết lên và mở xem trực tiếp trong website.</p></div>
             <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{categoryDocuments.length} tài liệu</span>
           </div>
-          <div className="grid gap-2 rounded-xl border border-dashed border-[#CFC7FF] bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
-            <label><span className={cx.label}>Tên tài liệu</span><input className={`${cx.input} !mb-0`} placeholder="VD: Tổng quan từ vựng sức khỏe" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={256} /></label>
-            <label><span className={cx.label}>Chọn nhiều file PDF · tối đa 4 MB/file</span><input id="category-pdf-file" multiple type="file" accept="application/pdf,.pdf" className={`${cx.input} !mb-0 !py-2`} onChange={(event) => { const files = Array.from(event.target.files || []); if (files.some((file) => file.size > 4 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); event.target.value = ""; setDocumentFiles([]); return; } setDocumentFiles(files); }} /></label>
-            <button type="button" className={`${cx.btn} ${cx.btnGold} min-h-11`} disabled={documentFiles.length === 0 || documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : `↑ Tải ${documentFiles.length || ""} PDF lên`}</button>
+          <div className="grid gap-3 rounded-xl border border-line bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-end">
+            <label><span className={cx.label}>Tên tài liệu (chỉ áp dụng khi chọn 1 file)</span><input className={`${cx.input} !mb-0`} placeholder="VD: Tổng quan từ vựng sức khỏe" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={256} /></label>
+            <div>
+              <span className={cx.label}>Chọn hoặc kéo thả nhiều PDF · tối đa 4 MB/file</span>
+              <div
+                className={`relative rounded-xl border-2 border-dashed px-4 py-4 text-center transition ${documentDragActive ? "border-[#7865EE] bg-[#F0EDFF]" : "border-[#CFC7FF] bg-white hover:border-[#AFA2FF]"}`}
+                onDragEnter={(event) => { event.preventDefault(); setDocumentDragActive(true); }}
+                onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDocumentDragActive(true); }}
+                onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDocumentDragActive(false); }}
+                onDrop={(event) => { event.preventDefault(); setDocumentDragActive(false); addDocumentFiles(Array.from(event.dataTransfer.files)); }}
+              >
+                <input id="category-pdf-file" multiple type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { addDocumentFiles(Array.from(event.target.files || [])); event.target.value = ""; }} />
+                <label htmlFor="category-pdf-file" className="cursor-pointer"><span className="text-2xl" aria-hidden="true">⇧</span><b className="mt-1 block text-sm text-ink">Kéo thả file PDF vào đây</b><span className="mt-1 block text-xs text-muted">hoặc <span className="font-bold text-[#6550DB]">chọn file từ thiết bị</span></span></label>
+              </div>
+            </div>
           </div>
+          {documentFiles.length > 0 && <div className="mt-3 rounded-xl border border-line bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-bold text-ink">Đã chọn {documentFiles.length} file · {(documentFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB</span><button type="button" className="text-xs font-bold text-bad hover:underline" onClick={() => setDocumentFiles([])}>Xóa tất cả</button></div><div className="grid gap-1.5 sm:grid-cols-2">{documentFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FBFAFE] px-2.5 py-2 text-xs"><span className="font-bold text-[#B64242]">PDF</span><span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span><span className="shrink-0 text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" className="px-1 text-muted hover:text-bad" aria-label={`Xóa ${file.name}`} onClick={() => setDocumentFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div><button type="button" className={`${cx.btn} ${cx.btnGold} mt-3 min-h-11 w-full`} disabled={documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : `↑ Tải ${documentFiles.length} PDF lên`}</button></div>}
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này chưa có tài liệu PDF.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {categoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
               <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><b className="block truncate text-sm text-ink" title={document.title}>{document.title}</b><span className="mt-0.5 block truncate text-xs text-muted">{document.fileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span></div></div>
