@@ -4,6 +4,7 @@ import {
   assignments,
   assignmentSubmissions,
   attempts,
+  categoryDocuments,
   classes,
   classMembers,
   dailyActivities,
@@ -19,7 +20,7 @@ import {
   words,
 } from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { BACKUP_FORMAT, BACKUP_VERSION, backupFilename, sanitizeBackupUsers, serializeSubmissionFiles } from "@/lib/backup";
+import { BACKUP_FORMAT, BACKUP_VERSION, backupFilename, sanitizeBackupUsers, serializeCategoryDocuments, serializeSubmissionFiles } from "@/lib/backup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +37,7 @@ export async function GET() {
     classRows,
     memberRows,
     categoryRows,
+    documentRows,
     setRows,
     wordRows,
     attemptRows,
@@ -54,6 +56,7 @@ export async function GET() {
     db.select().from(classes),
     db.select().from(classMembers),
     db.select().from(vocabCategories),
+    db.select().from(categoryDocuments),
     db.select().from(vocabSets),
     db.select().from(words),
     db.select().from(attempts),
@@ -74,6 +77,7 @@ export async function GET() {
     classes: classRows,
     classMembers: memberRows,
     vocabCategories: categoryRows,
+    categoryDocuments: serializeCategoryDocuments(documentRows),
     vocabSets: setRows,
     words: wordRows,
     attempts: attemptRows,

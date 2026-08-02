@@ -81,6 +81,24 @@ export const vocabSets = pgTable("vocab_sets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const categoryDocuments = pgTable(
+  "category_documents",
+  {
+    id: serial("id").primaryKey(),
+    category: varchar("category", { length: 128 }).notNull(),
+    title: varchar("title", { length: 256 }).notNull(),
+    fileName: varchar("file_name", { length: 256 }).notNull(),
+    fileType: varchar("file_type", { length: 128 }).notNull().default("application/pdf"),
+    fileSize: integer("file_size").notNull(),
+    fileData: bytea("file_data").notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    categoryIdx: index("category_documents_category_idx").on(table.category),
+  })
+);
+
 export const words = pgTable("words", {
   id: serial("id").primaryKey(),
   setId: integer("set_id")

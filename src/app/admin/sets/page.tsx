@@ -40,6 +40,7 @@ type WordMatch = {
 };
 type ClassOpt = { id: number; name: string };
 type CategorySummary = { id: number; name: string; count: number };
+type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileSize: number; createdAt: string };
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
 
@@ -90,6 +91,12 @@ export default function AdminSetsPage() {
   const [previewSetId, setPreviewSetId] = useState<number | null>(null);
   const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
+  const [categoryDocuments, setCategoryDocuments] = useState<CategoryDocument[]>([]);
+  const [documentsLoading, setDocumentsLoading] = useState(false);
+  const [documentUploading, setDocumentUploading] = useState(false);
+  const [documentTitle, setDocumentTitle] = useState("");
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [viewingDocument, setViewingDocument] = useState<CategoryDocument | null>(null);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -200,11 +207,64 @@ export default function AdminSetsPage() {
     }
   }
 
+  async function uploadCategoryDocument() {
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || !documentFile || documentUploading) return;
+    if (documentFile.size > 4 * 1024 * 1024) return toast("File PDF không được vượt quá 4 MB.");
+    const form = new FormData();
+    form.append("category", selectedCategory);
+    form.append("title", documentTitle.trim());
+    form.append("file", documentFile);
+    setDocumentUploading(true);
+    try {
+      const res = await fetch("/api/admin/category-documents", { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể tải PDF lên.");
+      setCategoryDocuments((current) => [...current, { ...data.document, category: selectedCategory }]);
+      setDocumentFile(null);
+      setDocumentTitle("");
+      const input = document.getElementById("category-pdf-file") as HTMLInputElement | null;
+      if (input) input.value = "";
+      toast("Đã tải tài liệu PDF lên thư mục.");
+    } catch {
+      toast("Không thể kết nối để tải PDF lên.");
+    } finally {
+      setDocumentUploading(false);
+    }
+  }
+
+  async function deleteCategoryDocument(document: CategoryDocument) {
+    if (!confirm(`Xóa tài liệu “${document.title}”?`)) return;
+    const res = await fetch(`/api/admin/category-documents?id=${document.id}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(data.error || "Không thể xóa tài liệu.");
+    setCategoryDocuments((current) => current.filter((item) => item.id !== document.id));
+    if (viewingDocument?.id === document.id) setViewingDocument(null);
+    toast("Đã xóa tài liệu PDF.");
+  }
+
   useEffect(() => {
     loadSets();
     loadClasses();
     loadCategories();
   }, []);
+
+  useEffect(() => {
+    setDocumentFile(null);
+    setDocumentTitle("");
+    setViewingDocument(null);
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) {
+      setCategoryDocuments([]);
+      return;
+    }
+    const controller = new AbortController();
+    setDocumentsLoading(true);
+    fetch(`/api/admin/category-documents?category=${encodeURIComponent(selectedCategory)}`, { signal: controller.signal })
+      .then(async (res) => { if (!res.ok) throw new Error(); return res.json(); })
+      .then((data) => setCategoryDocuments(data.documents || []))
+      .catch((error) => { if ((error as Error).name !== "AbortError") toast("Không thể tải tài liệu PDF."); })
+      .finally(() => { if (!controller.signal.aborted) setDocumentsLoading(false); });
+    return () => controller.abort();
+  }, [selectedCategory]);
 
   useEffect(() => {
     const query = wordSearchQuery.trim();
@@ -639,6 +699,26 @@ export default function AdminSetsPage() {
         </section>
       )}
 
+      {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
+        <section className="mb-5 rounded-[14px] border border-line bg-white p-4">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF</h3><p className="mt-1 text-xs text-muted">Tải tài liệu lý thuyết lên và mở xem trực tiếp trong website.</p></div>
+            <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{categoryDocuments.length} tài liệu</span>
+          </div>
+          <div className="grid gap-2 rounded-xl border border-dashed border-[#CFC7FF] bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+            <label><span className={cx.label}>Tên tài liệu</span><input className={`${cx.input} !mb-0`} placeholder="VD: Tổng quan từ vựng sức khỏe" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={256} /></label>
+            <label><span className={cx.label}>Chọn file PDF · tối đa 4 MB</span><input id="category-pdf-file" type="file" accept="application/pdf,.pdf" className={`${cx.input} !mb-0 !py-2`} onChange={(event) => { const file = event.target.files?.[0] || null; if (file && file.size > 4 * 1024 * 1024) { toast("File PDF không được vượt quá 4 MB."); event.target.value = ""; setDocumentFile(null); return; } setDocumentFile(file); }} /></label>
+            <button type="button" className={`${cx.btn} ${cx.btnGold} min-h-11`} disabled={!documentFile || documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : "↑ Tải PDF lên"}</button>
+          </div>
+          {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này chưa có tài liệu PDF.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {categoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
+              <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><b className="block truncate text-sm text-ink" title={document.title}>{document.title}</b><span className="mt-0.5 block truncate text-xs text-muted">{document.fileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span></div></div>
+              <div className="mt-3 flex gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
+            </article>)}
+          </div>}
+        </section>
+      )}
+
       <section className="mb-6 rounded-[14px] border border-line bg-[#FBFAFE] p-4">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
@@ -698,6 +778,13 @@ export default function AdminSetsPage() {
           </div>
         )}
       </section>
+
+      {viewingDocument && (
+        <Modal title={viewingDocument.title} onClose={() => setViewingDocument(null)} wide>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted"><span>{viewingDocument.fileName} · {(viewingDocument.fileSize / 1024 / 1024).toFixed(2)} MB</span><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${viewingDocument.id}/file`} target="_blank" rel="noopener noreferrer">Mở trong tab mới</a></div>
+          <iframe title={`Tài liệu ${viewingDocument.title}`} src={`/api/admin/category-documents/${viewingDocument.id}/file`} className="h-[70vh] min-h-[480px] w-full rounded-xl border border-line bg-[#F8F8FC]" />
+        </Modal>
+      )}
 
       {showNewForm && (
         <Modal title="Tạo bộ từ vựng mới" onClose={closeNewForm} closeOnBackdrop={false}>

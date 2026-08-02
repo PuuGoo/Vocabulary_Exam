@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { asc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { vocabCategories, vocabSets } from "@/db/schema";
+import { categoryDocuments, vocabCategories, vocabSets } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 
@@ -101,10 +101,12 @@ export async function PATCH(request: NextRequest) {
     const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} like ${`${current.name} / %`}`);
     await tx.update(vocabCategories).set({ name }).where(eq(vocabCategories.id, current.id));
     await tx.update(vocabSets).set({ category: name }).where(eq(vocabSets.category, current.name));
+    await tx.update(categoryDocuments).set({ category: name }).where(eq(categoryDocuments.category, current.name));
     for (const child of descendants) {
       const childName = `${name}${child.name.slice(current.name.length)}`;
       await tx.update(vocabCategories).set({ name: childName }).where(eq(vocabCategories.id, child.id));
       await tx.update(vocabSets).set({ category: childName }).where(eq(vocabSets.category, child.name));
+      await tx.update(categoryDocuments).set({ category: childName }).where(eq(categoryDocuments.category, child.name));
     }
     return { ...current, name, oldName: current.name };
   });
@@ -126,6 +128,7 @@ export async function DELETE(request: NextRequest) {
     const names = descendants.map((item) => item.name);
     const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` }).from(vocabSets).where(sql`${vocabSets.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
     await tx.update(vocabSets).set({ category: null }).where(sql`${vocabSets.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
+    await tx.delete(categoryDocuments).where(sql`${categoryDocuments.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
     await tx.delete(vocabCategories).where(sql`${vocabCategories.name} = ${current.name} or ${vocabCategories.name} like ${`${current.name} / %`}`);
     return { name: current.name, movedSets: count };
   });

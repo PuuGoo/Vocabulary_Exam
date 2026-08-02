@@ -45,13 +45,17 @@ export default function LearnPage() {
       const [a,b,c] = await Promise.all([fetch(`/api/sets/${params.setId}`), fetch("/api/bookmarks").catch(() => null), fetch("/api/study-sessions").catch(() => null)]);
       if (!a.ok) throw new Error(); const data = await a.json(); if (!data.set) throw new Error();
       const progress = data.progress || {};
-      const firstUnratedIndex = data.set.words.findIndex((x: Word) => progress[x.id] === undefined);
-      let resumeIndex = firstUnratedIndex >= 0 ? firstUnratedIndex : 0;
+      let resumeIndex = 0;
+      let savedWordId = 0;
+      let serverWordId = 0;
+      try { savedWordId = Number(sessionStorage.getItem(`lexora-learn-position-${data.set.id}`) || 0); } catch { /* Session storage is optional. */ }
       if (c?.ok) {
         const sessions = await c.json(); const saved = (sessions.sessions || []).find((x: {setId:number}) => x.setId === data.set.id);
-        const found = saved ? data.set.words.findIndex((x: Word) => x.id === saved.wordId) : -1;
-        if (firstUnratedIndex < 0 && found > 0) resumeIndex = found;
+        if (saved?.wordId) serverWordId = saved.wordId;
       }
+      let found = savedWordId ? data.set.words.findIndex((x: Word) => x.id === savedWordId) : -1;
+      if (found < 0 && serverWordId) found = data.set.words.findIndex((x: Word) => x.id === serverWordId);
+      if (found > 0) resumeIndex = found;
       setSet(data.set); setOrder(data.set.words); setKnown(progress); setIndex(resumeIndex); setFlipped(false); setFinished(false);
       if (b?.ok) { const d = await b.json(); setBookmarks(Object.fromEntries((d.bookmarks || []).map((x: {wordId:number;id:number}) => [x.wordId,x.id]))); }
     } catch { setError(true); } finally { setLoading(false); }
@@ -66,9 +70,10 @@ export default function LearnPage() {
   const unrated = set ? set.words.length - unknown - mastered : 0;
   useEffect(() => {
     if (!set || !word) return;
+    try { sessionStorage.setItem(`lexora-learn-position-${set.id}`, String(word.id)); } catch { /* Session storage is optional. */ }
     if (sessionTimer.current) clearTimeout(sessionTimer.current);
     const position = set.words.findIndex(x => x.id === word.id) + 1; if (position < 1) return;
-    sessionTimer.current = setTimeout(() => { void fetch("/api/study-sessions", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({setId:set.id,wordId:word.id,position}) }).catch(() => undefined); }, 500);
+    sessionTimer.current = setTimeout(() => { void fetch("/api/study-sessions", { method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({setId:set.id,wordId:word.id,position}), keepalive:true }).catch(() => undefined); }, 500);
     return () => { if (sessionTimer.current) clearTimeout(sessionTimer.current); };
   }, [set, word]);
   const go = (n:number) => { if (!total) return; setFinished(false); setIndex(Math.min(Math.max(n,0), total-1)); setFlipped(false); };

@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import {
-  assignmentExtensions, assignments, assignmentSubmissions, attempts, classes, classMembers,
+  assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
   wordBookmarks, wordProgress, words,
 } from "@/db/schema";
@@ -92,6 +92,19 @@ export async function POST(request: Request) {
         }).returning({ id: vocabCategories.id });
         categoriesByName.set(name.toLocaleLowerCase("vi"), created.id);
         report.added.vocabCategories++;
+      }
+
+      const existingDocuments = await tx.select().from(categoryDocuments);
+      const documentKeys = new Set(existingDocuments.map((item) => `${item.category}\u0000${item.title}\u0000${item.fileName}`.toLocaleLowerCase("vi")));
+      for (const row of backup.data.categoryDocuments) {
+        const category = text(row, "category").trim(); const title = text(row, "title").trim(); const fileName = text(row, "fileName").trim();
+        const key = `${category}\u0000${title}\u0000${fileName}`.toLocaleLowerCase("vi");
+        const base64 = nullableText(row, "fileDataBase64");
+        if (!category || !title || !fileName || !base64 || documentKeys.has(key) || !categoriesByName.has(category.toLocaleLowerCase("vi"))) { report.skipped.categoryDocuments++; continue; }
+        const fileData = Buffer.from(base64, "base64");
+        if (fileData.byteLength < 1 || fileData.byteLength > MAX_FILE_BYTES || fileData.subarray(0, 5).toString("ascii") !== "%PDF-") { report.skipped.categoryDocuments++; report.warnings.push(`Tài liệu ${fileName} không hợp lệ hoặc quá lớn nên được bỏ qua.`); continue; }
+        await tx.insert(categoryDocuments).values({ category, title, fileName, fileType: "application/pdf", fileSize: fileData.byteLength, fileData, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") });
+        documentKeys.add(key); report.added.categoryDocuments++;
       }
 
       const setMap = new Map<number, number>();
