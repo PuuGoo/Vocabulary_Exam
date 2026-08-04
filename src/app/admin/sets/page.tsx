@@ -311,6 +311,11 @@ export default function AdminSetsPage() {
     loadSets();
     loadClasses();
     loadCategories();
+    const requestedSetId = Number(new URLSearchParams(window.location.search).get("openSet"));
+    if (Number.isInteger(requestedSetId) && requestedSetId > 0) {
+      window.history.replaceState(null, "", "/admin/sets");
+      void openDetail(requestedSetId);
+    }
   }, []);
 
   useEffect(() => {
@@ -482,6 +487,11 @@ export default function AdminSetsPage() {
     } finally {
       setCreatingSet(false);
     }
+  }
+
+  function openNewSetForm() {
+    setNewCategory(selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED ? "" : selectedCategory);
+    setShowNewForm(true);
   }
 
   function closeNewForm() {
@@ -743,7 +753,7 @@ export default function AdminSetsPage() {
           <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShowCategoryManager(true)}>
             📁 Quản lý danh mục
           </button>
-          <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowNewForm(true)}>
+          <button className={`${cx.btn} ${cx.btnGold}`} onClick={openNewSetForm}>
             + Tạo bộ từ vựng mới
           </button>
         </div>
@@ -1212,7 +1222,7 @@ export default function AdminSetsPage() {
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
             </button>
-            <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}`}>
+            <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}&returnTo=${encodeURIComponent(`/admin/sets?openSet=${detail.id}`)}`}>
               ↑ Nhập CSV / Excel vào bộ này
             </Link>
             <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(false)}>

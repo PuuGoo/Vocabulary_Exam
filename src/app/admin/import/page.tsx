@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 
@@ -12,6 +13,7 @@ const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
 
 export default function AdminImportPage() {
+  const router = useRouter();
   const [sets, setSets] = useState<SetSummary[]>([]);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOpt[]>([]);
@@ -118,6 +120,11 @@ export default function AdminImportPage() {
     const duplicateNote = data.skippedDuplicates ? ` Bỏ qua ${data.skippedDuplicates} từ đã tồn tại hoặc bị lặp.` : "";
     const invalidNote = data.skippedInvalid ? ` Bỏ qua ${data.skippedInvalid} dòng thiếu dữ liệu bắt buộc.` : "";
     toast(`Đã thêm ${data.added} từ trên ${data.total} dòng.${duplicateNote}${invalidNote}`);
+    const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+    if (returnTo?.startsWith("/admin/sets")) {
+      router.replace(returnTo);
+      return;
+    }
     setFile(null);
     setPreviewRows(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
