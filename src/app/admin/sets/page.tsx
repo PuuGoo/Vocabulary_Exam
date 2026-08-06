@@ -236,7 +236,7 @@ export default function AdminSetsPage() {
 
   async function uploadCategoryDocument() {
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || documentFiles.length === 0 || documentUploading) return;
-    if (documentFiles.some((file) => file.size > 4 * 1024 * 1024)) return toast("Mỗi file PDF không được vượt quá 4 MB.");
+    if (documentFiles.some((file) => file.size > 7 * 1024 * 1024)) return toast("Mỗi file PDF không được vượt quá 4 MB.");
     const form = new FormData();
     form.append("category", selectedCategory);
     form.append("title", documentTitle.trim());
@@ -262,7 +262,7 @@ export default function AdminSetsPage() {
   function addDocumentFiles(incoming: File[]) {
     const pdfs = incoming.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length !== incoming.length) toast("Chỉ các file PDF được thêm vào danh sách.");
-    if (pdfs.some((file) => file.size > 4 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); return; }
+    if (pdfs.some((file) => file.size > 7 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); return; }
     setDocumentFiles((current) => {
       const existing = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
       return [...current, ...pdfs.filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))];
