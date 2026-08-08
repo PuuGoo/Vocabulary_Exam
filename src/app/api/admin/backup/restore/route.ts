@@ -1,11 +1,13 @@
+import { randomBytes } from "node:crypto";
 import { db } from "@/db";
 import {
-  assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
+  appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
   wordBookmarks, wordProgress, words,
 } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { getSession, hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
+import { verifyBackupChecksum } from "@/lib/backupIntegrity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,27 +46,45 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const backup = parseBackupDocument(body.backup);
+    const integrity = backup.integrity ? (verifyBackupChecksum(backup.data, backup.integrity.checksum) ? "verified" : "invalid") : "legacy";
+    if (integrity === "invalid") throw new Error("File sao lưu đã bị thay đổi hoặc hư hỏng. Không thể khôi phục an toàn.");
     const existingUsers = await db.select({ id: users.id, username: users.username }).from(users);
     const existingNames = new Set(existingUsers.map((user) => user.username.toLocaleLowerCase("vi")));
     const unknownUsers = backup.data.users.map((row) => text(row, "username")).filter((name) => name && !existingNames.has(name.toLocaleLowerCase("vi")));
 
     if (body.action === "preview") {
-      return Response.json({ createdAt: backup.createdAt, counts: getBackupCounts(backup), unknownUsers, strategy: "merge-only" });
+      return Response.json({ createdAt: backup.createdAt, version: backup.version, integrity, counts: getBackupCounts(backup), unknownUsers, strategy: "merge-only" });
     }
     if (body.action !== "restore" || body.confirmation !== CONFIRMATION) {
       return Response.json({ error: `Nhập chính xác “${CONFIRMATION}” để xác nhận.` }, { status: 400 });
     }
 
     const report = createReport();
+    const lockedPasswordHash = unknownUsers.length ? await hashPassword(randomBytes(32).toString("hex")) : "";
     await db.transaction(async (tx) => {
       const userMap = new Map<number, number>();
       const usersByName = new Map(existingUsers.map((user) => [user.username.toLocaleLowerCase("vi"), user.id]));
       for (const row of backup.data.users) {
-        const id = oldId(row); const mapped = usersByName.get(text(row, "username").toLocaleLowerCase("vi"));
-        if (id != null && mapped != null) userMap.set(id, mapped);
-        report.skipped.users++;
+        const id = oldId(row); const username = text(row, "username").trim();
+        if (id == null || !username) { report.skipped.users++; continue; }
+        let mapped = usersByName.get(username.toLocaleLowerCase("vi"));
+        if (mapped == null) {
+          const role = text(row, "role") === "admin" ? "admin" : "student";
+          const [created] = await tx.insert(users).values({
+            username,
+            email: nullableText(row, "email"),
+            passwordHash: lockedPasswordHash,
+            displayName: text(row, "displayName", username).trim() || username,
+            role,
+            createdAt: date(row, "createdAt"),
+          }).returning({ id: users.id });
+          mapped = created.id;
+          usersByName.set(username.toLocaleLowerCase("vi"), mapped);
+          report.added.users++;
+        } else report.skipped.users++;
+        userMap.set(id, mapped);
       }
-      if (unknownUsers.length) report.warnings.push(`${unknownUsers.length} tài khoản chưa tồn tại đã được bỏ qua: ${unknownUsers.slice(0, 5).join(", ")}${unknownUsers.length > 5 ? "…" : ""}.`);
+      if (unknownUsers.length) report.warnings.push(`${unknownUsers.length} tài khoản đã được tạo lại ở trạng thái khóa mật khẩu: ${unknownUsers.slice(0, 5).join(", ")}${unknownUsers.length > 5 ? "…" : ""}. Hãy tạo liên kết đặt lại mật khẩu cho các tài khoản này.`);
 
       const classMap = new Map<number, number>();
       const existingClasses = await tx.select().from(classes);
@@ -232,6 +252,13 @@ export async function POST(request: Request) {
         const userId = userMap.get(number(row, "userId", -1)); const activityDate = text(row, "activityDate"); const key = `${userId}:${activityDate}`;
         if (userId == null || !/^\d{4}-\d{2}-\d{2}$/.test(activityDate) || activityKeys.has(key)) { report.skipped.dailyActivities++; continue; }
         await tx.insert(dailyActivities).values({ userId, activityDate, wordsReviewed: number(row, "wordsReviewed"), quizzesCompleted: number(row, "quizzesCompleted"), updatedAt: date(row, "updatedAt") }); activityKeys.add(key); report.added.dailyActivities++;
+      }
+
+      const existingSettings = await tx.select().from(appSettings); const settingKeys = new Set(existingSettings.map((item) => item.key));
+      for (const row of backup.data.appSettings) {
+        const key = text(row, "key").trim(); const value = text(row, "value");
+        if (!key || settingKeys.has(key)) { report.skipped.appSettings++; continue; }
+        await tx.insert(appSettings).values({ key, value, updatedAt: date(row, "updatedAt") }); settingKeys.add(key); report.added.appSettings++;
       }
     });
 
