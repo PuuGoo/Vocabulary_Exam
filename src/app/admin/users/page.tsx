@@ -26,6 +26,7 @@ export default function AdminUsersPage() {
   async function toggleRegistration() {
     if (registrationOpen === null || savingRegistration) return;
     const next = !registrationOpen;
+    if (!next && !confirm("Khóa đăng ký công khai? Học sinh mới sẽ không thể tự tạo tài khoản, nhưng admin vẫn có thể tạo tài khoản bên dưới.")) return;
     setSavingRegistration(true);
     try {
       const res = await fetch("/api/admin/registration-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ open: next }) });
@@ -77,9 +78,9 @@ export default function AdminUsersPage() {
       <h2 className={cx.h2}>Quản lý người dùng</h2>
       <div className={cx.desc}>Tạo tài khoản học sinh mới, phân quyền, hoặc xoá tài khoản.</div>
 
-      <section className="mb-5 flex flex-col gap-3 rounded-[14px] border border-line bg-[#FBFAFE] p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><h3 className="text-sm font-extrabold text-ink">Đăng ký tài khoản công khai</h3><p className="mt-1 text-xs leading-5 text-muted">Khi khóa, học sinh không thể tự đăng ký; admin vẫn tạo tài khoản tại trang này.</p></div>
-        <button type="button" disabled={registrationOpen === null || savingRegistration} onClick={() => void toggleRegistration()} className={`min-h-11 shrink-0 rounded-xl border px-4 text-sm font-bold transition ${registrationOpen ? "border-[#B6DEC8] bg-[#EEFBF3] text-[#277A4B]" : "border-[#F0B7B7] bg-[#FFF1F1] text-[#B64242]"}`}>{savingRegistration ? "Đang lưu..." : registrationOpen === null ? "Đang tải..." : registrationOpen ? "Đang mở · Bấm để khóa" : "Đã khóa · Bấm để mở"}</button>
+      <section id="registration-settings" className={`mb-5 scroll-mt-24 rounded-[16px] border p-4 sm:p-5 ${registrationOpen === false ? "border-[#F0B7B7] bg-[#FFF7F7]" : "border-[#CFC7FF] bg-[#F8F6FF]"}`}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] text-lg ${registrationOpen === false ? "bg-[#FFE4E7]" : "bg-white"}`} aria-hidden="true">{registrationOpen === false ? "🔒" : "🔓"}</span><div><p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#6550DB]">Bảo mật đăng ký</p><h3 className="mt-1 text-base font-extrabold text-ink">Cho phép học sinh tự đăng ký</h3><p className="mt-1 text-xs leading-5 text-muted">Khi tắt, trang đăng ký sẽ bị khóa; admin vẫn tạo được tài khoản tại trang này.</p></div></div>
+        <button type="button" role="switch" aria-checked={registrationOpen ?? false} disabled={registrationOpen === null || savingRegistration} onClick={() => void toggleRegistration()} className={`flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-full border px-3 pl-4 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#7865EE]/15 ${registrationOpen ? "border-[#B6DEC8] bg-[#EEFBF3] text-[#277A4B]" : "border-[#F0B7B7] bg-white text-[#B64242]"}`}><span>{savingRegistration ? "Đang lưu…" : registrationOpen === null ? "Đang tải…" : registrationOpen ? "Đang mở" : "Đã khóa"}</span><span className={`relative h-7 w-12 rounded-full transition ${registrationOpen ? "bg-[#36A36B]" : "bg-[#D8A0A8]"}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${registrationOpen ? "translate-x-6" : "translate-x-1"}`} /></span></button></div>
       </section>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
