@@ -8,6 +8,7 @@ import QuickSwitcher from "@/components/QuickSwitcher";
 import ThemeToggle from "@/components/ThemeToggle";
 import AssignmentReminder from "@/components/AssignmentReminder";
 import PomodoroTimer from "@/components/PomodoroTimer";
+import AccountMenu from "@/components/AccountMenu";
 
 type Tab = { href: string; label: string };
 type NavItem = { href: string; label: string; icon: string; admin?: boolean };
@@ -127,7 +128,7 @@ export default function AppShell({ displayName, roleLabel, tabs, children }: {
     <div className="min-w-0 md:pl-[88px] lg:pl-[264px]">
       <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-line bg-white/95 px-4 backdrop-blur-md sm:px-6 lg:px-8 print:hidden">
         <div className="flex min-w-0 items-center gap-3"><button onClick={() => setMobileNavOpen(true)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-line md:hidden" aria-label="Mở menu"><span className="text-lg">☰</span></button><div className="min-w-0"><div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted">Học viện Lexora</div><div className="truncate text-sm font-bold capitalize sm:text-[0.95rem]">{breadcrumb}</div></div></div>
-        <div className="flex items-center gap-2"><button type="button" onClick={() => setQuickSwitcherOpen(true)} className="hidden h-10 items-center gap-2 rounded-[12px] border border-line bg-[#FBFAFE] px-3 text-xs text-muted transition hover:border-[#CFC7FF] hover:text-ink sm:flex"><span>⌕</span><span>Tìm nhanh</span><kbd className="rounded-md bg-[#EFEDF6] px-1.5 py-0.5 text-[0.62rem]">⌘ K</kbd></button><PomodoroTimer /><AssignmentReminder /><Link href="/settings" className="hidden h-10 w-10 items-center justify-center rounded-[12px] border border-line text-muted transition hover:border-[#CFC7FF] hover:text-gold sm:flex" aria-label="Cài đặt">⚙</Link><div className="ml-1 flex h-10 w-10 items-center justify-center rounded-full bg-[#ECE9FF] text-xs font-extrabold text-[#6550DB] ring-2 ring-white">{initials(displayName)}</div></div>
+        <div className="flex items-center gap-2"><button type="button" onClick={() => setQuickSwitcherOpen(true)} className="hidden h-10 items-center gap-2 rounded-[12px] border border-line bg-[#FBFAFE] px-3 text-xs text-muted transition hover:border-[#CFC7FF] hover:text-ink sm:flex"><span>⌕</span><span>Tìm nhanh</span><kbd className="rounded-md bg-[#EFEDF6] px-1.5 py-0.5 text-[0.62rem]">⌘ K</kbd></button><PomodoroTimer /><AssignmentReminder /><AccountMenu displayName={displayName} roleLabel={roleLabel} isAdmin={isAdmin} loggingOut={loggingOut} onLogout={logout} /></div>
       </header>
       <main className="mx-auto w-full max-w-[1536px] p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 lg:p-8 lg:pb-8">{children}</main>
     </div>
