@@ -11,6 +11,38 @@ function getTransport() {
   });
 }
 
+export async function sendBackupEmail(options: {
+  to: string;
+  attachment: Buffer;
+  filename: string;
+  createdAt: Date;
+  recordCount: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  const transport = getTransport();
+  if (!transport) return { ok: false, error: "SMTP chưa được cấu hình." };
+  try {
+    await transport.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: options.to,
+      subject: `Sao lưu Lexora tự động · ${options.createdAt.toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`,
+      text: `Bản sao lưu Lexora được tạo tự động lúc ${options.createdAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}. Tổng số bản ghi: ${options.recordCount}. File đã được nén gzip và có checksum SHA-256.`,
+      html: `
+        <h2>Sao lưu Lexora tự động</h2>
+        <p>Bản sao lưu được tạo lúc <b>${options.createdAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</b>.</p>
+        <p>Tổng số bản ghi: <b>${options.recordCount.toLocaleString("vi-VN")}</b>.</p>
+        <p>File đính kèm đã được nén gzip và chứa checksum SHA-256. Hãy lưu email này ở nơi an toàn.</p>
+        <p><small>File không chứa mật khẩu, nhưng có thể chứa thông tin cá nhân và bài nộp của học viên.</small></p>
+      `,
+      attachments: [{ filename: options.filename, content: options.attachment, contentType: "application/gzip" }],
+    });
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? err.message : "Không thể gửi email sao lưu.";
+    console.error("sendBackupEmail failed:", error);
+    return { ok: false, error };
+  }
+}
+
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<boolean> {
   const transport = getTransport();
   if (!transport) return false;

@@ -1,26 +1,5 @@
-import { db } from "@/db";
-import {
-  assignmentExtensions,
-  assignments,
-  assignmentSubmissions,
-  attempts,
-  categoryDocuments,
-  classes,
-  classMembers,
-  dailyActivities,
-  learningGoals,
-  mistakes,
-  studySessions,
-  teachBackNotes,
-  users,
-  vocabCategories,
-  vocabSets,
-  wordBookmarks,
-  wordProgress,
-  words,
-} from "@/db/schema";
 import { getSession } from "@/lib/auth";
-import { BACKUP_FORMAT, BACKUP_VERSION, backupFilename, sanitizeBackupUsers, serializeCategoryDocuments, serializeSubmissionFiles } from "@/lib/backup";
+import { createBackupExport } from "@/lib/backupExport";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,82 +11,12 @@ export async function GET() {
     return Response.json({ error: "Bạn không có quyền sao lưu dữ liệu." }, { status: 403 });
   }
 
-  const [
-    userRows,
-    classRows,
-    memberRows,
-    categoryRows,
-    documentRows,
-    setRows,
-    wordRows,
-    attemptRows,
-    assignmentRows,
-    extensionRows,
-    submissionRows,
-    teachBackRows,
-    mistakeRows,
-    progressRows,
-    bookmarkRows,
-    sessionRows,
-    goalRows,
-    activityRows,
-  ] = await Promise.all([
-    db.select().from(users),
-    db.select().from(classes),
-    db.select().from(classMembers),
-    db.select().from(vocabCategories),
-    db.select().from(categoryDocuments),
-    db.select().from(vocabSets),
-    db.select().from(words),
-    db.select().from(attempts),
-    db.select().from(assignments),
-    db.select().from(assignmentExtensions),
-    db.select().from(assignmentSubmissions),
-    db.select().from(teachBackNotes),
-    db.select().from(mistakes),
-    db.select().from(wordProgress),
-    db.select().from(wordBookmarks),
-    db.select().from(studySessions),
-    db.select().from(learningGoals),
-    db.select().from(dailyActivities),
-  ]);
-
-  const data = {
-    users: sanitizeBackupUsers(userRows),
-    classes: classRows,
-    classMembers: memberRows,
-    vocabCategories: categoryRows,
-    categoryDocuments: serializeCategoryDocuments(documentRows),
-    vocabSets: setRows,
-    words: wordRows,
-    attempts: attemptRows,
-    assignments: assignmentRows,
-    assignmentExtensions: extensionRows,
-    assignmentSubmissions: serializeSubmissionFiles(submissionRows),
-    teachBackNotes: teachBackRows,
-    mistakes: mistakeRows,
-    wordProgress: progressRows,
-    wordBookmarks: bookmarkRows,
-    studySessions: sessionRows,
-    learningGoals: goalRows,
-    dailyActivities: activityRows,
-  };
-  const counts = Object.fromEntries(Object.entries(data).map(([name, rows]) => [name, rows.length]));
-  const now = new Date();
-  const body = JSON.stringify({
-    format: BACKUP_FORMAT,
-    version: BACKUP_VERSION,
-    createdAt: now.toISOString(),
-    createdBy: { id: session.userId, username: session.username },
-    privacy: { passwordHashesIncluded: false, passwordResetTokensIncluded: false },
-    counts,
-    data,
-  });
-
-  return new Response(body, {
+  const backup = await createBackupExport({ id: session.userId, username: session.username });
+  return new Response(backup.body, {
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${backupFilename(now)}"`,
+      "Content-Length": String(backup.byteLength),
+      "Content-Disposition": `attachment; filename="${backup.filename}"`,
       "Cache-Control": "no-store, max-age=0",
       "X-Content-Type-Options": "nosniff",
     },

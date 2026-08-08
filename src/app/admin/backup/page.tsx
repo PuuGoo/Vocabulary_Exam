@@ -7,6 +7,7 @@ import { BACKUP_COLLECTIONS, BackupCollection } from "@/lib/backup";
 const STORAGE_KEY = "lexora_last_backup_at";
 const CONFIRMATION = "KHOI PHUC";
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_DECOMPRESSED_CHARS = 60 * 1024 * 1024;
 
 const LABELS: Record<BackupCollection, string> = {
   users: "Tài khoản", classes: "Lớp học", classMembers: "Thành viên lớp", vocabCategories: "Danh mục", categoryDocuments: "Tài liệu PDF", vocabSets: "Bộ từ",
@@ -14,16 +15,27 @@ const LABELS: Record<BackupCollection, string> = {
   assignmentSubmissions: "Bài nộp", teachBackNotes: "Ghi chú giảng lại", mistakes: "Từ hay sai",
   wordProgress: "Tiến độ từ", wordBookmarks: "Từ đã lưu", studySessions: "Phiên học",
   learningGoals: "Mục tiêu", dailyActivities: "Hoạt động ngày",
+  appSettings: "Cấu hình hệ thống",
 };
 
-type Preview = { createdAt: string; counts: Record<BackupCollection, number>; unknownUsers: string[]; strategy: string };
+type Preview = { createdAt: string; version: number; integrity: "verified" | "legacy"; counts: Record<BackupCollection, number>; unknownUsers: string[]; strategy: string };
 type RestoreReport = { added: Record<BackupCollection, number>; skipped: Record<BackupCollection, number>; warnings: string[] };
+type EmailSchedule = { enabled: boolean; recipient: string; hour: number; timezone: "Asia/Ho_Chi_Minh"; lastSentAt: string; lastError: string };
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+async function readBackupFile(file: File) {
+  if (!file.name.toLocaleLowerCase().endsWith(".gz")) return file.text();
+  if (typeof DecompressionStream === "undefined") throw new Error("Trình duyệt này chưa hỗ trợ đọc gzip. Hãy giải nén file trước khi khôi phục.");
+  const decompressed = file.stream().pipeThrough(new DecompressionStream("gzip"));
+  const text = await new Response(decompressed).text();
+  if (text.length > MAX_DECOMPRESSED_CHARS) throw new Error("Dữ liệu sau giải nén lớn hơn giới hạn 60 MB.");
+  return text;
 }
 
 export default function BackupPage() {
@@ -36,8 +48,45 @@ export default function BackupPage() {
   const [previewing, setPreviewing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [report, setReport] = useState<RestoreReport | null>(null);
+  const [emailSchedule, setEmailSchedule] = useState<EmailSchedule>({ enabled: false, recipient: "", hour: 20, timezone: "Asia/Ho_Chi_Minh", lastSentAt: "", lastError: "" });
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [emailConfigured, setEmailConfigured] = useState(false);
+  const [cronConfigured, setCronConfigured] = useState(false);
 
-  useEffect(() => setLastBackupAt(localStorage.getItem(STORAGE_KEY)), []);
+  useEffect(() => {
+    setLastBackupAt(localStorage.getItem(STORAGE_KEY));
+    fetch("/api/admin/backup/schedule", { cache: "no-store" })
+      .then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error); return payload; })
+      .then((payload) => { setEmailSchedule(payload.schedule); setEmailConfigured(payload.emailConfigured); setCronConfigured(payload.cronConfigured); })
+      .catch((error) => toast(error instanceof Error ? error.message : "Không thể tải lịch sao lưu."))
+      .finally(() => setScheduleLoading(false));
+  }, []);
+
+  async function saveSchedule() {
+    if (!emailSchedule.recipient.trim()) return toast("Vui lòng nhập email nhận bản sao lưu.");
+    setScheduleSaving(true);
+    try {
+      const response = await fetch("/api/admin/backup/schedule", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(emailSchedule) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Không thể lưu lịch sao lưu.");
+      setEmailSchedule(payload.schedule); toast("Đã lưu lịch gửi sao lưu tự động.");
+    } catch (error) { toast(error instanceof Error ? error.message : "Không thể lưu lịch sao lưu."); }
+    finally { setScheduleSaving(false); }
+  }
+
+  async function sendTestEmail() {
+    if (!emailSchedule.recipient.trim()) return toast("Vui lòng nhập email nhận trước.");
+    setTestingEmail(true);
+    try {
+      const response = await fetch("/api/admin/backup/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: emailSchedule.recipient }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Không thể gửi email thử.");
+      toast("Đã gửi bản sao lưu thử. Hãy kiểm tra hộp thư và thư rác.");
+    } catch (error) { toast(error instanceof Error ? error.message : "Không thể gửi email thử."); }
+    finally { setTestingEmail(false); }
+  }
 
   async function downloadBackup(showToast = true) {
     setDownloading(true);
@@ -56,20 +105,25 @@ export default function BackupPage() {
     } finally { setDownloading(false); }
   }
 
-  async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  async function inspectFile(file?: File) {
     setBackup(null); setPreview(null); setReport(null); setConfirmation(""); setFileName(file?.name || "");
     if (!file) return;
-    if (file.size > MAX_UPLOAD_BYTES) { toast("File lớn hơn 20 MB. Hãy kiểm tra lại file sao lưu."); event.target.value = ""; return; }
+    if (file.size > MAX_UPLOAD_BYTES) { toast("File lớn hơn 20 MB. Hãy kiểm tra lại file sao lưu."); setFileName(""); return; }
     setPreviewing(true);
     try {
-      const parsed = JSON.parse(await file.text());
+      const parsed = JSON.parse(await readBackupFile(file));
       const response = await fetch("/api/admin/backup/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", backup: parsed }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Không thể đọc file sao lưu.");
       setBackup(parsed); setPreview(payload); toast("File hợp lệ. Hãy kiểm tra bản xem trước.");
     } catch (error) { setFileName(""); toast(error instanceof Error ? error.message : "File JSON không hợp lệ."); }
-    finally { setPreviewing(false); event.target.value = ""; }
+    finally { setPreviewing(false); }
+  }
+
+  async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    await inspectFile(file);
   }
 
   async function restoreBackup() {
@@ -90,12 +144,29 @@ export default function BackupPage() {
     <section><p className="mb-2 text-sm font-semibold text-gold">Quản trị / An toàn dữ liệu</p><h1 className="text-[clamp(1.8rem,4vw,2.5rem)] font-extrabold tracking-[-0.045em]">Sao lưu và khôi phục</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-muted">Giữ một bản dữ liệu ngoại tuyến và gộp lại an toàn khi cần. Hệ thống không ghi đè tài khoản, mật khẩu hay dữ liệu đang có.</p></section>
 
     <section className="grid gap-5 lg:grid-cols-2">
-      <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EAE7FF] text-xl text-[#6550DB]">↓</span><div><h2 className="font-extrabold">Tạo bản sao lưu mới</h2><p className="mt-1 text-sm leading-6 text-muted">Bao gồm lớp, bộ từ, tiến độ, bài làm, ghi chú và file học sinh đã nộp.</p></div></div></div><div className="p-5 sm:p-6"><dl className="grid gap-3 text-sm sm:grid-cols-2"><div className="rounded-[13px] border border-line p-4"><dt className="text-xs font-semibold text-muted">Định dạng</dt><dd className="mt-1 font-bold">Lexora JSON v1</dd></div><div className="rounded-[13px] border border-line p-4"><dt className="text-xs font-semibold text-muted">Lần tải gần nhất</dt><dd className="mt-1 font-bold">{lastBackupAt ? new Date(lastBackupAt).toLocaleString("vi-VN") : "Chưa có"}</dd></div></dl><button type="button" onClick={() => void downloadBackup()} disabled={downloading || restoring} className="mt-6 inline-flex h-12 items-center justify-center rounded-[12px] bg-gold px-5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-golddark disabled:cursor-wait disabled:opacity-60">{downloading ? "Đang đóng gói dữ liệu…" : "Tải bản sao lưu"}</button></div></article>
+      <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EAE7FF] text-xl text-[#6550DB]">↓</span><div><h2 className="font-extrabold">Tạo bản sao lưu mới</h2><p className="mt-1 text-sm leading-6 text-muted">Bao gồm tài khoản, cấu hình, lớp, bộ từ, tiến độ, bài làm, ghi chú và file đã tải lên.</p></div></div></div><div className="p-5 sm:p-6"><dl className="grid gap-3 text-sm sm:grid-cols-2"><div className="rounded-[13px] border border-line p-4"><dt className="text-xs font-semibold text-muted">Định dạng</dt><dd className="mt-1 font-bold">Lexora JSON v2 · SHA-256</dd></div><div className="rounded-[13px] border border-line p-4"><dt className="text-xs font-semibold text-muted">Lần tải trên thiết bị này</dt><dd className="mt-1 font-bold">{lastBackupAt ? new Date(lastBackupAt).toLocaleString("vi-VN") : "Chưa có"}</dd></div></dl><button type="button" onClick={() => void downloadBackup()} disabled={downloading || restoring} className="mt-6 inline-flex h-12 items-center justify-center rounded-[12px] bg-gold px-5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-golddark disabled:cursor-wait disabled:opacity-60">{downloading ? "Đang đóng gói và kiểm tra…" : "Tải bản sao lưu an toàn"}</button></div></article>
 
-      <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#E8F6EF] text-xl text-[#267A52]">↥</span><div><h2 className="font-extrabold">Khôi phục từ file JSON</h2><p className="mt-1 text-sm leading-6 text-muted">Kiểm tra trước, chỉ thêm dữ liệu còn thiếu và tự sao lưu trạng thái hiện tại.</p></div></div></div><div className="p-5 sm:p-6"><label className="flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed border-[#D9D5EC] bg-[#FAF9FD] px-4 text-center transition hover:border-[#8A79E7] hover:bg-[#F7F5FF]"><span className="text-sm font-bold text-main">{previewing ? "Đang kiểm tra file…" : fileName || "Chọn file sao lưu .json"}</span><span className="mt-1 text-xs text-muted">Tối đa 20 MB</span><input className="sr-only" type="file" accept="application/json,.json" onChange={(event) => void chooseFile(event)} disabled={previewing || restoring} /></label>{fileName && !preview && !previewing ? <p className="mt-3 text-xs text-[#A34141]">File chưa vượt qua bước kiểm tra.</p> : null}</div></article>
+      <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#E8F6EF] text-xl text-[#267A52]">↥</span><div><h2 className="font-extrabold">Khôi phục từ file JSON</h2><p className="mt-1 text-sm leading-6 text-muted">Kiểm tra toàn vẹn trước, chỉ thêm dữ liệu còn thiếu và tự tải bản sao hiện tại.</p></div></div></div><div className="p-5 sm:p-6"><label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void inspectFile(event.dataTransfer.files?.[0]); }} className="group flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed border-[#D9D5EC] bg-[#FAF9FD] px-4 text-center transition hover:border-[#8A79E7] hover:bg-[#F7F5FF]"><span className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg text-[#6550DB] shadow-sm transition group-hover:-translate-y-0.5">↥</span><span className="text-sm font-bold text-main">{previewing ? "Đang giải nén và kiểm tra checksum…" : fileName || "Kéo thả hoặc chọn file sao lưu"}</span><span className="mt-1 text-xs text-muted">Hỗ trợ .json và .json.gz · tối đa 20 MB</span><input className="sr-only" type="file" accept="application/json,application/gzip,.json,.json.gz,.gz" onChange={(event) => void chooseFile(event)} disabled={previewing || restoring} /></label>{fileName && !preview && !previewing ? <p className="mt-3 text-xs text-[#A34141]">File chưa vượt qua bước kiểm tra.</p> : null}</div></article>
     </section>
 
-    {preview ? <section className="lexora-card p-5 sm:p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6550DB]">Bản xem trước</p><h2 className="mt-1 text-lg font-extrabold">{fileName}</h2><p className="mt-1 text-sm text-muted">Được tạo lúc {new Date(preview.createdAt).toLocaleString("vi-VN")}</p></div><span className="w-fit rounded-full bg-[#E8F6EF] px-3 py-1.5 text-xs font-bold text-[#267A52]">File hợp lệ</span></div><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{BACKUP_COLLECTIONS.filter((name) => preview.counts[name] > 0).map((name) => <div key={name} className="flex items-center justify-between rounded-[12px] border border-line px-3 py-2.5 text-sm"><span className="text-muted">{LABELS[name]}</span><b>{preview.counts[name].toLocaleString("vi-VN")}</b></div>)}</div>{preview.unknownUsers.length ? <div className="mt-5 rounded-[14px] border border-[#F0DDA2] bg-[#FFF9E7] p-4 text-sm leading-6 text-[#72591A]"><b className="block text-[#56410E]">{preview.unknownUsers.length} tài khoản chưa tồn tại sẽ được bỏ qua</b>{preview.unknownUsers.slice(0, 8).join(", ")}{preview.unknownUsers.length > 8 ? "…" : ""}. File không có mật khẩu nên hệ thống không thể tạo các tài khoản này một cách an toàn.</div> : null}<div className="mt-6 rounded-[14px] border border-line bg-[#FAF9FD] p-4"><label className="text-sm font-bold" htmlFor="restore-confirmation">Nhập <span className="font-mono text-[#6550DB]">{CONFIRMATION}</span> để xác nhận</label><div className="mt-3 flex flex-col gap-3 sm:flex-row"><input id="restore-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value.toUpperCase())} placeholder={CONFIRMATION} autoComplete="off" className="h-12 min-w-0 flex-1 rounded-[12px] border border-line bg-white px-4 text-sm font-bold outline-none transition focus:border-[#7865EE] focus:ring-4 focus:ring-[#7865EE]/10" /><button type="button" onClick={() => void restoreBackup()} disabled={confirmation !== CONFIRMATION || restoring || downloading} className="h-12 rounded-[12px] bg-[#242337] px-5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-black disabled:cursor-not-allowed disabled:opacity-40">{restoring ? "Đang khôi phục…" : "Sao lưu rồi khôi phục"}</button></div><p className="mt-3 text-xs leading-5 text-muted">Không xóa hoặc ghi đè dữ liệu. Nếu có lỗi, toàn bộ thay đổi của lần khôi phục sẽ được hoàn tác.</p></div></section> : null}
+    <section className="lexora-card overflow-hidden">
+      <div className="flex flex-col gap-4 border-b border-line bg-[#F8F7FC] p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
+        <div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EAE7FF] text-xl text-[#6550DB]">✉</span><div><h2 className="font-extrabold">Gửi sao lưu tự động qua email</h2><p className="mt-1 text-sm leading-6 text-muted">Mỗi ngày hệ thống nén bản sao lưu và gửi trong khung giờ bạn chọn.</p></div></div>
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-full border border-line bg-white px-4 text-sm font-bold"><input type="checkbox" checked={emailSchedule.enabled} onChange={(event) => setEmailSchedule((value) => ({ ...value, enabled: event.target.checked }))} className="h-4 w-4 accent-[#7865EE]" disabled={scheduleLoading} /><span>{emailSchedule.enabled ? "Đang bật" : "Đang tắt"}</span></label>
+      </div>
+      <div className="p-5 sm:p-6">
+        {(!emailConfigured || !cronConfigured) ? <div className="mb-5 rounded-[14px] border border-[#F0DDA2] bg-[#FFF9E7] p-4 text-sm leading-6 text-[#72591A]"><b className="block text-[#56410E]">Chưa thể chạy tự động trên production</b>{!emailConfigured ? "Thiếu cấu hình SMTP. " : ""}{!cronConfigured ? "Thiếu biến môi trường CRON_SECRET. " : ""}Bạn vẫn có thể lưu cấu hình sau khi bổ sung các biến trên Vercel.</div> : null}
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
+          <label className="block"><span className="mb-2 block text-xs font-bold text-muted">Email cố định nhận sao lưu</span><input type="email" value={emailSchedule.recipient} onChange={(event) => setEmailSchedule((value) => ({ ...value, recipient: event.target.value }))} placeholder="backup@vidu.com" className="h-12 w-full rounded-[12px] border border-line bg-white px-4 text-sm outline-none transition focus:border-[#7865EE] focus:ring-4 focus:ring-[#7865EE]/10" disabled={scheduleLoading} /></label>
+          <label className="block"><span className="mb-2 block text-xs font-bold text-muted">Khung giờ gửi mỗi ngày</span><select value={emailSchedule.hour} onChange={(event) => setEmailSchedule((value) => ({ ...value, hour: Number(event.target.value) }))} className="h-12 w-full rounded-[12px] border border-line bg-white px-4 text-sm font-bold outline-none focus:border-[#7865EE]" disabled={scheduleLoading}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00 – {String(hour).padStart(2, "0")}:59</option>)}</select></label>
+        </div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" onClick={() => void saveSchedule()} disabled={scheduleLoading || scheduleSaving || testingEmail} className="h-11 rounded-[11px] bg-gold px-5 text-sm font-bold text-white transition hover:bg-golddark disabled:cursor-wait disabled:opacity-50">{scheduleSaving ? "Đang lưu…" : "Lưu lịch tự động"}</button><button type="button" onClick={() => void sendTestEmail()} disabled={scheduleLoading || scheduleSaving || testingEmail || !emailConfigured} className="h-11 rounded-[11px] border border-line bg-white px-5 text-sm font-bold transition hover:border-[#CFC7FF] hover:text-gold disabled:cursor-wait disabled:opacity-50">{testingEmail ? "Đang tạo và gửi…" : "Gửi bản thử ngay"}</button><span className="text-xs leading-5 text-muted">Múi giờ Việt Nam (UTC+7). Vercel Hobby có thể gửi vào bất kỳ phút nào trong khung giờ.</span></div>
+        {emailSchedule.lastSentAt ? <p className="mt-4 text-xs text-[#267A52]">✓ Gửi thành công gần nhất: {new Date(emailSchedule.lastSentAt).toLocaleString("vi-VN")}</p> : null}
+        {emailSchedule.lastError ? <p className="mt-2 text-xs text-[#A34141]">Lỗi gần nhất: {emailSchedule.lastError}</p> : null}
+      </div>
+    </section>
+
+    {preview ? <section className="lexora-card p-5 sm:p-6"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start"><div><p className="text-xs font-bold uppercase tracking-[0.12em] text-[#6550DB]">Bản xem trước · định dạng v{preview.version}</p><h2 className="mt-1 text-lg font-extrabold">{fileName}</h2><p className="mt-1 text-sm text-muted">Được tạo lúc {new Date(preview.createdAt).toLocaleString("vi-VN")}</p></div><span className={`w-fit rounded-full px-3 py-1.5 text-xs font-bold ${preview.integrity === "verified" ? "bg-[#E8F6EF] text-[#267A52]" : "bg-[#FFF4D6] text-[#72591A]"}`}>{preview.integrity === "verified" ? "✓ Toàn vẹn SHA-256" : "Bản v1 · chưa có checksum"}</span></div>{preview.integrity === "legacy" ? <div className="mt-4 rounded-[14px] border border-[#F0DDA2] bg-[#FFF9E7] p-4 text-sm leading-6 text-[#72591A]">Đây là bản sao lưu v1 cũ nên không thể xác minh file có bị thay đổi hay không. Chỉ tiếp tục nếu bạn tin tưởng nguồn file.</div> : null}<div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{BACKUP_COLLECTIONS.filter((name) => preview.counts[name] > 0).map((name) => <div key={name} className="flex items-center justify-between rounded-[12px] border border-line px-3 py-2.5 text-sm"><span className="text-muted">{LABELS[name]}</span><b>{preview.counts[name].toLocaleString("vi-VN")}</b></div>)}</div>{preview.unknownUsers.length ? <div className="mt-5 rounded-[14px] border border-[#D9D5EC] bg-[#F8F7FC] p-4 text-sm leading-6 text-main"><b className="block">{preview.unknownUsers.length} tài khoản sẽ được tạo lại ở trạng thái khóa mật khẩu</b>{preview.unknownUsers.slice(0, 8).join(", ")}{preview.unknownUsers.length > 8 ? "…" : ""}. Sau khi khôi phục, hãy tạo liên kết đặt lại mật khẩu trong mục Người dùng để họ đăng nhập lại.</div> : null}<div className="mt-6 rounded-[14px] border border-line bg-[#FAF9FD] p-4"><label className="text-sm font-bold" htmlFor="restore-confirmation">Nhập <span className="font-mono text-[#6550DB]">{CONFIRMATION}</span> để xác nhận</label><div className="mt-3 flex flex-col gap-3 sm:flex-row"><input id="restore-confirmation" value={confirmation} onChange={(event) => setConfirmation(event.target.value.toUpperCase())} placeholder={CONFIRMATION} autoComplete="off" className="h-12 min-w-0 flex-1 rounded-[12px] border border-line bg-white px-4 text-sm font-bold outline-none transition focus:border-[#7865EE] focus:ring-4 focus:ring-[#7865EE]/10" /><button type="button" onClick={() => void restoreBackup()} disabled={confirmation !== CONFIRMATION || restoring || downloading} className="h-12 rounded-[12px] bg-[#242337] px-5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-black disabled:cursor-not-allowed disabled:opacity-40">{restoring ? "Đang khôi phục…" : "Sao lưu rồi khôi phục"}</button></div><p className="mt-3 text-xs leading-5 text-muted">Không xóa hoặc ghi đè dữ liệu. Nếu có lỗi, toàn bộ thay đổi của lần khôi phục sẽ được hoàn tác trong cùng transaction.</p></div></section> : null}
 
     {report ? <section className="lexora-card border-[#BFE3D2] p-5 sm:p-6"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F6EF] font-extrabold text-[#267A52]">✓</span><div><h2 className="font-extrabold">Khôi phục hoàn tất</h2><p className="text-sm text-muted">Đã gộp dữ liệu mới và giữ nguyên các bản ghi trùng.</p></div></div><div className="mt-5 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{BACKUP_COLLECTIONS.filter((name) => report.added[name] + report.skipped[name] > 0).map((name) => <div key={name} className="rounded-[12px] border border-line p-3 text-sm"><b className="block">{LABELS[name]}</b><span className="mt-1 block text-[#267A52]">Thêm {report.added[name]}</span><span className="text-muted">Giữ nguyên/bỏ qua {report.skipped[name]}</span></div>)}</div>{report.warnings.length ? <ul className="mt-4 space-y-1 text-sm text-[#72591A]">{report.warnings.map((warning) => <li key={warning}>• {warning}</li>)}</ul> : null}</section> : null}
 

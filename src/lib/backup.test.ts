@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BACKUP_COLLECTIONS, backupFilename, getBackupCounts, parseBackupDocument, sanitizeBackupUsers, serializeSubmissionFiles } from "./backup";
+import { createBackupChecksum, verifyBackupChecksum } from "./backupIntegrity";
+import { zonedScheduleParts } from "./backupScheduleTime";
 
 test("backup removes password hashes while preserving account metadata", () => {
   const [user] = sanitizeBackupUsers([{ id: 1, username: "admin", passwordHash: "secret-hash", role: "admin" }]);
@@ -18,11 +20,47 @@ test("backup filenames are deterministic and filesystem safe", () => {
   assert.equal(backupFilename(new Date("2026-07-22T12:34:56.789Z")), "lexora-backup-2026-07-22T12-34-56-789Z.json");
 });
 
-test("restore validator accepts a complete Lexora backup", () => {
+test("restore validator accepts a complete legacy Lexora backup", () => {
   const data = Object.fromEntries(BACKUP_COLLECTIONS.map((name) => [name, []])) as Record<string, Array<Record<string, unknown>>>;
+  delete data.appSettings;
   data.words = [{ id: 1, meaning: "bữa ăn" }];
   const backup = parseBackupDocument({ format: "lexora-backup", version: 1, createdAt: "2026-07-22T00:00:00.000Z", data });
   assert.equal(getBackupCounts(backup).words, 1);
+  assert.equal(getBackupCounts(backup).appSettings, 0);
+});
+
+test("v2 backup requires a SHA-256 integrity manifest", () => {
+  const data = Object.fromEntries(BACKUP_COLLECTIONS.map((name) => [name, []]));
+  assert.throws(
+    () => parseBackupDocument({ format: "lexora-backup", version: 2, createdAt: new Date().toISOString(), data }),
+    /toàn vẹn/,
+  );
+  const backup = parseBackupDocument({
+    format: "lexora-backup",
+    version: 2,
+    createdAt: new Date().toISOString(),
+    integrity: { algorithm: "SHA-256", checksum: "a".repeat(64) },
+    data,
+  });
+  assert.equal(backup.version, 2);
+  assert.equal(backup.integrity?.checksum, "a".repeat(64));
+});
+
+test("checksum detects changed backup data", () => {
+  const data = Object.fromEntries(BACKUP_COLLECTIONS.map((name) => [name, []])) as unknown as Parameters<typeof createBackupChecksum>[0];
+  data.words = [{ id: 1, term: "meal" }];
+  const checksum = createBackupChecksum(data);
+  assert.equal(checksum.length, 64);
+  assert.equal(verifyBackupChecksum(data, checksum), true);
+  data.words[0].term = "changed";
+  assert.equal(verifyBackupChecksum(data, checksum), false);
+});
+
+test("email backup schedule uses Vietnam local date and hour", () => {
+  assert.deepEqual(zonedScheduleParts(new Date("2026-08-08T13:15:00.000Z"), "Asia/Ho_Chi_Minh"), {
+    date: "2026-08-08",
+    hour: 20,
+  });
 });
 
 test("restore validator rejects incomplete and foreign JSON files", () => {
