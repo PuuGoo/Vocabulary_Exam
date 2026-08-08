@@ -9,6 +9,8 @@ type UserRow = { id: number; username: string; displayName: string; role: "admin
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [form, setForm] = useState({ username: "", displayName: "", password: "", role: "student" as "admin" | "student" });
+  const [registrationOpen, setRegistrationOpen] = useState<boolean | null>(null);
+  const [savingRegistration, setSavingRegistration] = useState(false);
 
   async function load() {
     const res = await fetch("/api/admin/users");
@@ -18,7 +20,23 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     load();
+    fetch("/api/admin/registration-settings").then((res) => res.ok ? res.json() : null).then((data) => { if (data) setRegistrationOpen(data.open); });
   }, []);
+
+  async function toggleRegistration() {
+    if (registrationOpen === null || savingRegistration) return;
+    const next = !registrationOpen;
+    setSavingRegistration(true);
+    try {
+      const res = await fetch("/api/admin/registration-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ open: next }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể cập nhật trạng thái đăng ký.");
+      setRegistrationOpen(data.open);
+      toast(data.open ? "Đã mở đăng ký tài khoản học sinh." : "Đã khóa đăng ký công khai.");
+    } finally {
+      setSavingRegistration(false);
+    }
+  }
 
   async function addUser() {
     if (!form.username.trim() || !form.password) return toast("Vui lòng nhập tên đăng nhập và mật khẩu.");
@@ -59,6 +77,11 @@ export default function AdminUsersPage() {
       <h2 className={cx.h2}>Quản lý người dùng</h2>
       <div className={cx.desc}>Tạo tài khoản học sinh mới, phân quyền, hoặc xoá tài khoản.</div>
 
+      <section className="mb-5 flex flex-col gap-3 rounded-[14px] border border-line bg-[#FBFAFE] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><h3 className="text-sm font-extrabold text-ink">Đăng ký tài khoản công khai</h3><p className="mt-1 text-xs leading-5 text-muted">Khi khóa, học sinh không thể tự đăng ký; admin vẫn tạo tài khoản tại trang này.</p></div>
+        <button type="button" disabled={registrationOpen === null || savingRegistration} onClick={() => void toggleRegistration()} className={`min-h-11 shrink-0 rounded-xl border px-4 text-sm font-bold transition ${registrationOpen ? "border-[#B6DEC8] bg-[#EEFBF3] text-[#277A4B]" : "border-[#F0B7B7] bg-[#FFF1F1] text-[#B64242]"}`}>{savingRegistration ? "Đang lưu..." : registrationOpen === null ? "Đang tải..." : registrationOpen ? "Đang mở · Bấm để khóa" : "Đã khóa · Bấm để mở"}</button>
+      </section>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
           <label className={cx.label}>Tên đăng nhập</label>
@@ -70,7 +93,7 @@ export default function AdminUsersPage() {
         </div>
         <div>
           <label className={cx.label}>Mật khẩu</label>
-          <input className={cx.input} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <input className={cx.input} type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </div>
         <div>
           <label className={cx.label}>Vai trò</label>
