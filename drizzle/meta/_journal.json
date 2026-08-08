@@ -92,6 +92,13 @@
       "when": 1785632400000,
       "tag": "0012_category_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786150000000,
+      "tag": "0013_app_settings",
+      "breakpoints": true
     }
   ]
 }

@@ -34,6 +34,12 @@ export const users = pgTable(
   })
 );
 
+export const appSettings = pgTable("app_settings", {
+  key: varchar("key", { length: 64 }).primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 export const classes = pgTable("classes", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),

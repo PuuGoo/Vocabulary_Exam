@@ -95,6 +95,8 @@ function QuizPlayerInner() {
   const [pendingFocus, setPendingFocus] = useState<number | "first" | null>(null);
   const inputRefs = useRef(new Map<number, HTMLInputElement>()).current;
   const rowRefs = useRef(new Map<number, HTMLDivElement>()).current;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const quizMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,10 +178,43 @@ function QuizPlayerInner() {
   const leaveWarning = "Bạn còn câu đã nhập nhưng chưa nộp. Rời trang sẽ làm mất các câu trả lời này. Bạn vẫn muốn rời đi?";
   useUnsavedChangesWarning(hasUnsubmittedAnswers, leaveWarning);
 
-  function leaveQuiz() {
+  function navigateQuiz(url: string) {
     if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;
-    router.push("/study");
+    setMenuOpen(false);
+    router.push(url);
   }
+
+  function leaveQuiz() {
+    navigateQuiz("/study");
+  }
+
+  useEffect(() => {
+    function handleShortcut(event: KeyboardEvent) {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input,textarea,select,[contenteditable=true]")) return;
+      const key = event.key.toLowerCase();
+      if (key === "m" || event.key === ".") {
+        event.preventDefault();
+        setMenuOpen((open) => !open);
+        return;
+      }
+      if (!menuOpen) return;
+      if (event.key === "Escape") { event.preventDefault(); setMenuOpen(false); return; }
+      const routes: Record<string, string> = {
+        l: `/learn/${set?.id}`,
+        f: `/quiz/${set?.id}?mode=fill`,
+        d: `/dictation/${set?.id}`,
+        g: `/match/${set?.id}`,
+        t: `/quiz/${set?.id}?mode=fill&timed=1&minutes=15`,
+        x: "/study",
+      };
+      if (!isVerb) routes.q = `/quiz/${set?.id}?mode=mc`;
+      if (routes[key]) { event.preventDefault(); navigateQuiz(routes[key]); }
+    }
+    window.addEventListener("keydown", handleShortcut);
+    return () => window.removeEventListener("keydown", handleShortcut);
+  }, [menuOpen, set?.id, isVerb, hasUnsubmittedAnswers]);
 
   // build MC options for the words in the current group, once
   useEffect(() => {
@@ -505,6 +540,20 @@ function QuizPlayerInner() {
 
   return (
     <div className={cx.panel}>
+      <button type="button" aria-label="Mở menu chế độ học" aria-haspopup="menu" aria-expanded={menuOpen} aria-keyshortcuts="M ." onClick={() => setMenuOpen((open) => !open)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 text-[0.65rem] sm:inline">M</kbd></button>
+      {menuOpen && <button type="button" aria-label="Đóng menu chế độ học" className="fixed inset-0 z-[85] cursor-default" onClick={() => setMenuOpen(false)} />}
+      {menuOpen && <div ref={quizMenuRef} role="menu" aria-label="Chuyển chế độ học" className="flashcard-dock-panel max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">
+        <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted">Chuyển chế độ học</div>
+        <div className="grid gap-1">
+          <QuizMenuItem shortcut="L" onClick={() => navigateQuiz(`/learn/${set.id}`)}>Học bằng flashcard</QuizMenuItem>
+          <QuizMenuItem shortcut="F" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill`)}>Điền từ tiếng Anh</QuizMenuItem>
+          {!isVerb && <QuizMenuItem shortcut="Q" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=mc`)}>Trắc nghiệm</QuizMenuItem>}
+          <QuizMenuItem shortcut="D" onClick={() => navigateQuiz(`/dictation/${set.id}`)}>Nghe và viết</QuizMenuItem>
+          <QuizMenuItem shortcut="G" onClick={() => navigateQuiz(`/match/${set.id}`)}>Ghép cặp</QuizMenuItem>
+          <QuizMenuItem shortcut="T" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill&timed=1&minutes=15`)}>Thi thử tính giờ</QuizMenuItem>
+          <QuizMenuItem shortcut="X" danger onClick={() => navigateQuiz("/study")}>Thoát về danh sách bộ từ</QuizMenuItem>
+        </div>
+      </div>}
       <div className="flex justify-between items-center mb-2.5 flex-wrap gap-2">
         <h2 className={cx.h2}>
           {set.name}{" "}
@@ -834,4 +883,8 @@ function QuizPlayerInner() {
       </div>
     </div>
   );
+}
+
+function QuizMenuItem({ children, shortcut, danger = false, onClick }: { children: React.ReactNode; shortcut: string; danger?: boolean; onClick: () => void }) {
+  return <button type="button" role="menuitem" onClick={onClick} className={`flex min-h-11 items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition hover:bg-[#F0EDFF] ${danger ? "mt-1 border-t border-line text-[#7A4350] hover:bg-[#FFF4F5]" : ""}`}><span>{children}</span><kbd className="rounded border border-line bg-[#F8F8FC] px-1.5 py-0.5 text-[0.65rem] font-bold">{shortcut}</kbd></button>;
 }

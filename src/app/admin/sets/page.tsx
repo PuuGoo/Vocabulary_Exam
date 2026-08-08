@@ -55,13 +55,6 @@ function normalizeSearch(value: string) {
     .trim();
 }
 
-function normalizeNumberedName(value: string) {
-  const trimmed = value.trim();
-  const match = /^(\d+)\s*[._-]\s*/.exec(trimmed);
-  if (!match) return trimmed;
-  return `${String(Number(match[1])).padStart(2, "0")}_${trimmed.slice(match[0].length)}`;
-}
-
 export default function AdminSetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
@@ -112,6 +105,8 @@ export default function AdminSetsPage() {
   const [editDocumentTitle, setEditDocumentTitle] = useState("");
   const [editDocumentFileName, setEditDocumentFileName] = useState("");
   const [savingDocumentName, setSavingDocumentName] = useState(false);
+  const [replacingDocumentId, setReplacingDocumentId] = useState<number | null>(null);
+  const [documentPreviewVersion, setDocumentPreviewVersion] = useState(0);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -236,7 +231,7 @@ export default function AdminSetsPage() {
 
   async function uploadCategoryDocument() {
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || documentFiles.length === 0 || documentUploading) return;
-    if (documentFiles.some((file) => file.size > 7 * 1024 * 1024)) return toast("Mỗi file PDF không được vượt quá 4 MB.");
+    if (documentFiles.some((file) => file.size > 4 * 1024 * 1024)) return toast("Mỗi file PDF không được vượt quá 4 MB.");
     const form = new FormData();
     form.append("category", selectedCategory);
     form.append("title", documentTitle.trim());
@@ -246,7 +241,7 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/admin/category-documents", { method: "POST", body: form });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể tải PDF lên.");
-      setCategoryDocuments((current) => [...current, ...(data.documents || []).map((document: CategoryDocument) => ({ ...document, category: selectedCategory }))]);
+      await refreshCategoryDocuments();
       setDocumentFiles([]);
       setDocumentTitle("");
       const input = document.getElementById("category-pdf-file") as HTMLInputElement | null;
@@ -262,7 +257,7 @@ export default function AdminSetsPage() {
   function addDocumentFiles(incoming: File[]) {
     const pdfs = incoming.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
     if (pdfs.length !== incoming.length) toast("Chỉ các file PDF được thêm vào danh sách.");
-    if (pdfs.some((file) => file.size > 7 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); return; }
+    if (pdfs.some((file) => file.size > 4 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); return; }
     setDocumentFiles((current) => {
       const existing = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
       return [...current, ...pdfs.filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))];
@@ -274,7 +269,7 @@ export default function AdminSetsPage() {
     const res = await fetch(`/api/admin/category-documents?id=${document.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return toast(data.error || "Không thể xóa tài liệu.");
-    setCategoryDocuments((current) => current.filter((item) => item.id !== document.id));
+    await refreshCategoryDocuments();
     if (viewingDocument?.id === document.id) setViewingDocument(null);
     toast("Đã xóa tài liệu PDF.");
   }
@@ -296,7 +291,7 @@ export default function AdminSetsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể đổi tên tài liệu PDF.");
-      setCategoryDocuments((current) => current.map((item) => item.id === data.document.id ? data.document : item));
+      await refreshCategoryDocuments();
       setViewingDocument((current) => current?.id === data.document.id ? data.document : current);
       setEditingDocument(null);
       toast("Đã đổi tên tài liệu PDF.");
@@ -307,11 +302,44 @@ export default function AdminSetsPage() {
     }
   }
 
+  async function refreshCategoryDocuments() {
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) return;
+    const res = await fetch(`/api/admin/category-documents?category=${encodeURIComponent(selectedCategory)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setCategoryDocuments(data.documents || []);
+  }
+
+  async function replaceCategoryDocument(document: CategoryDocument, file: File) {
+    if (replacingDocumentId !== null) return;
+    if (!confirm(`Thay nội dung “${document.title}” bằng file “${file.name}”? Tên hiện tại sẽ được giữ nguyên.`)) return;
+    const form = new FormData();
+    form.append("id", String(document.id));
+    form.append("file", file);
+    setReplacingDocumentId(document.id);
+    try {
+      const res = await fetch("/api/admin/category-documents", { method: "PUT", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể thay thế file PDF.");
+      setCategoryDocuments((current) => current.map((item) => item.id === document.id ? data.document : item));
+      setViewingDocument((current) => current?.id === document.id ? data.document : current);
+      setDocumentPreviewVersion((version) => version + 1);
+      toast("Đã thay thế nội dung PDF và giữ nguyên tên tài liệu.");
+    } catch {
+      toast("Không thể kết nối để thay thế PDF.");
+    } finally {
+      setReplacingDocumentId(null);
+    }
+  }
+
   useEffect(() => {
     loadSets();
     loadClasses();
     loadCategories();
-    const requestedSetId = Number(new URLSearchParams(window.location.search).get("openSet"));
+    const returnParams = new URLSearchParams(window.location.search);
+    const requestedCategory = returnParams.get("category")?.trim();
+    const requestedSetId = Number(returnParams.get("openSet"));
+    if (requestedCategory) setSelectedCategory(requestedCategory);
     if (Number.isInteger(requestedSetId) && requestedSetId > 0) {
       window.history.replaceState(null, "", "/admin/sets");
       void openDetail(requestedSetId);
@@ -809,7 +837,7 @@ export default function AdminSetsPage() {
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
               <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><b className="block truncate text-sm text-ink" title={document.title}>{document.title}</b><span className="mt-0.5 block truncate text-xs text-muted">{document.fileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span>}</div></div>
-              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
+              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><label className={`${cx.btn} ${cx.btnGhost} cursor-pointer !px-3 !py-1.5 ${replacingDocumentId !== null ? "pointer-events-none opacity-50" : ""}`}>{replacingDocumentId === document.id ? "Đang thay..." : "Thay file"}<input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={replacingDocumentId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void replaceCategoryDocument(document, file); }} /></label><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
           </div>}
         </section>
@@ -878,7 +906,7 @@ export default function AdminSetsPage() {
       {viewingDocument && (
         <Modal title={viewingDocument.title} onClose={() => setViewingDocument(null)} wide>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted"><span>{viewingDocument.fileName} · {(viewingDocument.fileSize / 1024 / 1024).toFixed(2)} MB</span><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${viewingDocument.id}/file`} target="_blank" rel="noopener noreferrer">Mở trong tab mới</a></div>
-          <iframe title={`Tài liệu ${viewingDocument.title}`} src={`/api/admin/category-documents/${viewingDocument.id}/file`} className="h-[70vh] min-h-[480px] w-full rounded-xl border border-line bg-[#F8F8FC]" />
+          <iframe title={`Tài liệu ${viewingDocument.title}`} src={`/api/admin/category-documents/${viewingDocument.id}/file?v=${documentPreviewVersion}`} className="h-[70vh] min-h-[480px] w-full rounded-xl border border-line bg-[#F8F8FC]" />
         </Modal>
       )}
 
@@ -886,7 +914,7 @@ export default function AdminSetsPage() {
         <Modal title="Đổi tên tài liệu PDF" onClose={() => { if (!savingDocumentName) setEditingDocument(null); }}>
           <div className="grid gap-4">
             <label><span className={cx.label}>Tên hiển thị</span><input autoFocus className={`${cx.input} !mb-0`} value={editDocumentTitle} maxLength={256} onChange={(event) => setEditDocumentTitle(event.target.value)} /></label>
-            <div><span className={cx.label}>Tên file PDF</span><div className="flex flex-col gap-2 sm:flex-row"><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><button type="button" className={`${cx.btn} ${cx.btnGhost} w-full shrink-0 !px-3 sm:w-auto`} disabled={!/^(\d+)\s*[._-]\s*/.test(editDocumentFileName.trim()) && !/^(\d+)\s*[._-]\s*/.test(editDocumentTitle.trim())} onClick={() => { setEditDocumentTitle(normalizeNumberedName(editDocumentTitle)); setEditDocumentFileName(normalizeNumberedName(editDocumentFileName)); }}>Chuẩn hóa cả hai</button></div><span className="mt-1 block text-xs text-muted">Tên hiển thị và tên file sẽ được chuẩn hóa cùng lúc, ví dụ: 01.exam → 01_exam.</span></div>
+            <div><span className={cx.label}>Tên file PDF</span><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><span className="mt-1 block text-xs text-muted">Chỉ cần nhập tên nội dung. Khi lưu, hệ thống tự đánh số đúng thứ tự dạng 01_Tên và đồng bộ cả tên hiển thị lẫn tên file.</span></div>
             <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} disabled={savingDocumentName} onClick={() => setEditingDocument(null)}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={savingDocumentName || !editDocumentTitle.trim() || !editDocumentFileName.trim()} onClick={() => void saveDocumentName()}>{savingDocumentName ? "Đang lưu..." : "Lưu tên mới"}</button></div>
           </div>
         </Modal>
@@ -1222,7 +1250,7 @@ export default function AdminSetsPage() {
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
             </button>
-            <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}&returnTo=${encodeURIComponent(`/admin/sets?openSet=${detail.id}`)}`}>
+            <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}&returnTo=${encodeURIComponent(`/admin/sets?openSet=${detail.id}${detail.category ? `&category=${encodeURIComponent(detail.category)}` : ""}`)}`}>
               ↑ Nhập CSV / Excel vào bộ này
             </Link>
             <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(false)}>

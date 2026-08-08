@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { hashPassword, signSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
+import { isPublicRegistrationOpen } from "@/lib/registration";
 
 const schema = z.object({
   username: z.string().trim().min(3, "Tên đăng nhập tối thiểu 3 ký tự").max(64),
@@ -13,6 +14,7 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  if (!(await isPublicRegistrationOpen())) return NextResponse.json({ error: "Đăng ký tài khoản mới đang tạm khóa. Vui lòng liên hệ quản trị viên." }, { status: 403 });
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {

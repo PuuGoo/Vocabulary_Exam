@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { cx } from "@/components/ui";
@@ -12,9 +12,15 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/registration-status").then((res) => res.json()).then((data) => setRegistrationOpen(data.open)).catch(() => setRegistrationOpen(true));
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (registrationOpen === false) return;
     setError(null);
     setLoading(true);
     const res = await fetch("/api/auth/register", {
@@ -41,12 +47,14 @@ export default function RegisterPage() {
         <h1 className="font-serif text-[1.3rem] mb-0.5">Đăng ký học sinh</h1>
         <div className="text-muted text-[0.85rem] mb-5">Tạo tài khoản để bắt đầu ôn luyện</div>
 
+        {registrationOpen === false && <div className="mb-5 rounded-xl border border-[#F0DDA2] bg-[#FFF9E7] p-3 text-sm leading-6 text-[#72591A]">Đăng ký tài khoản mới đang tạm khóa. Vui lòng liên hệ quản trị viên để được tạo tài khoản.</div>}
         <form onSubmit={handleSubmit} className="text-left">
           {error && <div className={cx.errMsg}>{error}</div>}
           <label className={cx.label}>Tên đăng nhập</label>
-          <input className={cx.input} type="text" value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input disabled={registrationOpen === false} className={cx.input} type="text" value={username} onChange={(e) => setUsername(e.target.value)} />
           <label className={cx.label}>Tên hiển thị</label>
           <input
+            disabled={registrationOpen === false}
             className={cx.input}
             type="text"
             placeholder="VD: Nguyễn Văn A"
@@ -55,13 +63,14 @@ export default function RegisterPage() {
           />
           <label className={cx.label}>Mật khẩu</label>
           <input
+            disabled={registrationOpen === false}
             className={cx.input}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <button type="submit" disabled={loading} className={`${cx.btn} ${cx.btnGold} w-full mt-1`}>
-            {loading ? "Đang tạo tài khoản..." : "Tạo tài khoản & vào học"}
+          <button type="submit" disabled={loading || registrationOpen !== true} className={`${cx.btn} ${cx.btnGold} w-full mt-1`}>
+            {registrationOpen === null ? "Đang kiểm tra đăng ký..." : loading ? "Đang tạo tài khoản..." : "Tạo tài khoản & vào học"}
           </button>
         </form>
 
