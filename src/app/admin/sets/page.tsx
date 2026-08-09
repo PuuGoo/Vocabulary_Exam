@@ -5,6 +5,7 @@ import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
+import { formatAggregatedDocumentName } from "@/lib/documentDisplay";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -41,6 +42,7 @@ type WordMatch = {
 type ClassOpt = { id: number; name: string };
 type CategorySummary = { id: number; name: string; count: number };
 type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileSize: number; createdAt: string };
+type VisibleCategoryDocument = CategoryDocument & { displayTitle: string; displayFileName: string; aggregateOrder: number | null };
 type DocumentSort = "newest" | "oldest" | "name" | "size";
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
@@ -163,18 +165,28 @@ export default function AdminSetsPage() {
       word.term, word.meaning, word.v1, word.v2, word.v3, word.example,
     ].filter(Boolean).join(" ")).includes(query));
   }, [detail, detailWordQuery]);
-  const visibleCategoryDocuments = useMemo(() => {
+  const hasAggregatedCategoryDocuments = useMemo(
+    () => categoryDocuments.some((document) => document.category !== selectedCategory),
+    [categoryDocuments, selectedCategory],
+  );
+  const visibleCategoryDocuments = useMemo<VisibleCategoryDocument[]>(() => {
     const query = normalizeSearch(documentQuery);
-    return categoryDocuments
-      .filter((document) => !query || normalizeSearch(`${document.title} ${document.fileName} ${document.category}`).includes(query))
-      .sort((left, right) => {
+    const sortedDocuments = [...categoryDocuments].sort((left, right) => {
         if (documentSort === "name") return left.title.localeCompare(right.title, "vi", { numeric: true, sensitivity: "base" });
         if (documentSort === "size") return right.fileSize - left.fileSize;
         const leftTime = new Date(left.createdAt).getTime();
         const rightTime = new Date(right.createdAt).getTime();
         return documentSort === "oldest" ? leftTime - rightTime : rightTime - leftTime;
       });
-  }, [categoryDocuments, documentQuery, documentSort]);
+    return sortedDocuments
+      .map((document, index) => ({
+        ...document,
+        displayTitle: hasAggregatedCategoryDocuments ? formatAggregatedDocumentName(index + 1, document.title) : document.title,
+        displayFileName: hasAggregatedCategoryDocuments ? formatAggregatedDocumentName(index + 1, document.fileName) : document.fileName,
+        aggregateOrder: hasAggregatedCategoryDocuments ? index + 1 : null,
+      }))
+      .filter((document) => !query || normalizeSearch(`${document.displayTitle} ${document.displayFileName} ${document.title} ${document.fileName} ${document.category}`).includes(query));
+  }, [categoryDocuments, documentQuery, documentSort, hasAggregatedCategoryDocuments]);
   const categorySiblings = useMemo(() => {
     if (!sets || !detail) return [];
     const categoryKey = detail.category?.trim() || UNCATEGORIZED;
@@ -808,7 +820,7 @@ export default function AdminSetsPage() {
       {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
         <section className="mb-5 rounded-[14px] border border-line bg-white p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF</h3><p className="mt-1 text-xs text-muted">Tài liệu trong thư mục này và toàn bộ thư mục con sẽ được gom tại đây.</p></div>
+            <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF</h3><p className="mt-1 text-xs text-muted">Tài liệu trong thư mục này và toàn bộ thư mục con sẽ được gom tại đây.{hasAggregatedCategoryDocuments ? " Danh sách tổng hợp được đánh số liên tục, không làm đổi tên trong thư mục con." : ""}</p></div>
             <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{categoryDocuments.length} tài liệu</span>
           </div>
           <div className="grid gap-3 rounded-xl border border-line bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-end">
@@ -836,7 +848,7 @@ export default function AdminSetsPage() {
           </div>}
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
-              <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><b className="block truncate text-sm text-ink" title={document.title}>{document.title}</b><span className="mt-0.5 block truncate text-xs text-muted">{document.fileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span>}</div></div>
+              <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><div className="flex min-w-0 items-center gap-1.5"><b className="block min-w-0 truncate text-sm text-ink" title={document.displayTitle}>{document.displayTitle}</b>{document.aggregateOrder !== null && <span className="shrink-0 rounded-full bg-[#F0EDFF] px-1.5 py-0.5 text-[0.62rem] font-bold text-[#6550DB]">Số tổng hợp</span>}</div><span className="mt-0.5 block truncate text-xs text-muted" title={document.displayFileName}>{document.displayFileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <><span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted" title={document.fileName}>Tên trong thư mục con: {document.fileName}</span></>}</div></div>
               <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><label className={`${cx.btn} ${cx.btnGhost} cursor-pointer !px-3 !py-1.5 ${replacingDocumentId !== null ? "pointer-events-none opacity-50" : ""}`}>{replacingDocumentId === document.id ? "Đang thay..." : "Thay file"}<input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={replacingDocumentId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void replaceCategoryDocument(document, file); }} /></label><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
           </div>}
