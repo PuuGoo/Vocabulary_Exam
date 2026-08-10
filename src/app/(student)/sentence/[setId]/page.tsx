@@ -6,11 +6,27 @@ import SpeakButton from "@/components/SpeakButton";
 import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import MobileThumbBar from "@/components/MobileThumbBar";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
+import { useCurrentUserId } from "@/components/UserSessionContext";
 
 type Word = { id: number; meaning: string; term: string | null; example: string | null; ipa: string | null };
 type SetDetail = { id: number; name: string; type: string; words: Word[] };
 type Token = { id: number; text: string };
 type RoundResult = { wordId: number; perfect: boolean };
+type SentenceDraft = {
+  savedAt: number;
+  questionIds: number[];
+  index: number;
+  selectedIds: number[];
+  availableIds: number[];
+  feedback: "correct" | "incorrect" | null;
+  hadMistake: boolean;
+  hints: number;
+  results: RoundResult[];
+  elapsed: number;
+};
 
 function tokenize(sentence: string): Token[] {
   return sentence.trim().split(/\s+/).filter(Boolean).map((text, id) => ({ id, text }));
@@ -29,6 +45,7 @@ function shuffle<T>(items: T[]) {
 export default function SentencePage() {
   const params = useParams<{ setId: string }>();
   const router = useRouter();
+  const userId = useCurrentUserId();
   const [set, setSet] = useState<SetDetail | null>(null);
   const [questions, setQuestions] = useState<Word[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,9 +62,18 @@ export default function SentencePage() {
   const [saved, setSaved] = useState(false);
   const startedAtRef = useRef(Date.now());
   const saveAttemptedRef = useRef(false);
+  const draftHydratedRef = useRef(false);
+  const restoredRoundRef = useRef(false);
+  const draftKey = `lexora-learning-draft-u${userId}-sentence-${params.setId}`;
+
+  useUnsavedChangesWarning(
+    questions.length > 0 && index < questions.length && (index > 0 || selected.length > 0 || results.length > 0),
+    "Bài xếp câu đang diễn ra. Tiến độ đã được lưu trên thiết bị để bạn có thể quay lại sau. Bạn vẫn muốn rời đi?"
+  );
 
   useEffect(() => {
     let active = true;
+    draftHydratedRef.current = false;
     setLoading(true);
     setLoadError(false);
     fetch(`/api/sets/${params.setId}`)
@@ -60,13 +86,45 @@ export default function SentencePage() {
           return length >= 3 && length <= 24;
         });
         setSet(detail);
-        setQuestions(shuffle(eligible).slice(0, 10));
+        let restored = false;
+        try {
+          const draft = JSON.parse(localStorage.getItem(draftKey) || "null") as SentenceDraft | null;
+          const restoredQuestions = draft ? restoreItemsByIds(eligible, draft.questionIds) : null;
+          const validDraft = draft
+            && isLearningDraftFresh(draft.savedAt)
+            && restoredQuestions
+            && Number.isInteger(draft.index)
+            && draft.index >= 0
+            && draft.index < restoredQuestions.length;
+          if (validDraft && restoredQuestions) {
+            const tokens = tokenize(restoredQuestions[draft.index].example || "");
+            const tokensById = new Map(tokens.map((token) => [token.id, token]));
+            const restoredSelected = draft.selectedIds.map((id) => tokensById.get(id)).filter((token): token is Token => Boolean(token));
+            const restoredAvailable = draft.availableIds.map((id) => tokensById.get(id)).filter((token): token is Token => Boolean(token));
+            if (restoredSelected.length + restoredAvailable.length === tokens.length) {
+              restoredRoundRef.current = true;
+              setQuestions(restoredQuestions);
+              setIndex(draft.index);
+              setSelected(restoredSelected);
+              setAvailable(restoredAvailable);
+              setFeedback(draft.feedback === "correct" || draft.feedback === "incorrect" ? draft.feedback : null);
+              setHadMistake(Boolean(draft.hadMistake));
+              setHints(Math.max(0, Number(draft.hints) || 0));
+              setResults(Array.isArray(draft.results) ? draft.results : []);
+              startedAtRef.current = Date.now() - Math.max(0, Number(draft.elapsed) || 0) * 1000;
+              toast(`Đã khôi phục bài xếp câu tại câu ${draft.index + 1}/${restoredQuestions.length}.`);
+              restored = true;
+            }
+          } else if (draft) localStorage.removeItem(draftKey);
+        } catch { try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ } }
+        if (!restored) setQuestions(shuffle(eligible).slice(0, 10));
         setLoading(false);
-        startedAtRef.current = Date.now();
+        if (!restored) startedAtRef.current = Date.now();
+        draftHydratedRef.current = true;
       })
       .catch(() => { if (active) { setLoadError(true); setLoading(false); } });
     return () => { active = false; };
-  }, [params.setId, loadAttempt]);
+  }, [draftKey, params.setId, loadAttempt]);
 
   const question = questions[index];
   const answerTokens = useMemo(() => question?.example ? tokenize(question.example) : [], [question]);
@@ -81,7 +139,35 @@ export default function SentencePage() {
     setHints(0);
   }, []);
 
-  useEffect(() => { if (question) prepareRound(question); }, [prepareRound, question]);
+  useEffect(() => {
+    if (restoredRoundRef.current) { restoredRoundRef.current = false; return; }
+    if (question) prepareRound(question);
+  }, [prepareRound, question]);
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return;
+    if (finished) {
+      try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    if (!question || (index === 0 && selected.length === 0 && results.length === 0)) return;
+    const draft: SentenceDraft = {
+      savedAt: Date.now(),
+      questionIds: questions.map((item) => item.id),
+      index,
+      selectedIds: selected.map((token) => token.id),
+      availableIds: available.map((token) => token.id),
+      feedback,
+      hadMistake,
+      hints,
+      results,
+      elapsed: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
+    };
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Storage is optional. */ }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [available, draftKey, feedback, finished, hadMistake, hints, index, question, questions, results, selected]);
 
   function choose(token: Token) {
     if (feedback === "correct") return;
@@ -164,6 +250,16 @@ export default function SentencePage() {
       .finally(() => setSaving(false));
   }, [finished, results, saved, saving, set]);
 
+  function beginQuestionRound(nextQuestions: Word[]) {
+    if (nextQuestions.length === 0) return;
+    setQuestions(nextQuestions);
+    setIndex(0);
+    setResults([]);
+    setSaved(false);
+    saveAttemptedRef.current = false;
+    startedAtRef.current = Date.now();
+  }
+
   if (loading) return <div className={cx.panel}><div className={cx.empty} role="status">Đang chuẩn bị câu ví dụ...</div></div>;
   if (loadError || !set) return <div className={cx.panel}><div className={cx.empty}>Không thể tải bài luyện.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div></div>;
 
@@ -183,8 +279,8 @@ export default function SentencePage() {
           <h3 className="mt-2 font-serif text-xl font-bold">Hoàn thành bài xếp câu</h3>
           <p className="mt-2 text-sm text-muted">Hoàn thành ngay lần đầu {results.filter((result) => result.perfect).length}/{results.length} câu.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { const next = shuffle(set.words.filter((word) => word.example && tokenize(word.example).length >= 3 && tokenize(word.example).length <= 24)).slice(0, 10); setQuestions(next); setIndex(0); setResults([]); setSaved(false); saveAttemptedRef.current = false; startedAtRef.current = Date.now(); }}>Luyện lượt mới</button>
-            {saved && results.some((result) => !result.perfect) && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {results.filter((result) => !result.perfect).length} từ cần cải thiện</button>}
+            {results.some((result) => !result.perfect) && <button disabled={saving} className={`${cx.btn} ${cx.btnGold}`} onClick={() => { const weakIds = new Set(results.filter((result) => !result.perfect).map((result) => result.wordId)); beginQuestionRound(questions.filter((item) => weakIds.has(item.id))); }}>Làm lại {results.filter((result) => !result.perfect).length} câu cần cải thiện</button>}
+            <button disabled={saving} className={`${cx.btn} ${results.some((result) => !result.perfect) ? cx.btnGhost : cx.btnGold}`} onClick={() => beginQuestionRound(shuffle(set.words.filter((word) => word.example && tokenize(word.example).length >= 3 && tokenize(word.example).length <= 24)).slice(0, 10))}>Luyện lượt mới</button>
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/pronunciation/${set.id}`)}>Luyện phát âm</button>
           </div>
           <div className="mt-3 text-xs text-muted" role="status">{saving ? "Đang lưu kết quả..." : saved ? "✓ Đã lưu vào lịch sử học" : ""}</div>
@@ -214,7 +310,7 @@ export default function SentencePage() {
             {feedback === "correct" && <div className="mt-4 rounded-lg bg-okbg p-3 text-center text-sm font-medium text-ok">✓ Chính xác! {hints > 0 ? `Bạn đã dùng ${hints} gợi ý.` : "Bạn đã tự xếp đúng câu."}</div>}
             {feedback === "incorrect" && <div className="mt-4 rounded-lg bg-badbg p-3 text-center text-sm text-bad">Thứ tự chưa đúng. Bấm vào từ trong câu để đưa xuống và sửa lại.</div>}
           </section>
-          <div className="mt-5 flex flex-wrap justify-center gap-2">
+          <MobileThumbBar>
             {feedback === "correct" ? (
               <button className={`${cx.btn} ${cx.btnGold}`} onClick={nextQuestion}>Câu tiếp theo <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">Enter</kbd></button>
             ) : (
@@ -224,7 +320,7 @@ export default function SentencePage() {
                 <button className={`${cx.btn} ${cx.btnGold}`} disabled={selected.length !== answerTokens.length} onClick={check}>Kiểm tra <kbd className="ml-1 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>
               </>
             )}
-          </div>
+          </MobileThumbBar>
         </>
       ) : null}
     </div>

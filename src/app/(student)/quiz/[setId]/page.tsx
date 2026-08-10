@@ -9,6 +9,8 @@ import VerbIpa from "@/components/VerbIpa";
 import { toast } from "@/components/Toast";
 import { groupIndexForQuestion, circleStatus, wordIdsNeedingRetry } from "@/lib/quizGroups";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
+import { useCurrentUserId } from "@/components/UserSessionContext";
 
 type Word = {
   id: number;
@@ -25,6 +27,17 @@ type Word = {
   ipa?: string | null;
 };
 type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
+type QuizDraft = {
+  savedAt: number;
+  wordIds: number[];
+  group: number;
+  answers: Record<number, Record<string, string>>;
+  mcOptions: Record<number, string[]>;
+  checkedGroups: Record<number, { score: number; total: number }>;
+  retryWordIdsByGroup: Record<number, number[]>;
+  elapsed: number;
+  timedEndsAt: number | null;
+};
 
 const GROUP_SIZE = 10;
 
@@ -62,12 +75,15 @@ function QuizPlayerInner() {
   const params = useParams<{ setId: string }>();
   const search = useSearchParams();
   const router = useRouter();
+  const userId = useCurrentUserId();
   const mode = (search.get("mode") as "fill" | "mc") || "fill";
   const timedMode = search.get("timed") === "1";
   const minutes = Math.min(120, Math.max(1, Number(search.get("minutes")) || 15));
   const retest = search.get("retest") === "1";
   const quickMode = search.get("quick") === "1";
   const quickCount = [5, 10, 20].includes(Number(search.get("count"))) ? Number(search.get("count")) : 10;
+  const draftEnabled = !quickMode;
+  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}`;
 
   const [set, setSet] = useState<SetDetail | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -89,6 +105,8 @@ function QuizPlayerInner() {
   const [timedScore, setTimedScore] = useState<{ score: number; total: number } | null>(null);
   const startedAtRef = useRef<number>(Date.now());
   const submittedRef = useRef(false);
+  const draftHydratedRef = useRef(false);
+  const timedEndsAtRef = useRef(Date.now() + minutes * 60 * 1000);
 
   // navigation / autofocus
   const [jumpQuestion, setJumpQuestion] = useState("");
@@ -100,6 +118,7 @@ function QuizPlayerInner() {
 
   useEffect(() => {
     let cancelled = false;
+    draftHydratedRef.current = false;
     async function load() {
       setLoadError(false);
       setSet(null);
@@ -121,8 +140,51 @@ function QuizPlayerInner() {
           loadedSet = { ...loadedSet, words: loadedSet.words.filter((w) => wordIds.has(w.id)) };
         }
         if (!cancelled) {
+          let restored = false;
+          if (draftEnabled) {
+            try {
+              const draft = JSON.parse(localStorage.getItem(draftKey) || "null") as QuizDraft | null;
+              const restoredWords = draft ? restoreItemsByIds(loadedSet.words, draft.wordIds) : null;
+              const validDraft = draft
+                && isLearningDraftFresh(draft.savedAt)
+                && restoredWords
+                && Number.isInteger(draft.group)
+                && draft.group >= 0
+                && draft.group < Math.ceil(restoredWords.length / GROUP_SIZE);
+              if (validDraft && draft && restoredWords) {
+                loadedSet = { ...loadedSet, words: restoredWords };
+                setGroup(draft.group);
+                setAnswers(draft.answers && typeof draft.answers === "object" ? draft.answers : {});
+                setMcOptions(draft.mcOptions && typeof draft.mcOptions === "object" ? draft.mcOptions : {});
+                setCheckedGroups(draft.checkedGroups && typeof draft.checkedGroups === "object" ? draft.checkedGroups : {});
+                setRetryWordIdsByGroup(draft.retryWordIdsByGroup && typeof draft.retryWordIdsByGroup === "object" ? draft.retryWordIdsByGroup : {});
+                startedAtRef.current = Date.now() - Math.max(0, Number(draft.elapsed) || 0) * 1000;
+                if (timedMode) {
+                  const endsAt = Number(draft.timedEndsAt) || Date.now();
+                  timedEndsAtRef.current = endsAt;
+                  setSecondsLeft(Math.max(0, Math.ceil((endsAt - Date.now()) / 1000)));
+                }
+                toast(`Đã khôi phục bài làm tại nhóm ${draft.group + 1}/${Math.ceil(restoredWords.length / GROUP_SIZE)}.`);
+                restored = true;
+              } else if (draft) localStorage.removeItem(draftKey);
+            } catch { try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ } }
+          }
+          if (!restored) {
+            setGroup(0);
+            setAnswers({});
+            setMcOptions({});
+            setCheckedGroups({});
+            setRetryWordIdsByGroup({});
+            setSecondsLeft(minutes * 60);
+            startedAtRef.current = Date.now();
+            timedEndsAtRef.current = Date.now() + minutes * 60 * 1000;
+          }
+          submittedRef.current = false;
+          setTimedSubmitted(false);
+          setTimedScore(null);
           setSet(loadedSet);
           setMistakeIdByWordId(mistakeMap);
+          draftHydratedRef.current = true;
         }
       } catch {
         if (!cancelled) setLoadError(true);
@@ -133,7 +195,7 @@ function QuizPlayerInner() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.setId, retest, quickMode, quickCount, loadAttempt]);
+  }, [params.setId, retest, quickMode, quickCount, loadAttempt, draftEnabled, draftKey, minutes, timedMode]);
 
   const totalGroups = set ? Math.ceil(set.words.length / GROUP_SIZE) : 0;
   const start = group * GROUP_SIZE;
@@ -177,8 +239,34 @@ function QuizPlayerInner() {
     });
   }, [set, answers, checkedGroups, retryWordIdsByGroup, timedMode, timedSubmitted]);
 
-  const leaveWarning = "Bạn còn câu đã nhập nhưng chưa nộp. Rời trang sẽ làm mất các câu trả lời này. Bạn vẫn muốn rời đi?";
+  const leaveWarning = draftEnabled
+    ? "Bạn còn câu chưa nộp. Tiến độ đã được lưu trên thiết bị để bạn có thể quay lại sau. Bạn vẫn muốn rời đi?"
+    : "Bạn còn câu đã nhập nhưng chưa nộp. Rời trang sẽ làm mất các câu trả lời này. Bạn vẫn muốn rời đi?";
   useUnsavedChangesWarning(hasUnsubmittedAnswers, leaveWarning);
+
+  useEffect(() => {
+    if (!draftEnabled || !draftHydratedRef.current || !set) return;
+    const hasActivity = Object.keys(answers).length > 0 || Object.keys(checkedGroups).length > 0 || Object.keys(retryWordIdsByGroup).length > 0;
+    if (timedSubmitted || allGroupsGraded || !hasActivity) {
+      try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    const draft: QuizDraft = {
+      savedAt: Date.now(),
+      wordIds: set.words.map((word) => word.id),
+      group,
+      answers,
+      mcOptions,
+      checkedGroups,
+      retryWordIdsByGroup,
+      elapsed: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
+      timedEndsAt: timedMode ? timedEndsAtRef.current : null,
+    };
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Storage is optional. */ }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [allGroupsGraded, answers, checkedGroups, draftEnabled, draftKey, group, mcOptions, retryWordIdsByGroup, set, timedMode, timedSubmitted]);
 
   function navigateQuiz(url: string) {
     if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;
@@ -204,14 +292,19 @@ function QuizPlayerInner() {
       if (!menuOpen) return;
       if (event.key === "Escape") { event.preventDefault(); setMenuOpen(false); return; }
       const routes: Record<string, string> = {
-        l: `/learn/${set?.id}`,
+        h: `/learn/${set?.id}`,
         f: `/quiz/${set?.id}?mode=fill`,
         d: `/dictation/${set?.id}`,
         g: `/match/${set?.id}`,
+        l: `/listen/${set?.id}`,
+        p: `/pronunciation/${set?.id}`,
         t: `/quiz/${set?.id}?mode=fill&timed=1&minutes=15`,
         x: "/study",
       };
-      if (!isVerb) routes.q = `/quiz/${set?.id}?mode=mc`;
+      if (!isVerb) {
+        routes.q = `/quiz/${set?.id}?mode=mc`;
+        routes.c = `/sentence/${set?.id}`;
+      }
       if (routes[key]) { event.preventDefault(); navigateQuiz(routes[key]); }
     }
     window.addEventListener("keydown", handleShortcut);
@@ -565,11 +658,14 @@ function QuizPlayerInner() {
       {menuOpen && <div ref={quizMenuRef} role="menu" aria-label="Chuyển chế độ học" className="flashcard-dock-panel max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">
         <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted">Chuyển chế độ học</div>
         <div className="grid gap-1">
-          <QuizMenuItem shortcut="L" onClick={() => navigateQuiz(`/learn/${set.id}`)}>Học bằng flashcard</QuizMenuItem>
+          <QuizMenuItem shortcut="H" onClick={() => navigateQuiz(`/learn/${set.id}`)}>Học bằng flashcard</QuizMenuItem>
           <QuizMenuItem shortcut="F" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill`)}>Điền từ tiếng Anh</QuizMenuItem>
           {!isVerb && <QuizMenuItem shortcut="Q" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=mc`)}>Trắc nghiệm</QuizMenuItem>}
           <QuizMenuItem shortcut="D" onClick={() => navigateQuiz(`/dictation/${set.id}`)}>Nghe và viết</QuizMenuItem>
           <QuizMenuItem shortcut="G" onClick={() => navigateQuiz(`/match/${set.id}`)}>Ghép cặp</QuizMenuItem>
+          <QuizMenuItem shortcut="L" onClick={() => navigateQuiz(`/listen/${set.id}`)}>Nghe rảnh tay</QuizMenuItem>
+          <QuizMenuItem shortcut="P" onClick={() => navigateQuiz(`/pronunciation/${set.id}`)}>Luyện phát âm</QuizMenuItem>
+          {!isVerb && <QuizMenuItem shortcut="C" onClick={() => navigateQuiz(`/sentence/${set.id}`)}>Xếp câu</QuizMenuItem>}
           <QuizMenuItem shortcut="T" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill&timed=1&minutes=15`)}>Thi thử tính giờ</QuizMenuItem>
           <QuizMenuItem shortcut="X" danger onClick={() => navigateQuiz("/study")}>Thoát về danh sách bộ từ</QuizMenuItem>
         </div>
