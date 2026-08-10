@@ -102,6 +102,7 @@ input:focus, select:focus, textarea:focus {
 .lexora-toast { animation: lexora-toast-in 220ms cubic-bezier(.2,.8,.2,1) both; }
 @media (max-width: 767px) {
   .lexora-toast { bottom: calc(5.75rem + env(safe-area-inset-bottom)); }
+  body:has(.lexora-mobile-thumb-bar) .lexora-toast { bottom: calc(10.25rem + env(safe-area-inset-bottom)); }
 }
 .lexora-progress { position: relative; overflow: hidden; }
 .lexora-progress::after { content: ""; position: absolute; inset: 0 auto 0 -35%; width: 35%; background: linear-gradient(90deg, transparent, rgba(255,255,255,.32), transparent); animation: lexora-shimmer 2.8s ease-in-out infinite; }

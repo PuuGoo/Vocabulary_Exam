@@ -40,6 +40,9 @@ export default function MobileAppBridge() {
         return;
       }
 
+      const navigationGuard = new Event("lexora:native-back", { cancelable: true });
+      if (!window.dispatchEvent(navigationGuard)) return;
+
       if (canGoBack) {
         window.history.back();
         return;

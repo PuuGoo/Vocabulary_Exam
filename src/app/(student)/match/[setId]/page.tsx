@@ -4,8 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import StudyModeNav from "@/components/StudyModeNav";
+import MobileThumbBar from "@/components/MobileThumbBar";
 import { toast } from "@/components/Toast";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
+import { useCurrentUserId } from "@/components/UserSessionContext";
 
 type Word = {
   id: number;
@@ -19,6 +22,17 @@ type SetDetail = {
   name: string;
   type: "irregular_verb" | "ielts_vocab";
   words: Word[];
+};
+type MatchDraft = {
+  savedAt: number;
+  roundWordIds: number[][];
+  roundIndex: number;
+  matchedIds: number[];
+  selectedTerm: number | null;
+  selectedMeaning: number | null;
+  wrongCount: number;
+  wrongWordIds: number[];
+  elapsed: number;
 };
 
 const ROUND_SIZE = 6;
@@ -64,6 +78,7 @@ function formatTime(seconds: number) {
 export default function MatchGamePage() {
   const params = useParams<{ setId: string }>();
   const router = useRouter();
+  const userId = useCurrentUserId();
   const [set, setSet] = useState<SetDetail | null>(null);
   const [rounds, setRounds] = useState<Word[][]>([]);
   const [roundIndex, setRoundIndex] = useState(0);
@@ -80,14 +95,17 @@ export default function MatchGamePage() {
   const wrongAttemptsRef = useRef(0);
   const wrongWordIdsRef = useRef(new Set<number>());
   const startedAtRef = useRef(Date.now());
+  const draftHydratedRef = useRef(false);
+  const draftKey = `lexora-learning-draft-u${userId}-match-${params.setId}`;
 
   useUnsavedChangesWarning(
     Boolean(set && !finished && (matchedIds.length > 0 || wrongCount > 0)),
-    "Trò chơi đang diễn ra. Rời trang sẽ làm mất lượt ghép hiện tại. Bạn vẫn muốn rời đi?"
+    "Trò chơi đang diễn ra. Tiến độ đã được lưu trên thiết bị để bạn có thể quay lại sau. Bạn vẫn muốn rời đi?"
   );
 
   useEffect(() => {
     let cancelled = false;
+    draftHydratedRef.current = false;
     async function load() {
       setLoadError(false);
       try {
@@ -99,8 +117,51 @@ export default function MatchGamePage() {
           const loadedSet: SetDetail = data.set;
           const preparedSet = { ...loadedSet, words: playableWords(loadedSet) };
           setSet(preparedSet);
-          setRounds(makeRounds(preparedSet.words));
-          startedAtRef.current = Date.now();
+          let restored = false;
+          try {
+            const draft = JSON.parse(localStorage.getItem(draftKey) || "null") as MatchDraft | null;
+            const flatIds = draft?.roundWordIds.flat() || [];
+            const restoredWords = draft ? restoreItemsByIds(preparedSet.words, flatIds) : null;
+            const validDraft = draft
+              && isLearningDraftFresh(draft.savedAt)
+              && restoredWords
+              && draft.roundWordIds.every((round) => Array.isArray(round) && round.length > 0)
+              && Number.isInteger(draft.roundIndex)
+              && draft.roundIndex >= 0
+              && draft.roundIndex < draft.roundWordIds.length;
+            if (validDraft && draft && restoredWords) {
+              const wordsById = new Map(restoredWords.map((word) => [word.id, word]));
+              setRounds(draft.roundWordIds.map((round) => round.map((id) => wordsById.get(id) as Word)));
+              setRoundIndex(draft.roundIndex);
+              setMatchedIds(draft.matchedIds.filter((id) => wordsById.has(id)));
+              setSelectedTerm(draft.selectedTerm != null && wordsById.has(draft.selectedTerm) ? draft.selectedTerm : null);
+              setSelectedMeaning(draft.selectedMeaning != null && wordsById.has(draft.selectedMeaning) ? draft.selectedMeaning : null);
+              const restoredWrongCount = Math.max(0, Number(draft.wrongCount) || 0);
+              setWrongCount(restoredWrongCount);
+              wrongAttemptsRef.current = restoredWrongCount;
+              wrongWordIdsRef.current = new Set(draft.wrongWordIds.filter((id) => wordsById.has(id)));
+              const restoredElapsed = Math.max(0, Number(draft.elapsed) || 0);
+              setElapsed(restoredElapsed);
+              startedAtRef.current = Date.now() - restoredElapsed * 1000;
+              toast(`Đã khôi phục trò ghép cặp tại vòng ${draft.roundIndex + 1}/${draft.roundWordIds.length}.`);
+              restored = true;
+            } else if (draft) localStorage.removeItem(draftKey);
+          } catch { try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ } }
+          if (!restored) {
+            setRounds(makeRounds(preparedSet.words));
+            setRoundIndex(0);
+            setMatchedIds([]);
+            setSelectedTerm(null);
+            setSelectedMeaning(null);
+            setWrongCount(0);
+            wrongAttemptsRef.current = 0;
+            wrongWordIdsRef.current = new Set();
+            startedAtRef.current = Date.now();
+          }
+          setFeedback(null);
+          setFinished(false);
+          setResultSaved(false);
+          draftHydratedRef.current = true;
         }
       } catch {
         if (!cancelled) setLoadError(true);
@@ -108,7 +169,36 @@ export default function MatchGamePage() {
     }
     void load();
     return () => { cancelled = true; };
-  }, [params.setId]);
+  }, [draftKey, params.setId]);
+
+  useEffect(() => {
+    if (!draftHydratedRef.current || !set) return;
+    if (finished) {
+      try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    const hasActivity = matchedIds.length > 0 || wrongCount > 0 || selectedTerm !== null || selectedMeaning !== null;
+    if (!hasActivity) {
+      try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    if (feedback) return;
+    const draft: MatchDraft = {
+      savedAt: Date.now(),
+      roundWordIds: rounds.map((round) => round.map((word) => word.id)),
+      roundIndex,
+      matchedIds,
+      selectedTerm,
+      selectedMeaning,
+      wrongCount,
+      wrongWordIds: [...wrongWordIdsRef.current],
+      elapsed: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
+    };
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Storage is optional. */ }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, feedback, finished, matchedIds, roundIndex, rounds, selectedMeaning, selectedTerm, set, wrongCount]);
 
   useEffect(() => {
     if (!set || finished) return;
@@ -222,6 +312,8 @@ export default function MatchGamePage() {
   if (finished) {
     return (
       <div className={cx.panel}>
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🧩 Ghép cặp — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
+        <StudyModeNav setId={set.id} active="match" isVerb={set.type === "irregular_verb"} />
         <h2 className={`${cx.h2} text-center`}>🎉 Hoàn thành ghép cặp!</h2>
         <div className="mx-auto my-6 max-w-md rounded-2xl border border-gold bg-goldpale p-6 text-center">
           <div className="font-serif text-4xl font-bold text-golddark">{score}/{set.words.length}</div>
@@ -296,8 +388,8 @@ export default function MatchGamePage() {
       <div className="mt-4 min-h-8 text-center text-sm" role="status">
         {feedback === "correct" && <span className="font-medium text-ok">✓ Chính xác!</span>}
         {feedback === "wrong" && <span className="font-medium text-bad">Chưa đúng, thử lại nhé.</span>}
-        {!feedback && roundComplete && roundIndex < rounds.length - 1 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={nextRound}>Vòng tiếp theo →</button>}
       </div>
+      {!feedback && roundComplete && roundIndex < rounds.length - 1 && <MobileThumbBar><button className={`${cx.btn} ${cx.btnGold}`} onClick={nextRound}>Vòng tiếp theo →</button></MobileThumbBar>}
       <div className="mt-2 h-2 overflow-hidden rounded-full bg-line" aria-label={`Đã ghép ${matchedIds.length} trên ${set.words.length} từ`}>
         <div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(matchedIds.length / set.words.length) * 100}%` }} />
       </div>

@@ -24,10 +24,16 @@ export function useUnsavedChangesWarning(active: boolean, message: string) {
       }
     }
 
+    function onNativeBack(event: Event) {
+      if (!window.confirm(message)) event.preventDefault();
+    }
+
     window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("lexora:native-back", onNativeBack);
     document.addEventListener("click", onLinkClick, true);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("lexora:native-back", onNativeBack);
       document.removeEventListener("click", onLinkClick, true);
     };
   }, [active, message]);

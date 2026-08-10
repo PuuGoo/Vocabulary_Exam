@@ -186,6 +186,8 @@ export default function ListenPage() {
 
   if (finished) return (
     <div className={cx.panel}>
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe rảnh tay — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
+      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} />
       <section className="mx-auto max-w-lg rounded-xl border border-gold bg-goldpale/40 p-6 text-center">
         <div className="text-4xl" aria-hidden="true">🎧</div><h2 className="mt-2 font-serif text-xl font-bold">Đã kết thúc lượt nghe</h2>
         <p className="mt-2 text-sm text-muted">Bạn đã nghe {visitedRef.current.size}/{sessionWords.length} từ.</p>

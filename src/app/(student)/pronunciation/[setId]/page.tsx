@@ -6,6 +6,10 @@ import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import VerbIpa from "@/components/VerbIpa";
+import MobileThumbBar from "@/components/MobileThumbBar";
+import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
+import { useCurrentUserId } from "@/components/UserSessionContext";
 
 type Word = {
   id: number;
@@ -34,6 +38,15 @@ type SpeechRecognitionLike = {
   stop(): void;
 };
 type RecognitionConstructor = new () => SpeechRecognitionLike;
+type PronunciationDraft = {
+  savedAt: number;
+  wordIds: number[];
+  index: number;
+  ratings: Array<{ wordId: number; good: boolean }>;
+  transcript: string;
+  score: number | null;
+  elapsed: number;
+};
 
 function clean(value: string) {
   return value.toLocaleLowerCase("en").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9' ]/g, " ").replace(/\s+/g, " ").trim();
@@ -64,10 +77,12 @@ function similarity(target: string, transcript: string) {
 export default function PronunciationPage() {
   const params = useParams<{ setId: string }>();
   const router = useRouter();
+  const userId = useCurrentUserId();
   const [set, setSet] = useState<SetDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [index, setIndex] = useState(0);
+  const [practiceWords, setPracticeWords] = useState<Word[]>([]);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [score, setScore] = useState<number | null>(null);
@@ -79,9 +94,12 @@ export default function PronunciationPage() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const startedAtRef = useRef(Date.now());
   const saveAttemptedRef = useRef(false);
+  const draftHydratedRef = useRef(false);
+  const draftKey = `lexora-learning-draft-u${userId}-pronunciation-${params.setId}`;
 
   useEffect(() => {
     let active = true;
+    draftHydratedRef.current = false;
     setLoading(true);
     setLoadError(false);
     fetch(`/api/sets/${params.setId}`)
@@ -89,16 +107,102 @@ export default function PronunciationPage() {
         if (!res.ok) throw new Error("load failed");
         return res.json();
       })
-      .then((data) => { if (active) { setSet(data.set); setLoading(false); startedAtRef.current = Date.now(); } })
+      .then((data) => {
+        if (!active) return;
+        const loadedSet: SetDetail = data.set;
+        setSet(loadedSet);
+        let restored = false;
+        try {
+          const draft = JSON.parse(localStorage.getItem(draftKey) || "null") as PronunciationDraft | null;
+          const restoredWords = draft ? restoreItemsByIds(loadedSet.words, draft.wordIds) : null;
+          const validDraft = draft
+            && isLearningDraftFresh(draft.savedAt)
+            && restoredWords
+            && Number.isInteger(draft.index)
+            && draft.index >= 0
+            && draft.index < restoredWords.length
+            && Array.isArray(draft.ratings)
+            && draft.ratings.length === draft.index;
+          if (validDraft && draft && restoredWords) {
+            const wordIds = new Set(restoredWords.map((word) => word.id));
+            const restoredRatings = draft.ratings.filter((rating) => wordIds.has(rating.wordId));
+            if (restoredRatings.length === draft.ratings.length) {
+              setPracticeWords(restoredWords);
+              setIndex(draft.index);
+              setRatings(restoredRatings);
+              setTranscript(typeof draft.transcript === "string" ? draft.transcript : "");
+              setScore(Number.isFinite(draft.score) ? draft.score : null);
+              startedAtRef.current = Date.now() - Math.max(0, Number(draft.elapsed) || 0) * 1000;
+              toast(`Đã khôi phục bài phát âm tại từ ${draft.index + 1}/${restoredWords.length}.`);
+              restored = true;
+            }
+          } else if (draft) localStorage.removeItem(draftKey);
+        } catch { try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ } }
+        if (!restored) {
+          setPracticeWords(loadedSet.words || []);
+          setIndex(0);
+          setRatings([]);
+          setTranscript("");
+          setScore(null);
+          startedAtRef.current = Date.now();
+        }
+        setSaved(false);
+        saveAttemptedRef.current = false;
+        draftHydratedRef.current = true;
+        setLoading(false);
+      })
       .catch(() => { if (active) { setLoadError(true); setLoading(false); } });
     const browserWindow = window as typeof window & { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
     setSupported(Boolean(browserWindow.SpeechRecognition || browserWindow.webkitSpeechRecognition));
     return () => { active = false; recognitionRef.current?.stop(); window.speechSynthesis?.cancel(); };
-  }, [params.setId, loadAttempt]);
+  }, [draftKey, params.setId, loadAttempt]);
 
-  const word = set?.words[index];
+  const word = practiceWords[index];
   const target = word ? (set?.type === "irregular_verb" ? word.v1 || "" : word.term || "") : "";
-  const finished = !!set && set.words.length > 0 && index >= set.words.length;
+  const finished = !!set && practiceWords.length > 0 && index >= practiceWords.length;
+
+  useUnsavedChangesWarning(
+    Boolean(set && !finished && (index > 0 || transcript)),
+    "Bài luyện phát âm đang diễn ra. Tiến độ đã được lưu trên thiết bị để bạn có thể quay lại sau. Bạn vẫn muốn rời đi?"
+  );
+
+  function beginPractice(words: Word[]) {
+    if (words.length === 0) return;
+    setPracticeWords(words);
+    setIndex(0);
+    setRatings([]);
+    setTranscript("");
+    setScore(null);
+    setSaved(false);
+    saveAttemptedRef.current = false;
+    startedAtRef.current = Date.now();
+  }
+
+  useEffect(() => {
+    if (!draftHydratedRef.current || !set) return;
+    if (finished) {
+      try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    const hasActivity = ratings.length > 0 || transcript.length > 0;
+    if (!hasActivity) {
+      try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    const draft: PronunciationDraft = {
+      savedAt: Date.now(),
+      wordIds: practiceWords.map((item) => item.id),
+      index,
+      ratings,
+      transcript,
+      score,
+      elapsed: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
+    };
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Storage is optional. */ }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [draftKey, finished, index, practiceWords, ratings, score, set, transcript]);
 
   const speak = useCallback((rate: number) => {
     if (!target || !("speechSynthesis" in window)) return;
@@ -190,6 +294,7 @@ export default function PronunciationPage() {
   if (set.words.length === 0) return <div className={cx.panel}><StudyModeNav setId={set.id} active="pronunciation" isVerb={set.type === "irregular_verb"} /><div className={cx.empty}>Bộ từ này chưa có từ để luyện.</div></div>;
 
   const goodCount = ratings.filter((item) => item.good).length;
+  const weakCount = ratings.length - goodCount;
   return (
     <div className={cx.panel}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -205,16 +310,16 @@ export default function PronunciationPage() {
           <p className="mt-2 text-sm text-muted">Bạn tự đánh giá phát âm tốt {goodCount}/{ratings.length} từ.</p>
           <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-gold" style={{ width: `${ratings.length ? goodCount / ratings.length * 100 : 0}%` }} /></div>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { setIndex(0); setRatings([]); setSaved(false); saveAttemptedRef.current = false; startedAtRef.current = Date.now(); }}>Luyện lại</button>
-            {saved && ratings.length - goodCount > 0 && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {ratings.length - goodCount} từ chưa tốt</button>}
+            {weakCount > 0 && <button disabled={saving} className={`${cx.btn} ${cx.btnGold}`} onClick={() => { const weakIds = new Set(ratings.filter((item) => !item.good).map((item) => item.wordId)); beginPractice(practiceWords.filter((item) => weakIds.has(item.id))); }}>Luyện lại {weakCount} từ chưa tốt</button>}
+            <button disabled={saving} className={`${cx.btn} ${weakCount > 0 ? cx.btnGhost : cx.btnGold}`} onClick={() => beginPractice(set.words)}>Luyện lại toàn bộ</button>
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/dictation/${set.id}`)}>Chuyển sang nghe & viết</button>
           </div>
           <div className="mt-3 text-xs text-muted" role="status">{saving ? "Đang lưu kết quả..." : saved ? "✓ Đã lưu vào lịch sử học" : ""}</div>
         </section>
       ) : word ? (
         <>
-          <div className="mb-2 flex justify-between text-xs text-muted"><span>Từ {index + 1}/{set.words.length}</span><span>{goodCount} phát âm tốt</span></div>
-          <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${index / set.words.length * 100}%` }} /></div>
+          <div className="mb-2 flex justify-between text-xs text-muted"><span>Từ {index + 1}/{practiceWords.length}</span><span>{goodCount} phát âm tốt</span></div>
+          <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${index / practiceWords.length * 100}%` }} /></div>
           <section className="rounded-2xl border border-line bg-white px-5 py-8 text-center">
             <div className="text-xs uppercase tracking-widest text-muted">Đọc to từ sau</div>
             <div className="mt-3 font-serif text-3xl font-bold">{target}</div>
@@ -235,10 +340,10 @@ export default function PronunciationPage() {
               </div>
             )}
           </section>
-          <div className="mt-5 flex flex-wrap justify-center gap-3">
+          <MobileThumbBar>
             <button className={`${cx.btn} ${cx.btnGhost} border-bad/50 text-bad`} disabled={listening} onClick={() => rateWord(false)}>Cần luyện thêm <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">1</kbd></button>
             <button className={`${cx.btn} ${cx.btnGold}`} disabled={listening} onClick={() => rateWord(true)}>Phát âm ổn <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">2</kbd></button>
-          </div>
+          </MobileThumbBar>
         </>
       ) : null}
     </div>

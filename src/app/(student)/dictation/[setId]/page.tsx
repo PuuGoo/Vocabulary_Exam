@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import StudyModeNav from "@/components/StudyModeNav";
+import MobileThumbBar from "@/components/MobileThumbBar";
 import { toast } from "@/components/Toast";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
+import { useCurrentUserId } from "@/components/UserSessionContext";
 
 type Word = {
   id: number;
@@ -21,6 +24,16 @@ type SetDetail = {
   name: string;
   type: "irregular_verb" | "ielts_vocab";
   words: Word[];
+};
+type DictationDraft = {
+  savedAt: number;
+  wordIds: number[];
+  index: number;
+  answer: string;
+  checked: boolean;
+  correctCount: number;
+  wrongWordIds: number[];
+  elapsed: number;
 };
 
 function shuffle<T>(items: T[]) {
@@ -48,6 +61,7 @@ function formatTime(seconds: number) {
 export default function DictationPage() {
   const params = useParams<{ setId: string }>();
   const router = useRouter();
+  const userId = useCurrentUserId();
   const [set, setSet] = useState<SetDetail | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
@@ -67,14 +81,17 @@ export default function DictationPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const nextButtonRef = useRef<HTMLButtonElement>(null);
   const startedAtRef = useRef(Date.now());
+  const draftHydratedRef = useRef(false);
+  const draftKey = `lexora-learning-draft-u${userId}-dictation-${params.setId}`;
 
   useUnsavedChangesWarning(
     started && !finished && (index > 0 || checked || answer.trim().length > 0),
-    "Bài luyện nghe đang diễn ra. Rời trang sẽ làm mất kết quả hiện tại. Bạn vẫn muốn rời đi?"
+    "Bài luyện nghe đang diễn ra. Tiến độ đã được lưu trên thiết bị để bạn có thể quay lại sau. Bạn vẫn muốn rời đi?"
   );
 
   useEffect(() => {
     setSpeechSupported(typeof window !== "undefined" && "speechSynthesis" in window);
+    draftHydratedRef.current = false;
     let cancelled = false;
     async function load() {
       setLoadError(false);
@@ -85,14 +102,64 @@ export default function DictationPage() {
         if (!data.set) throw new Error("missing set");
         const loaded: SetDetail = data.set;
         loaded.words = loaded.words.filter((word) => Boolean((loaded.type === "irregular_verb" ? word.v1 : word.term)?.trim()));
-        if (!cancelled) setSet(loaded);
+        if (!cancelled) {
+          setSet(loaded);
+          try {
+            const draft = JSON.parse(localStorage.getItem(draftKey) || "null") as DictationDraft | null;
+            const restoredWords = draft ? restoreItemsByIds(loaded.words, draft.wordIds) : null;
+            const validDraft = draft
+              && isLearningDraftFresh(draft.savedAt)
+              && Array.isArray(draft.wordIds)
+              && draft.wordIds.length > 0
+              && Number.isInteger(draft.index)
+              && draft.index >= 0
+              && draft.index < draft.wordIds.length;
+            if (validDraft) {
+              if (restoredWords) {
+                setSessionWords(restoredWords);
+                setStarted(true);
+                setIndex(draft.index);
+                setAnswer(typeof draft.answer === "string" ? draft.answer : "");
+                setChecked(Boolean(draft.checked));
+                setCorrectCount(Math.max(0, Number(draft.correctCount) || 0));
+                setWrongWordIds(Array.isArray(draft.wrongWordIds) ? draft.wrongWordIds.filter(Number.isInteger) : []);
+                setElapsed(Math.max(0, Number(draft.elapsed) || 0));
+                startedAtRef.current = Date.now() - Math.max(0, Number(draft.elapsed) || 0) * 1000;
+                toast(`Đã khôi phục lượt nghe–viết tại từ ${draft.index + 1}/${restoredWords.length}.`);
+              }
+            } else if (draft) localStorage.removeItem(draftKey);
+          } catch { try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ } }
+          draftHydratedRef.current = true;
+        }
       } catch {
         if (!cancelled) setLoadError(true);
       }
     }
     void load();
     return () => { cancelled = true; };
-  }, [params.setId]);
+  }, [draftKey, params.setId]);
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return;
+    if (!started || finished || sessionWords.length === 0) {
+      if (finished) try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
+      return;
+    }
+    const draft: DictationDraft = {
+      savedAt: Date.now(),
+      wordIds: sessionWords.map((item) => item.id),
+      index,
+      answer,
+      checked,
+      correctCount,
+      wrongWordIds,
+      elapsed,
+    };
+    const timer = window.setTimeout(() => {
+      try { localStorage.setItem(draftKey, JSON.stringify(draft)); } catch { /* Storage is optional. */ }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [answer, checked, correctCount, draftKey, finished, index, sessionWords, started, wrongWordIds]);
 
   useEffect(() => {
     if (!started || finished) return;
@@ -143,10 +210,9 @@ export default function DictationPage() {
     if (checked) nextButtonRef.current?.focus();
   }, [checked]);
 
-  function start() {
-    if (!set || !speechSupported || set.words.length === 0) return;
-    const requested = countChoice === "all" ? set.words.length : Number(countChoice);
-    setSessionWords(shuffle(set.words).slice(0, requested));
+  function beginSession(words: Word[]) {
+    if (words.length === 0) return;
+    setSessionWords(words);
     setStarted(true);
     setIndex(0);
     setAnswer("");
@@ -157,6 +223,17 @@ export default function DictationPage() {
     setFinished(false);
     setResultSaved(false);
     startedAtRef.current = Date.now();
+  }
+
+  function start() {
+    if (!set || !speechSupported || set.words.length === 0) return;
+    const requested = countChoice === "all" ? set.words.length : Number(countChoice);
+    beginSession(shuffle(set.words).slice(0, requested));
+  }
+
+  function retryWrongWords() {
+    const wrongIds = new Set(wrongWordIds);
+    beginSession(sessionWords.filter((item) => wrongIds.has(item.id)));
   }
 
   function checkAnswer() {
@@ -250,6 +327,8 @@ export default function DictationPage() {
   if (finished) {
     return (
       <div className={cx.panel}>
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe & viết — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
+        <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} />
         <h2 className={`${cx.h2} text-center`}>🎉 Hoàn thành bài nghe!</h2>
         <div className="mx-auto my-6 max-w-md rounded-2xl border border-gold bg-goldpale p-6 text-center">
           <div className="font-serif text-4xl font-bold text-golddark">{correctCount}/{sessionWords.length}</div>
@@ -258,8 +337,8 @@ export default function DictationPage() {
         </div>
         <div className="flex justify-center gap-2 flex-wrap">
           {!resultSaved && !savingResult && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => void saveResult()}>Lưu lại kết quả</button>}
-          <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setStarted(false)}>Luyện lượt mới</button>
-          {resultSaved && wrongWordIds.length > 0 && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại {wrongWordIds.length} từ sai</button>}
+          {wrongWordIds.length > 0 && <button disabled={savingResult} className={`${cx.btn} ${cx.btnGold}`} onClick={retryWrongWords}>Làm lại {wrongWordIds.length} từ sai</button>}
+          <button disabled={savingResult} className={`${cx.btn} ${wrongWordIds.length > 0 ? cx.btnGhost : cx.btnGold}`} onClick={() => setStarted(false)}>Thiết lập lượt mới</button>
           <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>Chọn bộ khác</button>
         </div>
       </div>
@@ -306,14 +385,16 @@ export default function DictationPage() {
             <div className="mt-2 text-xs font-normal text-muted">Nhấn Enter hoặc → để sang từ tiếp theo.</div>
           </div>
         )}
-        {!checked ? (
-          <button className={`${cx.btn} ${cx.btnGold}`} disabled={!answer.trim()} onClick={checkAnswer}>Kiểm tra</button>
-        ) : (
-          <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold}`} onClick={next}>
-            {index === sessionWords.length - 1 ? "Xem kết quả" : "Từ tiếp theo →"}
-            <kbd className="ml-2 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">Enter</kbd>
-          </button>
-        )}
+        <MobileThumbBar>
+          {!checked ? (
+            <button className={`${cx.btn} ${cx.btnGold}`} disabled={!answer.trim()} onClick={checkAnswer}>Kiểm tra</button>
+          ) : (
+            <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold}`} onClick={next}>
+              {index === sessionWords.length - 1 ? "Xem kết quả" : "Từ tiếp theo →"}
+              <kbd className="ml-2 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">Enter</kbd>
+            </button>
+          )}
+        </MobileThumbBar>
       </div>
     </div>
   );
