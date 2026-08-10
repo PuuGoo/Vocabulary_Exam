@@ -11,3 +11,12 @@ export function formatAggregatedDocumentName(order: number, value: string) {
   const label = removeDocumentDisplayPrefix(stem) || "Tài liệu";
   return `${String(order).padStart(2, "0")}_${label}${extension}`;
 }
+
+type DocumentLocation = { id: number; category: string; title: string };
+
+export function compareDocumentsByFolderThenName(left: DocumentLocation, right: DocumentLocation) {
+  const categoryOrder = left.category.localeCompare(right.category, "vi", { numeric: true, sensitivity: "base" });
+  if (categoryOrder !== 0) return categoryOrder;
+  const titleOrder = left.title.localeCompare(right.title, "vi", { numeric: true, sensitivity: "base" });
+  return titleOrder !== 0 ? titleOrder : left.id - right.id;
+}

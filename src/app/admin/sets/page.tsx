@@ -5,7 +5,7 @@ import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
-import { formatAggregatedDocumentName } from "@/lib/documentDisplay";
+import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "@/lib/documentDisplay";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -172,7 +172,9 @@ export default function AdminSetsPage() {
   const visibleCategoryDocuments = useMemo<VisibleCategoryDocument[]>(() => {
     const query = normalizeSearch(documentQuery);
     const sortedDocuments = [...categoryDocuments].sort((left, right) => {
-        if (documentSort === "name") return left.title.localeCompare(right.title, "vi", { numeric: true, sensitivity: "base" });
+        if (documentSort === "name") return hasAggregatedCategoryDocuments
+          ? compareDocumentsByFolderThenName(left, right)
+          : left.title.localeCompare(right.title, "vi", { numeric: true, sensitivity: "base" });
         if (documentSort === "size") return right.fileSize - left.fileSize;
         const leftTime = new Date(left.createdAt).getTime();
         const rightTime = new Date(right.createdAt).getTime();
@@ -843,7 +845,7 @@ export default function AdminSetsPage() {
           {!documentsLoading && categoryDocuments.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
             <input type="search" value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className={`${cx.input} !mb-0`} placeholder="Tìm theo tên tài liệu, file hoặc thư mục..." aria-label="Tìm tài liệu PDF" />
             <select value={documentSort} onChange={(event) => setDocumentSort(event.target.value as DocumentSort)} className={`${cx.input} !mb-0`} aria-label="Sắp xếp tài liệu PDF">
-              <option value="newest">Mới tải lên trước</option><option value="oldest">Cũ nhất trước</option><option value="name">Tên A → Z</option><option value="size">Dung lượng lớn trước</option>
+              <option value="name">{hasAggregatedCategoryDocuments ? "Thư mục → thứ tự PDF" : "Tên A → Z"}</option><option value="newest">Mới tải lên trước</option><option value="oldest">Cũ nhất trước</option><option value="size">Dung lượng lớn trước</option>
             </select>
           </div>}
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
