@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { BACKUP_COLLECTIONS, backupFilename, getBackupCounts, parseBackupDocument, sanitizeBackupUsers, serializeSubmissionFiles } from "./backup";
 import { createBackupChecksum, verifyBackupChecksum } from "./backupIntegrity";
-import { zonedScheduleParts } from "./backupScheduleTime";
+import { isBackupWindowOpen, isStaleBackupAttempt, zonedScheduleParts } from "./backupScheduleTime";
 
 test("backup removes password hashes while preserving account metadata", () => {
   const [user] = sanitizeBackupUsers([{ id: 1, username: "admin", passwordHash: "secret-hash", role: "admin" }]);
@@ -61,6 +61,19 @@ test("email backup schedule uses Vietnam local date and hour", () => {
     date: "2026-08-08",
     hour: 20,
   });
+});
+
+test("email backup can retry after the configured hour but never before it", () => {
+  assert.equal(isBackupWindowOpen(19, 20), false);
+  assert.equal(isBackupWindowOpen(20, 20), true);
+  assert.equal(isBackupWindowOpen(23, 20), true);
+});
+
+test("a crashed scheduled backup claim becomes retryable after 90 minutes", () => {
+  const now = new Date("2026-08-13T12:00:00.000Z");
+  assert.equal(isStaleBackupAttempt("2026-08-13T10:29:59.000Z", "running", now), true);
+  assert.equal(isStaleBackupAttempt("2026-08-13T10:31:00.000Z", "running", now), false);
+  assert.equal(isStaleBackupAttempt("2026-08-13T09:00:00.000Z", "success", now), false);
 });
 
 test("restore validator rejects incomplete and foreign JSON files", () => {

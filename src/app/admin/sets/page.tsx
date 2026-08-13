@@ -93,7 +93,14 @@ export default function AdminSetsPage() {
   const [detailWordQuery, setDetailWordQuery] = useState("");
   const [previewSetId, setPreviewSetId] = useState<number | null>(null);
   const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
+  const [dragOverSetId, setDragOverSetId] = useState<number | null>(null);
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
+  const [selectedSetIds, setSelectedSetIds] = useState<number[]>([]);
+  const [selectedWordIds, setSelectedWordIds] = useState<number[]>([]);
+  const [bulkDeletingSets, setBulkDeletingSets] = useState(false);
+  const [bulkDeletingWords, setBulkDeletingWords] = useState(false);
+  const [reorderingSets, setReorderingSets] = useState(false);
+  const [exportingSetId, setExportingSetId] = useState<number | null>(null);
   const [categoryDocuments, setCategoryDocuments] = useState<CategoryDocument[]>([]);
   const [documentQuery, setDocumentQuery] = useState("");
   const [documentSort, setDocumentSort] = useState<DocumentSort>("name");
@@ -155,7 +162,10 @@ export default function AdminSetsPage() {
     return sets.filter((set) =>
       (selectedCategory === ALL_CATEGORIES || (set.category?.trim() || UNCATEGORIZED) === selectedCategory)
       && (!query || normalizeSearch(`${set.name} ${set.category || ""} ${set.className || "Công khai"} ${set.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"}`).includes(query))
-    );
+    ).sort((left, right) => {
+      const categoryOrder = (left.category || "").localeCompare(right.category || "", "vi", { numeric: true, sensitivity: "base" });
+      return categoryOrder || left.name.localeCompare(right.name, "vi", { numeric: true, sensitivity: "base" });
+    });
   }, [sets, searchQuery, selectedCategory]);
   const filteredDetailWords = useMemo(() => {
     if (!detail) return [];
@@ -574,11 +584,93 @@ export default function AdminSetsPage() {
       const res = await fetch(`/api/sets/${id}`, { method: "DELETE" });
       if (!res.ok) return toast("Không thể xoá bộ từ vựng.");
       toast("Đã xoá bộ từ vựng.");
+      setSelectedSetIds((current) => current.filter((setId) => setId !== id));
       if (detail?.id === id) setDetail(null);
       loadSets();
     } catch {
       toast("Không thể kết nối để xoá bộ từ vựng.");
     }
+  }
+
+  async function deleteSelectedSets() {
+    if (selectedSetIds.length === 0 || bulkDeletingSets) return;
+    if (!confirm(`Xóa vĩnh viễn ${selectedSetIds.length} bộ từ đã chọn và toàn bộ từ bên trong?`)) return;
+    setBulkDeletingSets(true);
+    try {
+      const res = await fetch("/api/admin/sets/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", ids: selectedSetIds }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể xóa các bộ từ đã chọn.");
+      if (detail && selectedSetIds.includes(detail.id)) setDetail(null);
+      setSelectedSetIds([]);
+      await Promise.all([loadSets(), loadCategories()]);
+      toast(`Đã xóa ${data.deleted || 0} bộ từ.`);
+    } catch { toast("Không thể kết nối để xóa hàng loạt."); }
+    finally { setBulkDeletingSets(false); }
+  }
+
+  async function saveSetOrder(orderedIds: number[]) {
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || reorderingSets) return;
+    setReorderingSets(true);
+    try {
+      const res = await fetch("/api/admin/sets/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reorder", category: selectedCategory, orderedIds }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể lưu thứ tự bộ từ.");
+      await loadSets();
+      toast("Đã sắp xếp và chuẩn hóa tiền tố bộ từ.");
+    } catch { toast("Không thể kết nối để lưu thứ tự bộ từ."); }
+    finally { setReorderingSets(false); setDraggingSetId(null); setDragOverSetId(null); }
+  }
+
+  function currentCategorySetIds() {
+    if (!sets || selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) return [];
+    return sets.filter((item) => item.category === selectedCategory)
+      .sort((left, right) => left.name.localeCompare(right.name, "vi", { numeric: true, sensitivity: "base" }))
+      .map((item) => item.id);
+  }
+
+  function dropSetBefore(targetId: number) {
+    if (draggingSetId === null || draggingSetId === targetId) return;
+    const ordered = currentCategorySetIds().filter((id) => id !== draggingSetId);
+    const targetIndex = ordered.indexOf(targetId);
+    if (targetIndex < 0) return;
+    ordered.splice(targetIndex, 0, draggingSetId);
+    void saveSetOrder(ordered);
+  }
+
+  async function exportSet(setId: number, format: "xlsx" | "pdf") {
+    setExportingSetId(setId);
+    try {
+      const res = await fetch(`/api/sets/${setId}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.set) throw new Error(data.error || "Không thể tải dữ liệu bộ từ.");
+      const current = data.set as SetDetail;
+      const safeName = current.name.replace(/[\\/:*?"<>|]/g, "-").trim() || `bo-tu-${current.id}`;
+      const rows = current.words.map((word, index) => current.type === "irregular_verb"
+        ? { STT: index + 1, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
+        : { STT: index + 1, Từ: word.term || "", Nghĩa: word.meaning, IPA: word.ipa || "", "Loại từ": word.wtype || "", "Ví dụ": word.example || "" });
+      if (format === "xlsx") {
+        const XLSX = await import("xlsx");
+        const sheet = XLSX.utils.json_to_sheet(rows);
+        sheet["!cols"] = current.type === "irregular_verb" ? [{ wch: 6 }, { wch: 28 }, ...Array.from({ length: 6 }, () => ({ wch: 18 }))] : [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 52 }];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, sheet, "Từ vựng");
+        XLSX.writeFile(workbook, `${safeName}.xlsx`);
+      } else {
+        const [{ default: pdfMake }, { default: pdfFonts }] = await Promise.all([import("pdfmake/build/pdfmake"), import("pdfmake/build/vfs_fonts")]);
+        pdfMake.vfs = pdfFonts.pdfMake?.vfs || pdfFonts.vfs || pdfFonts;
+        const headers = current.type === "irregular_verb" ? ["STT", "Nghĩa", "V1 / IPA", "V2 / IPA", "V3 / IPA"] : ["STT", "Từ / IPA", "Nghĩa", "Loại", "Ví dụ"];
+        const body = [headers, ...current.words.map((word, index) => current.type === "irregular_verb"
+          ? [String(index + 1), word.meaning, `${word.v1 || ""}\n${word.ipaV1 || ""}`, `${word.v2 || ""}\n${word.ipaV2 || ""}`, `${word.v3 || ""}\n${word.ipaV3 || ""}`]
+          : [String(index + 1), `${word.term || ""}\n${word.ipa || ""}`, word.meaning, word.wtype || "", word.example || ""] )];
+        pdfMake.createPdf({ pageOrientation: "landscape", pageMargins: [28, 38, 28, 34], content: [
+          { text: current.name, fontSize: 18, bold: true, color: "#242337", margin: [0, 0, 0, 4] },
+          { text: `${current.category || "Chưa phân loại"} · ${current.words.length} mục`, fontSize: 9, color: "#6F6C82", margin: [0, 0, 0, 14] },
+          { table: { headerRows: 1, widths: current.type === "irregular_verb" ? [28, "*", "*", "*", "*"] : [28, 115, 145, 65, "*"], body }, layout: { fillColor: (row: number) => row === 0 ? "#EFECFF" : row % 2 === 0 ? "#FAF9FD" : null, hLineColor: () => "#DCD9E8", vLineColor: () => "#DCD9E8" } },
+        ], defaultStyle: { font: "Roboto", fontSize: 8, color: "#242337" }, footer: (page: number, pages: number) => ({ text: `${page}/${pages}`, alignment: "center", fontSize: 8, color: "#8B899F" }) }).download(`${safeName}.pdf`);
+      }
+      toast(`Đã tạo file ${format.toUpperCase()} cho “${current.name}”.`);
+    } catch (error) { toast(error instanceof Error ? error.message : "Không thể xuất bộ từ."); }
+    finally { setExportingSetId(null); }
   }
 
   async function openDetail(id: number) {
@@ -594,6 +686,7 @@ export default function AdminSetsPage() {
       setDetailWordQuery("");
       setShowAddWord(false);
       setEditingWordId(null);
+      setSelectedWordIds([]);
     } catch {
       toast("Không thể kết nối để mở bộ từ vựng.");
     } finally {
@@ -642,12 +735,29 @@ export default function AdminSetsPage() {
     try {
       const res = await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
       if (!res.ok) return toast("Không thể xoá từ.");
+      setSelectedWordIds((current) => current.filter((id) => id !== wordId));
       setDetail((current) => current ? { ...current, words: current.words.filter((word) => word.id !== wordId) } : current);
       toast("Đã xoá từ.");
       loadSets();
     } catch {
       toast("Không thể kết nối để xoá từ.");
     }
+  }
+
+  async function deleteSelectedWords() {
+    if (!detail || selectedWordIds.length === 0 || bulkDeletingWords) return;
+    if (!confirm(`Xóa ${selectedWordIds.length} từ đã chọn khỏi “${detail.name}”?`)) return;
+    setBulkDeletingWords(true);
+    try {
+      const res = await fetch("/api/admin/words/bulk", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: selectedWordIds }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể xóa các từ đã chọn.");
+      setDetail((current) => current ? { ...current, words: current.words.filter((word) => !selectedWordIds.includes(word.id)) } : current);
+      setSelectedWordIds([]);
+      await loadSets();
+      toast(`Đã xóa ${data.deleted || 0} từ.`);
+    } catch { toast("Không thể kết nối để xóa các từ đã chọn."); }
+    finally { setBulkDeletingWords(false); }
   }
 
   function startEditWord(w: Word) {
@@ -1049,6 +1159,17 @@ export default function AdminSetsPage() {
         </Modal>
       )}
 
+      {sets !== null && filteredSets.length > 0 && (
+        <div className="sticky top-2 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-[14px] border border-line bg-white/95 p-3 shadow-sm backdrop-blur" aria-label="Thao tác hàng loạt với bộ từ">
+          <label className="flex min-h-10 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm font-bold">
+            <input type="checkbox" className="h-4 w-4 accent-[#7865EE]" checked={filteredSets.every((item) => selectedSetIds.includes(item.id))} onChange={(event) => setSelectedSetIds((current) => event.target.checked ? [...new Set([...current, ...filteredSets.map((item) => item.id)])] : current.filter((id) => !filteredSets.some((item) => item.id === id)))} />
+            Chọn tất cả ({filteredSets.length})
+          </label>
+          {selectedSetIds.length > 0 && <><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">Đã chọn {selectedSetIds.length}</span><button type="button" className={`${cx.btn} ${cx.btnDanger} !min-h-10 !px-3 !py-1.5`} disabled={bulkDeletingSets} onClick={() => void deleteSelectedSets()}>{bulkDeletingSets ? "Đang xóa…" : `Xóa ${selectedSetIds.length} bộ`}</button><button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-10 !px-3 !py-1.5`} onClick={() => setSelectedSetIds([])}>Bỏ chọn</button></>}
+          {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <button type="button" className={`${cx.btn} ${cx.btnGhost} ml-auto !min-h-10 !px-3 !py-1.5`} disabled={reorderingSets} onClick={() => void saveSetOrder(currentCategorySetIds())}>{reorderingSets ? "Đang lưu thứ tự…" : "↕ Sắp xếp theo tiền tố"}</button>}
+        </div>
+      )}
+
       {sets === null ? (
         <div className={cx.empty}>Đang tải...</div>
       ) : sets.length === 0 ? (
@@ -1061,18 +1182,24 @@ export default function AdminSetsPage() {
       ) : (
         filteredSets.map((s) => (
           <div
-            className={`${cx.setcard} ${draggingSetId === s.id ? "opacity-60 ring-2 ring-[#7865EE]/30" : ""}`}
+            className={`${cx.setcard} ${draggingSetId === s.id ? "opacity-60 ring-2 ring-[#7865EE]/30" : ""} ${dragOverSetId === s.id ? "border-[#7865EE] shadow-[0_-3px_0_#7865EE]" : ""}`}
             key={s.id}
-            draggable
+            draggable={selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && !reorderingSets}
             onDragStart={(event) => { setDraggingSetId(s.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(s.id)); }}
-            onDragEnd={() => setDraggingSetId(null)}
+            onDragOver={(event) => { if (draggingSetId !== null && draggingSetId !== s.id && selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverSetId(s.id); } }}
+            onDragLeave={() => setDragOverSetId((current) => current === s.id ? null : current)}
+            onDrop={(event) => { event.preventDefault(); dropSetBefore(s.id); }}
+            onDragEnd={() => { setDraggingSetId(null); setDragOverSetId(null); }}
           >
-            <div>
-              <div className="font-semibold">{s.name}</div>
+            <div className="flex min-w-0 items-start gap-3">
+              <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[#7865EE]" aria-label={`Chọn bộ ${s.name}`} checked={selectedSetIds.includes(s.id)} onChange={(event) => setSelectedSetIds((current) => event.target.checked ? [...current, s.id] : current.filter((id) => id !== s.id))} />
+              <div className="min-w-0"><div className="font-semibold">{s.name}</div>
               <div className="text-[0.78rem] text-muted mt-0.5">
                 {s.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {s.count} mục ·{" "}
                 {s.className ? <span className={cx.badgeGold}>Lớp: {s.className}</span> : <span className={cx.badgeBlue}>Công khai</span>}
                 {s.category && <span className="ml-2 rounded-full bg-[#F0EDFF] px-2.5 py-0.5 text-[0.7rem] font-semibold text-[#6550DB]">📁 {s.category}</span>}
+              </div>
+              {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <div className="mt-1 text-[0.68rem] text-muted">Kéo thẻ để đổi thứ tự; hệ thống sẽ cập nhật lại tiền tố 01_, 02_…</div>}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
@@ -1129,6 +1256,8 @@ export default function AdminSetsPage() {
                   )}
                 </div>}
               </div>
+              <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3`} disabled={exportingSetId !== null} onClick={() => void exportSet(s.id, "xlsx")}>{exportingSetId === s.id ? "…" : "↓ XLSX"}</button>
+              <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3`} disabled={exportingSetId !== null} onClick={() => void exportSet(s.id, "pdf")}>{exportingSetId === s.id ? "…" : "↓ PDF"}</button>
               <button
                 className="px-2 py-2 text-[0.8rem] text-bad hover:underline"
                 onClick={() => deleteSet(s.id)}
@@ -1277,6 +1406,10 @@ export default function AdminSetsPage() {
               Đóng
             </button>
           </div>
+          {detail.words.length > 0 && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-[#FBFAFE] p-2.5">
+            <label className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-xs font-bold"><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" checked={filteredDetailWords.length > 0 && filteredDetailWords.every((word) => selectedWordIds.includes(word.id))} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...new Set([...current, ...filteredDetailWords.map((word) => word.id)])] : current.filter((id) => !filteredDetailWords.some((word) => word.id === id)))} />Chọn tất cả từ đang hiển thị ({filteredDetailWords.length})</label>
+            {selectedWordIds.length > 0 && <><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">Đã chọn {selectedWordIds.length}</span><button type="button" className={`${cx.btn} ${cx.btnDanger} !min-h-10 !px-3 !py-1.5`} disabled={bulkDeletingWords} onClick={() => void deleteSelectedWords()}>{bulkDeletingWords ? "Đang xóa…" : `Xóa ${selectedWordIds.length} từ`}</button><button type="button" className="min-h-10 px-2 text-xs font-bold text-muted hover:text-ink" onClick={() => setSelectedWordIds([])}>Bỏ chọn</button></>}
+          </div>}
 
           {showAddWord && (
             <Modal
@@ -1357,6 +1490,7 @@ export default function AdminSetsPage() {
             <table className={cx.table}>
               <thead>
                 <tr>
+                  <th className={`${cx.th} w-10`}><span className="sr-only">Chọn</span></th>
                   {detail.type === "irregular_verb" ? (
                     <>
                       <th className={cx.th}>Nghĩa</th>
@@ -1380,7 +1514,8 @@ export default function AdminSetsPage() {
               </thead>
               <tbody>
                 {filteredDetailWords.map((w) => (
-                  <tr key={w.id} className="hover:bg-goldpale/30">
+                  <tr key={w.id} className={selectedWordIds.includes(w.id) ? "bg-[#F5F2FF]" : "hover:bg-goldpale/30"}>
+                    <td className={cx.td}><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" aria-label={`Chọn ${w.term || w.v1 || w.meaning}`} checked={selectedWordIds.includes(w.id)} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...current, w.id] : current.filter((id) => id !== w.id))} /></td>
                     {detail.type === "irregular_verb" ? (
                       <>
                         <td className={cx.td}>{w.meaning}</td>

@@ -11,6 +11,9 @@ export const BACKUP_SCHEDULE_KEYS = {
   lastSentAt: "backup_email_last_sent_at",
   lastError: "backup_email_last_error",
   lastClaimDate: "backup_email_last_claim_date",
+  lastCronAt: "backup_email_last_cron_at",
+  lastAttemptAt: "backup_email_last_attempt_at",
+  lastAttemptStatus: "backup_email_last_attempt_status",
 } as const;
 
 export type BackupEmailSchedule = {
@@ -21,6 +24,9 @@ export type BackupEmailSchedule = {
   lastSentDate: string;
   lastSentAt: string;
   lastError: string;
+  lastCronAt: string;
+  lastAttemptAt: string;
+  lastAttemptStatus: string;
 };
 
 export async function getBackupEmailSchedule(): Promise<BackupEmailSchedule> {
@@ -35,6 +41,9 @@ export async function getBackupEmailSchedule(): Promise<BackupEmailSchedule> {
     lastSentDate: values.get(BACKUP_SCHEDULE_KEYS.lastSentDate) ?? "",
     lastSentAt: values.get(BACKUP_SCHEDULE_KEYS.lastSentAt) ?? "",
     lastError: values.get(BACKUP_SCHEDULE_KEYS.lastError) ?? "",
+    lastCronAt: values.get(BACKUP_SCHEDULE_KEYS.lastCronAt) ?? "",
+    lastAttemptAt: values.get(BACKUP_SCHEDULE_KEYS.lastAttemptAt) ?? "",
+    lastAttemptStatus: values.get(BACKUP_SCHEDULE_KEYS.lastAttemptStatus) ?? "",
   };
 }
 
@@ -61,6 +70,17 @@ export async function markBackupEmailResult(date: string, sentAt: Date | null, e
       setSetting(BACKUP_SCHEDULE_KEYS.lastSentAt, sentAt.toISOString()),
     ] : []),
     setSetting(BACKUP_SCHEDULE_KEYS.lastError, error.slice(0, 500)),
+  ]);
+}
+
+export async function markBackupCronHeartbeat(at: Date) {
+  await setSetting(BACKUP_SCHEDULE_KEYS.lastCronAt, at.toISOString());
+}
+
+export async function markBackupEmailAttempt(at: Date, status: "running" | "success" | "error") {
+  await Promise.all([
+    setSetting(BACKUP_SCHEDULE_KEYS.lastAttemptAt, at.toISOString()),
+    setSetting(BACKUP_SCHEDULE_KEYS.lastAttemptStatus, status),
   ]);
 }
 
