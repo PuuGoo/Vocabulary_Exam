@@ -652,7 +652,7 @@ function QuizPlayerInner() {
   }
 
   return (
-    <div className={`${cx.panel} ${!timedMode ? "!pb-32" : ""}`}>
+    <div className={`${cx.panel} ${!timedMode ? "!pb-[calc(12rem+env(safe-area-inset-bottom))] md:!pb-28" : ""}`}>
       <button type="button" aria-label="Mở menu chế độ học" aria-haspopup="menu" aria-expanded={menuOpen} aria-keyshortcuts="M ." onClick={() => setMenuOpen((open) => !open)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 text-[0.65rem] sm:inline">M</kbd></button>
       {menuOpen && <button type="button" aria-label="Đóng menu chế độ học" className="fixed inset-0 z-[85] cursor-default" onClick={() => setMenuOpen(false)} />}
       {menuOpen && <div ref={quizMenuRef} role="menu" aria-label="Chuyển chế độ học" className="flashcard-dock-panel max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">

@@ -232,6 +232,8 @@ html.lexora-native-app :is(a, button, [role="button"]) {
     top: auto;
     right: max(.75rem, env(safe-area-inset-right));
     bottom: calc(9.9rem + env(safe-area-inset-bottom));
+    max-height: calc(100dvh - 11.25rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+    overscroll-behavior: contain;
     transform: none;
     transform-origin: right bottom;
   }

@@ -20,7 +20,7 @@ const LABELS: Record<BackupCollection, string> = {
 
 type Preview = { createdAt: string; version: number; integrity: "verified" | "legacy"; counts: Record<BackupCollection, number>; unknownUsers: string[]; strategy: string };
 type RestoreReport = { added: Record<BackupCollection, number>; skipped: Record<BackupCollection, number>; warnings: string[] };
-type EmailSchedule = { enabled: boolean; recipient: string; hour: number; timezone: "Asia/Ho_Chi_Minh"; lastSentAt: string; lastError: string };
+type EmailSchedule = { enabled: boolean; recipient: string; hour: number; timezone: "Asia/Ho_Chi_Minh"; lastSentAt: string; lastError: string; lastCronAt: string; lastAttemptAt: string; lastAttemptStatus: string };
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -48,7 +48,7 @@ export default function BackupPage() {
   const [previewing, setPreviewing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [report, setReport] = useState<RestoreReport | null>(null);
-  const [emailSchedule, setEmailSchedule] = useState<EmailSchedule>({ enabled: false, recipient: "", hour: 20, timezone: "Asia/Ho_Chi_Minh", lastSentAt: "", lastError: "" });
+  const [emailSchedule, setEmailSchedule] = useState<EmailSchedule>({ enabled: false, recipient: "", hour: 20, timezone: "Asia/Ho_Chi_Minh", lastSentAt: "", lastError: "", lastCronAt: "", lastAttemptAt: "", lastAttemptStatus: "" });
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
@@ -163,6 +163,11 @@ export default function BackupPage() {
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" onClick={() => void saveSchedule()} disabled={scheduleLoading || scheduleSaving || testingEmail} className="h-11 rounded-[11px] bg-gold px-5 text-sm font-bold text-white transition hover:bg-golddark disabled:cursor-wait disabled:opacity-50">{scheduleSaving ? "Đang lưu…" : "Lưu lịch tự động"}</button><button type="button" onClick={() => void sendTestEmail()} disabled={scheduleLoading || scheduleSaving || testingEmail || !emailConfigured} className="h-11 rounded-[11px] border border-line bg-white px-5 text-sm font-bold transition hover:border-[#CFC7FF] hover:text-gold disabled:cursor-wait disabled:opacity-50">{testingEmail ? "Đang tạo và gửi…" : "Gửi bản thử ngay"}</button><span className="text-xs leading-5 text-muted">Múi giờ Việt Nam (UTC+7). Vercel Hobby có thể gửi vào bất kỳ phút nào trong khung giờ.</span></div>
         {emailSchedule.lastSentAt ? <p className="mt-4 text-xs text-[#267A52]">✓ Gửi thành công gần nhất: {new Date(emailSchedule.lastSentAt).toLocaleString("vi-VN")}</p> : null}
         {emailSchedule.lastError ? <p className="mt-2 text-xs text-[#A34141]">Lỗi gần nhất: {emailSchedule.lastError}</p> : null}
+        <div className="mt-4 grid gap-2 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs sm:grid-cols-2">
+          <div><span className="block text-muted">Vercel Cron gọi gần nhất</span><b className={emailSchedule.lastCronAt ? "mt-1 block text-ink" : "mt-1 block text-[#A34141]"}>{emailSchedule.lastCronAt ? new Date(emailSchedule.lastCronAt).toLocaleString("vi-VN") : "Chưa ghi nhận lần gọi nào"}</b></div>
+          <div><span className="block text-muted">Lần thử gửi tự động gần nhất</span><b className="mt-1 block text-ink">{emailSchedule.lastAttemptAt ? `${new Date(emailSchedule.lastAttemptAt).toLocaleString("vi-VN")} · ${emailSchedule.lastAttemptStatus === "success" ? "thành công" : emailSchedule.lastAttemptStatus === "running" ? "đang xử lý" : "thất bại"}` : "Chưa đến khung giờ hoặc cron chưa chạy"}</b></div>
+        </div>
+        {emailSchedule.enabled && cronConfigured && !emailSchedule.lastCronAt ? <p className="mt-2 rounded-lg bg-[#FFF4D6] px-3 py-2 text-xs leading-5 text-[#72591A]">Lịch đã bật nhưng production chưa ghi nhận Vercel Cron. Sau lần triển khai này, kiểm tra mục Settings → Cron Jobs trên Vercel và bảo đảm Cron Jobs không bị Disable.</p> : null}
       </div>
     </section>
 
