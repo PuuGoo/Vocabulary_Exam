@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { categoryQuestions } from "@/db/schema";
@@ -61,7 +61,6 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ question }, { status: 201 });
 }
 
-import { desc } from "drizzle-orm";
 
 export async function PATCH(request: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
