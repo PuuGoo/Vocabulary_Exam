@@ -1182,6 +1182,8 @@ export default function AdminSetsPage() {
                       <div className="space-y-2">
                         <textarea className={`${cx.input} !mb-0 min-h-[80px]`} value={editQuestionText} onChange={(event) => setEditQuestionText(event.target.value)} />
                         <textarea className={`${cx.input} !mb-0 min-h-[100px]`} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
+                        <input className={`${cx.input} !mb-0`} placeholder="Phiên âm IPA" value={editPhonetic} onChange={(event) => setEditPhonetic(event.target.value)} />
+                        <input className={`${cx.input} !mb-0`} placeholder="Nghĩa tiếng Việt" value={editVnMeaning} onChange={(event) => setEditVnMeaning(event.target.value)} />
                         <div className="flex gap-2">
                           <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} disabled={savingQuestion || !editQuestionText.trim()} onClick={() => saveQuestionEdit(q.id)}>{savingQuestion ? "Đang lưu..." : "Lưu"}</button>
                           <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setEditingQuestionId(null); }}>Hủy</button>
