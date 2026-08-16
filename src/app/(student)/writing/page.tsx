@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
@@ -12,6 +12,16 @@ type Question = {
   phonetic: string | null;
   question: string;
   answer: string;
+};
+
+type SentenceExercise = {
+  questionId: number;
+  sentenceIndex: number;
+  targetSentence: string;
+  vnMeaning: string | null;
+  phonetic: string | null;
+  fullQuestion: string;
+  fullAnswer: string;
 };
 
 function norm(s: string) {
@@ -50,10 +60,38 @@ function WritingInner() {
 
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Flatten: each sentence in each answer becomes one exercise
+  const exercises = useMemo<SentenceExercise[]>(() => {
+    const result: SentenceExercise[] = [];
+    for (const q of questions) {
+      if (!q.answer) continue;
+      const sentences = splitSentences(q.answer);
+      for (let i = 0; i < sentences.length; i++) {
+        result.push({
+          questionId: q.id,
+          sentenceIndex: i,
+          targetSentence: sentences[i],
+          vnMeaning: q.vnMeaning,
+          phonetic: q.phonetic,
+          fullQuestion: q.question,
+          fullAnswer: q.answer,
+        });
+      }
+    }
+    return result;
+  }, [questions]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [sentenceResults, setSentenceResults] = useState<{ user: string; sample: string; match: number }[]>([]);
+  const [matchScore, setMatchScore] = useState(0);
+
+  const current = exercises[currentIndex] || null;
+
+  // Overall progress
+  const completedCount = submitted ? currentIndex + 1 : currentIndex;
+  const totalCount = exercises.length;
 
   useEffect(() => {
     if (!category) { setLoading(false); return; }
@@ -67,76 +105,84 @@ function WritingInner() {
       .finally(() => setLoading(false));
   }, [category]);
 
-  const current = questions[currentIndex] || null;
-
   function handleSubmit() {
     if (!current || !userAnswer.trim()) return;
-    const userSentences = splitSentences(userAnswer);
-    const sampleSentences = splitSentences(current.answer);
-
-    const results = sampleSentences.map((sample) => {
-      let bestMatch = 0;
-      let bestUser = "";
-      for (const user of userSentences) {
-        const rate = sentenceMatchRate(user, sample);
-        if (rate > bestMatch) {
-          bestMatch = rate;
-          bestUser = user;
-        }
-      }
-      return { user: bestUser, sample, match: bestMatch };
-    });
-
-    setSentenceResults(results);
+    const score = sentenceMatchRate(userAnswer, current.targetSentence);
+    setMatchScore(score);
     setSubmitted(true);
   }
 
-  function nextQuestion() {
-    if (currentIndex < questions.length - 1) {
+  function nextSentence() {
+    if (currentIndex < exercises.length - 1) {
       setCurrentIndex((i) => i + 1);
       setUserAnswer("");
       setSubmitted(false);
-      setSentenceResults([]);
+      setMatchScore(0);
     }
+  }
+
+  function resetCurrent() {
+    setSubmitted(false);
+    setUserAnswer("");
+    setMatchScore(0);
   }
 
   if (loading) return <div className={cx.panel}><div className={cx.empty}>Đang tải câu hỏi...</div></div>;
 
   if (!category) return (
-    <div className={cx.panel}>
-      <h2 className={cx.h2}>Luyện viết IELTS</h2>
-      <p className={cx.desc}>Chọn một thư mục từ trang <strong>Quản lý bộ từ</strong> để bắt đầu luyện viết.</p>
-      <div className="text-sm text-muted">Vào <strong>Khu quản trị → Bộ từ vựng</strong>, chọn thư mục con, rồi thêm câu hỏi Speaking. Sau đó quay lại đây và thêm <code>?category=Tên thư mục</code> vào URL.</div>
+    <div className="max-w-3xl mx-auto">
+      <div className={cx.panel}>
+        <h2 className={cx.h2}>Luyện viết IELTS</h2>
+        <p className={cx.desc}>Thêm <code>?category=Tên thư mục</code> vào URL để bắt đầu.</p>
+        <div className="text-sm text-muted">Ví dụ: <code>/writing?category=Vocabulary</code></div>
+      </div>
     </div>
   );
 
-  if (questions.length === 0) return (
-    <div className={cx.panel}>
-      <h2 className={cx.h2}>Luyện viết IELTS</h2>
-      <p className={cx.desc}>Thư mục này chưa có câu hỏi nào.</p>
+  if (exercises.length === 0) return (
+    <div className="max-w-3xl mx-auto">
+      <div className={cx.panel}>
+        <h2 className={cx.h2}>Luyện viết IELTS</h2>
+        <p className={cx.desc}>Thư mục này chưa có câu hỏi hoặc câu trả lời mẫu chưa được nhập.</p>
+      </div>
     </div>
   );
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+      {/* Progress bar */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
           <h2 className={cx.h2}>Luyện viết IELTS</h2>
-          <p className="text-xs text-muted">Câu {currentIndex + 1}/{questions.length} · {category}</p>
+          <span className="text-xs font-bold text-muted">{completedCount}/{totalCount} câu</span>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-green-500" />
-          <span className="text-xs text-muted">{questions.length} câu hỏi</span>
+        <div className="h-2 w-full rounded-full bg-[#EFECFF] overflow-hidden">
+          <div
+            className="h-full rounded-full bg-[#7865EE] transition-all duration-300"
+            style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
+          />
         </div>
+        <p className="mt-1 text-xs text-muted">{category}</p>
       </div>
 
       <div className={cx.panel}>
-        <div className="mb-2 flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-xs font-bold text-[#6550DB]">{currentIndex + 1}</span>
-          <span className="text-xs font-bold text-muted uppercase tracking-wider">Đề bài</span>
+        {/* Header */}
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-sm font-bold text-[#6550DB]">
+            {currentIndex + 1}
+          </span>
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-bold text-muted uppercase tracking-wider">Viết câu tiếng Anh</span>
+            <div className="text-xs text-muted">
+              Câu {current!.sentenceIndex + 1}/{splitSentences(current!.fullAnswer).length} của câu hỏi #{current!.questionId}
+            </div>
+          </div>
+          {current!.sentenceIndex === 0 && current!.fullQuestion && (
+            <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.65rem] font-bold text-[#6550DB]">Câu hỏi mới</span>
+          )}
         </div>
 
-        {/* Vietnamese meaning as question */}
+        {/* Prompt: Vietnamese meaning */}
         <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-4">
           <div className="text-xs font-bold text-muted mb-1">Nghĩa tiếng Việt</div>
           <div className="text-lg font-semibold text-ink leading-relaxed">
@@ -147,26 +193,24 @@ function WritingInner() {
           )}
         </div>
 
-        {current?.question && (
-          <div className="mb-4 rounded-xl border border-dashed border-line bg-white p-3">
-            <div className="text-xs font-bold text-muted mb-1">Câu hỏi gốc (tham khảo)</div>
-            <div className="text-sm text-muted italic">{current.question}</div>
+        {/* Reference: English sentence to write */}
+        {!submitted && (
+          <div className="mb-4 rounded-xl border border-dashed border-[#CFC7FF] bg-[#F8F6FF] p-3">
+            <div className="text-xs font-bold text-muted mb-1">Hãy viết câu tiếng Anh sau</div>
+            <div className="text-sm font-medium text-[#6550DB]">{current?.targetSentence}</div>
           </div>
         )}
 
         {/* Writing area */}
         <div className="mb-4">
-          <label className={cx.label}>Viết câu trả lời của bạn (tiếng Anh)</label>
+          <label className={cx.label}>Nhập câu tiếng Anh của bạn</label>
           <textarea
-            className={`${cx.input} !mb-0 min-h-[200px]`}
-            placeholder="Viết câu trả lời bằng tiếng Anh. Mỗi câu cách nhau bằng dấu chấm..."
+            className={`${cx.input} !mb-0 min-h-[120px] ${submitted ? "opacity-60" : ""}`}
+            placeholder="Gõ câu tiếng Anh tương ứng với nghĩa tiếng Việt..."
             value={userAnswer}
             onChange={(e) => setUserAnswer(e.target.value)}
             disabled={submitted}
           />
-          <div className="mt-1 text-right text-xs text-muted">
-            {userAnswer.trim() ? splitSentences(userAnswer).length + " câu" : ""}
-          </div>
         </div>
 
         {!submitted ? (
@@ -175,74 +219,111 @@ function WritingInner() {
             disabled={!userAnswer.trim()}
             onClick={handleSubmit}
           >
-            {userAnswer.trim() ? "Kiểm tra câu trả lời" : "Hãy viết câu trả lời trước"}
+            {userAnswer.trim() ? "Kiểm tra" : "Hãy nhập câu trả lời trước"}
           </button>
         ) : (
           <div className="space-y-4">
-            {/* Results */}
-            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4">
-              <div className="mb-3 text-xs font-bold text-muted uppercase tracking-wider">Kết quả đối chiếu</div>
-              {sentenceResults.length === 0 ? (
-                <p className="text-sm text-muted">Không tìm thấy câu nào để đối chiếu.</p>
-              ) : (
-                <div className="space-y-3">
-                  {sentenceResults.map((r, i) => {
-                    const score = r.match;
-                    let color = "bg-red-100 border-red-300 text-red-800";
-                    let label = "Chưa khớp";
-                    if (score >= 0.7) { color = "bg-green-100 border-green-300 text-green-800"; label = "Tốt"; }
-                    else if (score >= 0.4) { color = "bg-yellow-100 border-yellow-300 text-yellow-800"; label = "Tạm ổn"; }
+            {/* Result card */}
+            {(() => {
+              const score = matchScore;
+              let color = "bg-red-50 border-red-300";
+              let label = "Chưa khớp";
+              let textColor = "text-red-800";
+              if (score >= 0.7) { color = "bg-green-50 border-green-300"; label = "Tốt"; textColor = "text-green-800"; }
+              else if (score >= 0.4) { color = "bg-yellow-50 border-yellow-300"; label = "Tạm ổn"; textColor = "text-yellow-800"; }
 
-                    return (
-                      <div key={i} className={`rounded-lg border p-3 ${color}`}>
-                        <div className="mb-1 flex items-center justify-between">
-                          <span className="text-xs font-bold uppercase">Câu {i + 1} · {label}</span>
-                          <span className="text-xs font-bold">{Math.round(score * 100)}%</span>
-                        </div>
-                        <div className="mb-1">
-                          <span className="text-xs text-muted">Bạn viết:</span>
-                          <div className="text-sm">{r.user || <span className="italic">(không tìm thấy)</span>}</div>
-                        </div>
-                        <div>
-                          <span className="text-xs text-muted">Mẫu:</span>
-                          <div className="text-sm font-medium">{r.sample}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
+              return (
+                <div className={`rounded-xl border p-4 ${color}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`text-xs font-bold uppercase ${textColor}`}>{label}</span>
+                    <span className={`text-lg font-bold ${textColor}`}>{Math.round(score * 100)}%</span>
+                  </div>
+                  <div className="mb-2">
+                    <span className="text-xs text-muted">Bạn viết:</span>
+                    <div className="text-sm mt-0.5">{userAnswer || <span className="italic">(trống)</span>}</div>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted">Mẫu:</span>
+                    <div className="text-sm font-medium mt-0.5 text-green-700">{current?.targetSentence}</div>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
-            {/* Full sample answer */}
-            <div className="rounded-xl border border-dashed border-gold bg-goldpale/30 p-4">
-              <div className="mb-1 text-xs font-bold uppercase tracking-wider text-golddark">Câu trả lời mẫu</div>
-              <div className="text-sm leading-relaxed whitespace-pre-wrap">{current?.answer}</div>
-            </div>
-
-            {/* Score summary */}
-            <div className="rounded-xl border border-line bg-white p-4 text-center">
-              <div className="text-2xl font-bold text-[#6550DB]">
-                {sentenceResults.length > 0
-                  ? Math.round(sentenceResults.reduce((sum, r) => sum + r.match, 0) / sentenceResults.length * 100)
-                  : 0}%
-              </div>
-              <div className="text-xs text-muted mt-1">Điểm tổng hợp</div>
-            </div>
-
+            {/* Action buttons */}
             <div className="flex gap-3">
-              <button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={() => { setSubmitted(false); setUserAnswer(""); setSentenceResults([]); }}>
+              <button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={resetCurrent}>
                 Làm lại câu này
               </button>
-              {currentIndex < questions.length - 1 && (
-                <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={nextQuestion}>
-                  Câu tiếp theo →
+              {currentIndex < exercises.length - 1 && (
+                <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={nextSentence}>
+                  Câu tiếp theo ({currentIndex + 2}/{totalCount}) →
                 </button>
               )}
             </div>
+
+            {/* Full answer reference */}
+            {current && (
+              <details className="rounded-xl border border-line bg-white">
+                <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">
+                  Xem câu trả lời mẫu đầy đủ ({splitSentences(current.fullAnswer).length} câu)
+                </summary>
+                <div className="border-t border-line px-4 py-3">
+                  <div className="space-y-2">
+                    {splitSentences(current.fullAnswer).map((s, i) => (
+                      <div key={i} className={`rounded-lg border p-2.5 text-sm ${i === current.sentenceIndex ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line"}`}>
+                        <span className="text-xs font-bold text-muted mr-2">Câu {i + 1}:</span>
+                        {s}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            )}
+
+            {/* Full question context */}
+            {current?.fullQuestion && (
+              <details className="rounded-xl border border-line bg-[#FBFAFE]">
+                <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">
+                  Xem câu hỏi gốc
+                </summary>
+                <div className="border-t border-line px-4 py-3 text-sm text-muted italic">
+                  {current.fullQuestion}
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>
+
+      {/* All-sentences overview */}
+      {submitted && (
+        <div className={cx.panel}>
+          <h3 className="text-sm font-bold text-ink mb-3">Tiến độ các câu</h3>
+          <div className="flex flex-wrap gap-2">
+            {exercises.map((ex, i) => {
+              const done = i < currentIndex;
+              const active = i === currentIndex;
+              const remaining = i > currentIndex;
+              return (
+                <button
+                  key={`${ex.questionId}-${ex.sentenceIndex}`}
+                  disabled={!done && !active}
+                  onClick={() => { if (done) { setCurrentIndex(i); setUserAnswer(""); setSubmitted(false); setMatchScore(0); } }}
+                  className={`h-8 w-8 rounded-lg text-xs font-bold transition ${
+                    active ? "bg-[#7865EE] text-white ring-2 ring-[#7865EE]/30" :
+                    done ? "bg-green-100 text-green-700 border border-green-300" :
+                    "bg-[#F1EFF8] text-muted cursor-default"
+                  }`}
+                  title={`Câu ${i + 1}${done ? " ✓" : active ? " (hiện tại)" : ""}`}
+                >
+                  {done ? "✓" : i + 1}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
