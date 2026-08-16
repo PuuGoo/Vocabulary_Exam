@@ -652,7 +652,7 @@ function QuizPlayerInner() {
   }
 
   return (
-    <div className={`${cx.panel} ${!timedMode ? "!pb-[calc(12rem+env(safe-area-inset-bottom))] md:!pb-28" : ""}`}>
+    <div className={cx.panel}>
       <button type="button" aria-label="Mở menu chế độ học" aria-haspopup="menu" aria-expanded={menuOpen} aria-keyshortcuts="M ." onClick={() => setMenuOpen((open) => !open)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 text-[0.65rem] sm:inline">M</kbd></button>
       {menuOpen && <button type="button" aria-label="Đóng menu chế độ học" className="fixed inset-0 z-[85] cursor-default" onClick={() => setMenuOpen(false)} />}
       {menuOpen && <div ref={quizMenuRef} role="menu" aria-label="Chuyển chế độ học" className="flashcard-dock-panel max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">
@@ -824,7 +824,7 @@ function QuizPlayerInner() {
               if (el) rowRefs.set(w.id, el);
               else rowRefs.delete(w.id);
             }}
-            className="grid grid-cols-[30px_1fr] gap-2.5 items-start py-3.5 border-b border-dashed border-line last:border-none"
+            className="grid scroll-mb-40 grid-cols-[30px_1fr] gap-2.5 items-start py-3.5 border-b border-dashed border-line last:border-none"
           >
             <div className="text-muted text-[0.88rem] text-right pt-1">{questionNumberByWordId.get(w.id) ?? start + idx + 1}.</div>
             <div>
@@ -991,8 +991,8 @@ function QuizPlayerInner() {
           )}
         </div>
       )}
-      <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : "pointer-events-none fixed bottom-[calc(5.6rem+env(safe-area-inset-bottom))] left-3 right-3 z-40 flex justify-center md:bottom-5 md:left-[100px] lg:left-[276px]"}>
-        <div className={timedMode ? "contents" : "pointer-events-auto flex w-full max-w-xl items-center gap-2 rounded-[18px] border border-line bg-white/95 p-2 shadow-[0_16px_45px_rgba(36,35,55,0.2)] backdrop-blur-md"}>
+      <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : "mt-6 flex justify-center border-t border-line pt-4"}>
+        <div className={timedMode ? "contents" : "flex w-full max-w-xl items-center gap-2 rounded-[18px] border border-line bg-white p-2 shadow-sm"}>
           <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-12 !shrink-0 !px-3`} disabled={group === 0} onClick={() => goGroup(group - 1)} aria-label="Về nhóm trước">
             ◀ <span className="hidden sm:inline">Nhóm trước</span>
           </button>
