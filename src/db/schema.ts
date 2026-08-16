@@ -415,6 +415,8 @@ export const categoryQuestions = pgTable(
     category: varchar("category", { length: 128 }).notNull(),
     question: text("question").notNull(),
     answer: text("answer").notNull().default(""),
+    phonetic: varchar("phonetic", { length: 128 }),
+    vnMeaning: text("vn_meaning"),
     order: integer("order").notNull().default(0),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),

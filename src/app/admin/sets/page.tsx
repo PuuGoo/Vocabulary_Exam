@@ -125,8 +125,12 @@ export default function AdminSetsPage() {
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
   const [editQuestionText, setEditQuestionText] = useState("");
   const [editAnswerText, setEditAnswerText] = useState("");
+  const [editPhonetic, setEditPhonetic] = useState("");
+  const [editVnMeaning, setEditVnMeaning] = useState("");
   const [newQuestionText, setNewQuestionText] = useState("");
   const [newAnswerText, setNewAnswerText] = useState("");
+  const [newPhonetic, setNewPhonetic] = useState("");
+  const [newVnMeaning, setNewVnMeaning] = useState("");
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [collapsedQuestions, setCollapsedQuestions] = useState<Set<number>>(new Set());
 
@@ -363,7 +367,7 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/admin/category-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category: selectedCategory, question: newQuestionText.trim(), answer: newAnswerText.trim() }),
+        body: JSON.stringify({ category: selectedCategory, question: newQuestionText.trim(), answer: newAnswerText.trim(), phonetic: newPhonetic.trim() || null, vnMeaning: newVnMeaning.trim() || null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể thêm câu hỏi.");
@@ -382,7 +386,7 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/admin/category-questions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, question: editQuestionText.trim(), answer: editAnswerText.trim() }),
+        body: JSON.stringify({ id, question: editQuestionText.trim(), answer: editAnswerText.trim(), phonetic: editPhonetic.trim() || null, vnMeaning: editVnMeaning.trim() || null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể lưu câu hỏi.");
@@ -1138,7 +1142,14 @@ export default function AdminSetsPage() {
               <textarea className={`${cx.input} !mb-0 min-h-[80px]`} placeholder="Describe a time when you..." value={newQuestionText} onChange={(event) => setNewQuestionText(event.target.value)} />
             </div>
             <div className="mb-3">
-              <label className={cx.label}>Câu trả lời mẫu — gợi ý cho học sinh (hỗ trợ Markdown)</label>
+                          <div className="mb-3">
+              <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
+              <input className={`${cx.input} !mb-0`} placeholder="/wɜːd/" value={newPhonetic} onChange={(event) => setNewPhonetic(event.target.value)} />
+            </div>
+            <div className="mb-3">
+              <label className={cx.label}>Nghĩa tiếng Việt (không bắt buộc)</label>
+              <input className={`${cx.input} !mb-0`} placeholder="Một trải nghiệm mà tôi nhớ đến là..." value={newVnMeaning} onChange={(event) => setNewVnMeaning(event.target.value)} />
+            </div><label className={cx.label}>Câu trả lời mẫu — gợi ý cho học sinh (hỗ trợ Markdown)</label>
               <textarea className={`${cx.input} !mb-0 min-h-[120px]`} placeholder="One experience that comes to mind is..." value={newAnswerText} onChange={(event) => setNewAnswerText(event.target.value)} />
             </div>
             <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={savingQuestion || !newQuestionText.trim()} onClick={addCategoryQuestion}>
@@ -1186,7 +1197,7 @@ export default function AdminSetsPage() {
                           </div>
                         )}
                         <div className="mt-2 flex gap-2">
-                          <button className="text-xs font-bold text-[#6550DB] hover:underline" onClick={() => { setEditingQuestionId(q.id); setEditQuestionText(q.question); setEditAnswerText(q.answer || ""); }}>Sửa</button>
+                          <button className="text-xs font-bold text-[#6550DB] hover:underline" onClick={() => { setEditingQuestionId(q.id); setEditQuestionText(q.question); setEditAnswerText(q.answer || ""); setEditPhonetic(q.phonetic || ""); setEditVnMeaning(q.vnMeaning || ""); }}>Sửa</button>
                           <button className="text-xs font-bold text-bad hover:underline" onClick={() => deleteCategoryQuestion(q.id)}>Xóa</button>
                         </div>
                       </div>
