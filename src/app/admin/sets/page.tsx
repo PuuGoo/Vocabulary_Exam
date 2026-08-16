@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
@@ -100,6 +100,10 @@ export default function AdminSetsPage() {
   const [bulkDeletingSets, setBulkDeletingSets] = useState(false);
   const [bulkDeletingWords, setBulkDeletingWords] = useState(false);
   const [reorderingSets, setReorderingSets] = useState(false);
+  const [moveTargetSetId, setMoveTargetSetId] = useState("");
+  const [movingWords, setMovingWords] = useState(false);
+  const [focusedWordId, setFocusedWordId] = useState<number | null>(null);
+  const wordRowRefs = useRef(new Map<number, HTMLTableRowElement>()).current;
   const [exportingSetId, setExportingSetId] = useState<number | null>(null);
   const [categoryDocuments, setCategoryDocuments] = useState<CategoryDocument[]>([]);
   const [documentQuery, setDocumentQuery] = useState("");
@@ -175,6 +179,11 @@ export default function AdminSetsPage() {
       word.term, word.meaning, word.v1, word.v2, word.v3, word.example,
     ].filter(Boolean).join(" ")).includes(query));
   }, [detail, detailWordQuery]);
+  const compatibleMoveTargets = useMemo(() => {
+    if (!sets || !detail) return [];
+    return sets.filter((set) => set.id !== detail.id && set.type === detail.type)
+      .sort((left, right) => left.name.localeCompare(right.name, "vi", { numeric: true, sensitivity: "base" }));
+  }, [detail, sets]);
   const hasAggregatedCategoryDocuments = useMemo(
     () => categoryDocuments.some((document) => document.category !== selectedCategory),
     [categoryDocuments, selectedCategory],
@@ -628,6 +637,22 @@ export default function AdminSetsPage() {
       .map((item) => item.id);
   }
 
+  function moveSetByOffset(setId: number, offset: -1 | 1) {
+    const ordered = currentCategorySetIds();
+    const currentIndex = ordered.indexOf(setId);
+    const targetIndex = currentIndex + offset;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
+    [ordered[currentIndex], ordered[targetIndex]] = [ordered[targetIndex], ordered[currentIndex]];
+    void saveSetOrder(ordered);
+  }
+
+  function autoSortSetIds() {
+    if (!sets) return [];
+    return sets.filter((item) => item.category === selectedCategory)
+      .sort((left, right) => left.name.localeCompare(right.name, "vi", { numeric: true, sensitivity: "base" }))
+      .map((item) => item.id);
+  }
+
   function dropSetBefore(targetId: number) {
     if (draggingSetId === null || draggingSetId === targetId) return;
     const ordered = currentCategorySetIds().filter((id) => id !== draggingSetId);
@@ -673,7 +698,7 @@ export default function AdminSetsPage() {
     finally { setExportingSetId(null); }
   }
 
-  async function openDetail(id: number) {
+  async function openDetail(id: number, focusWordId?: number) {
     setPreviewSetId(null);
     setOpeningDetailId(id);
     try {
@@ -681,6 +706,7 @@ export default function AdminSetsPage() {
       if (!res.ok) return toast("Không thể mở bộ từ vựng.");
       const data = await res.json();
       setDetail(data.set);
+      setFocusedWordId(focusWordId ?? null);
       setEditSetName(data.set.name);
       setEditCategory(data.set.category || "");
       setDetailWordQuery("");
@@ -692,6 +718,39 @@ export default function AdminSetsPage() {
     } finally {
       setOpeningDetailId(null);
     }
+  }
+
+  useEffect(() => {
+    if (!detail || focusedWordId === null) return;
+    const timer = window.setTimeout(() => {
+      const row = wordRowRefs.get(focusedWordId);
+      row?.scrollIntoView({ behavior: "smooth", block: "center" });
+      row?.focus({ preventScroll: true });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [detail, focusedWordId, wordRowRefs]);
+
+  async function moveSelectedWords() {
+    if (!detail || selectedWordIds.length === 0 || !moveTargetSetId || movingWords) return;
+    const target = compatibleMoveTargets.find((set) => set.id === Number(moveTargetSetId));
+    if (!target) return;
+    if (!confirm(`Di chuyển ${selectedWordIds.length} từ từ “${detail.name}” sang “${target.name}”?`)) return;
+    setMovingWords(true);
+    try {
+      const res = await fetch("/api/admin/words/bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedWordIds, targetSetId: target.id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể di chuyển các từ đã chọn.");
+      setDetail((current) => current ? { ...current, words: current.words.filter((word) => !selectedWordIds.includes(word.id)) } : current);
+      setSelectedWordIds([]);
+      setMoveTargetSetId("");
+      await loadSets();
+      toast(`Đã di chuyển ${data.moved} từ sang “${target.name}”.`);
+    } catch { toast("Không thể kết nối để di chuyển từ."); }
+    finally { setMovingWords(false); }
   }
 
   async function navigateToSibling(id: number) {
@@ -786,6 +845,7 @@ export default function AdminSetsPage() {
     if (showAddWord || editingWordId !== null) return;
     if (detail && editSetName.trim() !== detail.name && !confirm("Tên bộ từ chưa được lưu. Bạn có muốn đóng và bỏ thay đổi?")) return;
     setDetail(null);
+    setFocusedWordId(null);
     setDetailWordQuery("");
   }
 
@@ -1011,7 +1071,7 @@ export default function AdminSetsPage() {
                     <button
                       type="button"
                       className={`${cx.btn} ${cx.btnGhost} shrink-0 !px-2.5 !py-1.5 text-xs`}
-                      onClick={() => void openDetail(match.setId)}
+                      onClick={() => void openDetail(match.setId, match.wordId)}
                     >
                       Mở bộ
                     </button>
@@ -1166,7 +1226,7 @@ export default function AdminSetsPage() {
             Chọn tất cả ({filteredSets.length})
           </label>
           {selectedSetIds.length > 0 && <><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">Đã chọn {selectedSetIds.length}</span><button type="button" className={`${cx.btn} ${cx.btnDanger} !min-h-10 !px-3 !py-1.5`} disabled={bulkDeletingSets} onClick={() => void deleteSelectedSets()}>{bulkDeletingSets ? "Đang xóa…" : `Xóa ${selectedSetIds.length} bộ`}</button><button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-10 !px-3 !py-1.5`} onClick={() => setSelectedSetIds([])}>Bỏ chọn</button></>}
-          {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <button type="button" className={`${cx.btn} ${cx.btnGhost} ml-auto !min-h-10 !px-3 !py-1.5`} disabled={reorderingSets} onClick={() => void saveSetOrder(currentCategorySetIds())}>{reorderingSets ? "Đang lưu thứ tự…" : "↕ Sắp xếp theo tiền tố"}</button>}
+          {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <button type="button" className={`${cx.btn} ${cx.btnGhost} ml-auto !min-h-10 !px-3 !py-1.5`} disabled={reorderingSets} onClick={() => void saveSetOrder(autoSortSetIds())}>{reorderingSets ? "Đang sắp xếp…" : "Sắp xếp tự động theo tiền tố"}</button>}
         </div>
       )}
 
@@ -1184,14 +1244,12 @@ export default function AdminSetsPage() {
           <div
             className={`${cx.setcard} ${draggingSetId === s.id ? "opacity-60 ring-2 ring-[#7865EE]/30" : ""} ${dragOverSetId === s.id ? "border-[#7865EE] shadow-[0_-3px_0_#7865EE]" : ""}`}
             key={s.id}
-            draggable={selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && !reorderingSets}
-            onDragStart={(event) => { setDraggingSetId(s.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(s.id)); }}
             onDragOver={(event) => { if (draggingSetId !== null && draggingSetId !== s.id && selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverSetId(s.id); } }}
             onDragLeave={() => setDragOverSetId((current) => current === s.id ? null : current)}
             onDrop={(event) => { event.preventDefault(); dropSetBefore(s.id); }}
-            onDragEnd={() => { setDraggingSetId(null); setDragOverSetId(null); }}
           >
             <div className="flex min-w-0 items-start gap-3">
+              {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <div className="flex shrink-0 flex-col items-center gap-1"><button type="button" draggable={!reorderingSets} onDragStart={(event) => { setDraggingSetId(s.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(s.id)); }} onDragEnd={() => { setDraggingSetId(null); setDragOverSetId(null); }} className="flex h-10 w-10 cursor-grab items-center justify-center rounded-lg border border-line bg-white text-lg text-muted active:cursor-grabbing" aria-label={`Kéo để sắp xếp ${s.name}`} title="Kéo để đổi vị trí">⠿</button><div className="flex gap-1"><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingSets || currentCategorySetIds()[0] === s.id} onClick={() => moveSetByOffset(s.id, -1)} aria-label={`Đưa ${s.name} lên`}>↑</button><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingSets || currentCategorySetIds().at(-1) === s.id} onClick={() => moveSetByOffset(s.id, 1)} aria-label={`Đưa ${s.name} xuống`}>↓</button></div></div>}
               <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 accent-[#7865EE]" aria-label={`Chọn bộ ${s.name}`} checked={selectedSetIds.includes(s.id)} onChange={(event) => setSelectedSetIds((current) => event.target.checked ? [...current, s.id] : current.filter((id) => id !== s.id))} />
               <div className="min-w-0"><div className="font-semibold">{s.name}</div>
               <div className="text-[0.78rem] text-muted mt-0.5">
@@ -1408,7 +1466,7 @@ export default function AdminSetsPage() {
           </div>
           {detail.words.length > 0 && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-[#FBFAFE] p-2.5">
             <label className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-xs font-bold"><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" checked={filteredDetailWords.length > 0 && filteredDetailWords.every((word) => selectedWordIds.includes(word.id))} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...new Set([...current, ...filteredDetailWords.map((word) => word.id)])] : current.filter((id) => !filteredDetailWords.some((word) => word.id === id)))} />Chọn tất cả từ đang hiển thị ({filteredDetailWords.length})</label>
-            {selectedWordIds.length > 0 && <><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">Đã chọn {selectedWordIds.length}</span><button type="button" className={`${cx.btn} ${cx.btnDanger} !min-h-10 !px-3 !py-1.5`} disabled={bulkDeletingWords} onClick={() => void deleteSelectedWords()}>{bulkDeletingWords ? "Đang xóa…" : `Xóa ${selectedWordIds.length} từ`}</button><button type="button" className="min-h-10 px-2 text-xs font-bold text-muted hover:text-ink" onClick={() => setSelectedWordIds([])}>Bỏ chọn</button></>}
+            {selectedWordIds.length > 0 && <><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">Đã chọn {selectedWordIds.length}</span><select className={`${cx.input} !mb-0 !min-h-10 !w-auto`} value={moveTargetSetId} onChange={(event) => setMoveTargetSetId(event.target.value)} aria-label="Chọn bộ từ đích"><option value="">Di chuyển sang...</option>{compatibleMoveTargets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select><button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-10 !px-3 !py-1.5`} disabled={movingWords || !moveTargetSetId} onClick={() => void moveSelectedWords()}>{movingWords ? "Đang chuyển..." : "Di chuyển"}</button><button type="button" className={`${cx.btn} ${cx.btnDanger} !min-h-10 !px-3 !py-1.5`} disabled={bulkDeletingWords} onClick={() => void deleteSelectedWords()}>{bulkDeletingWords ? "Đang xóa…" : `Xóa ${selectedWordIds.length} từ`}</button><button type="button" className="min-h-10 px-2 text-xs font-bold text-muted hover:text-ink" onClick={() => setSelectedWordIds([])}>Bỏ chọn</button></>}
           </div>}
 
           {showAddWord && (
@@ -1514,7 +1572,7 @@ export default function AdminSetsPage() {
               </thead>
               <tbody>
                 {filteredDetailWords.map((w) => (
-                  <tr key={w.id} className={selectedWordIds.includes(w.id) ? "bg-[#F5F2FF]" : "hover:bg-goldpale/30"}>
+                  <tr key={w.id} ref={(element) => { if (element) wordRowRefs.set(w.id, element); else wordRowRefs.delete(w.id); }} tabIndex={focusedWordId === w.id ? -1 : undefined} className={`${selectedWordIds.includes(w.id) ? "bg-[#F5F2FF]" : "hover:bg-goldpale/30"} ${focusedWordId === w.id ? "ring-2 ring-inset ring-[#7865EE]" : ""}`}>
                     <td className={cx.td}><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" aria-label={`Chọn ${w.term || w.v1 || w.meaning}`} checked={selectedWordIds.includes(w.id)} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...current, w.id] : current.filter((id) => id !== w.id))} /></td>
                     {detail.type === "irregular_verb" ? (
                       <>
