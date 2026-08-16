@@ -196,8 +196,7 @@ function WritingInner() {
         {/* Reference: English sentence to write */}
         {!submitted && (
           <div className="mb-4 rounded-xl border border-dashed border-[#CFC7FF] bg-[#F8F6FF] p-3">
-            <div className="text-xs font-bold text-muted mb-1">Hãy viết câu tiếng Anh sau</div>
-            <div className="text-sm font-medium text-[#6550DB]">{current?.targetSentence}</div>
+            <div className="text-xs font-bold text-muted mb-1">Dựa vào nghĩa tiếng Việt bên trên, hãy viết câu tiếng Anh</div>
           </div>
         )}
 
