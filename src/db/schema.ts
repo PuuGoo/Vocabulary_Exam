@@ -407,4 +407,21 @@ export type WordProgress = typeof wordProgress.$inferSelect;
 export type WordBookmark = typeof wordBookmarks.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type LearningGoal = typeof learningGoals.$inferSelect;
+
+export const categoryQuestions = pgTable(
+  "category_questions",
+  {
+    id: serial("id").primaryKey(),
+    category: varchar("category", { length: 128 }).notNull(),
+    question: text("question").notNull(),
+    answer: text("answer").notNull().default(""),
+    order: integer("order").notNull().default(0),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    categoryIdx: index("category_questions_category_idx").on(table.category),
+  })
+);
 export type DailyActivity = typeof dailyActivities.$inferSelect;
