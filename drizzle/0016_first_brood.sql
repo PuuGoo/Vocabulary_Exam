@@ -1,0 +1,1 @@
+ALTER TABLE "category_questions" ALTER COLUMN "phonetic" SET DATA TYPE text;

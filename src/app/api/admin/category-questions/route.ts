@@ -10,7 +10,7 @@ const createSchema = z.object({
   category: z.string().trim().min(1).max(128),
   question: z.string().trim().min(1).max(4096),
   answer: z.string().trim().max(8192).default(""),
-  phonetic: z.string().trim().max(128).nullable().optional(),
+  phonetic: z.string().trim().max(2048).nullable().optional(),
   vnMeaning: z.string().trim().max(2048).nullable().optional(),
   order: z.number().int().nonnegative().default(0),
 });
@@ -18,7 +18,7 @@ const updateSchema = z.object({
   id: z.number().int().positive(),
   question: z.string().trim().min(1).max(4096).optional(),
   answer: z.string().trim().max(8192).optional(),
-  phonetic: z.string().trim().max(128).nullable().optional(),
+  phonetic: z.string().trim().max(2048).nullable().optional(),
   vnMeaning: z.string().trim().max(2048).nullable().optional(),
   order: z.number().int().nonnegative().optional(),
 });
@@ -36,7 +36,7 @@ async function ensureTable() {
       "category" varchar(128) NOT NULL,
       "question" text NOT NULL,
       "answer" text DEFAULT '' NOT NULL,
-      "phonetic" varchar(128),
+      "phonetic" text,
       "vn_meaning" text,
       "order" integer DEFAULT 0 NOT NULL,
       "created_by" integer,
