@@ -1200,6 +1200,7 @@ export default function AdminSetsPage() {
                         )}
                         <div className="mt-2 flex gap-2">
                           <button className="text-xs font-bold text-[#6550DB] hover:underline" onClick={() => { setEditingQuestionId(q.id); setEditQuestionText(q.question); setEditAnswerText(q.answer || ""); setEditPhonetic(q.phonetic || ""); setEditVnMeaning(q.vnMeaning || ""); }}>Sửa</button>
+                          <a href={`/writing?category=${encodeURIComponent(selectedCategory)}`} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-green-700 hover:underline ml-2">Luyện viết</a>
                           <button className="text-xs font-bold text-bad hover:underline" onClick={() => deleteCategoryQuestion(q.id)}>Xóa</button>
                         </div>
                       </div>
