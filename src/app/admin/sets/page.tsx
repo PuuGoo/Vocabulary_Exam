@@ -119,7 +119,16 @@ export default function AdminSetsPage() {
   const [editDocumentFileName, setEditDocumentFileName] = useState("");
   const [savingDocumentName, setSavingDocumentName] = useState(false);
   const [replacingDocumentId, setReplacingDocumentId] = useState<number | null>(null);
-  const [documentPreviewVersion, setDocumentPreviewVersion] = useState(0);
+    const [documentPreviewVersion, setDocumentPreviewVersion] = useState(0);
+  const [categoryQuestions, setCategoryQuestions] = useState<any[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
+  const [editQuestionText, setEditQuestionText] = useState("");
+  const [editAnswerText, setEditAnswerText] = useState("");
+  const [newQuestionText, setNewQuestionText] = useState("");
+  const [newAnswerText, setNewAnswerText] = useState("");
+  const [savingQuestion, setSavingQuestion] = useState(false);
+  const [collapsedQuestions, setCollapsedQuestions] = useState<Set<number>>(new Set());
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -335,6 +344,95 @@ export default function AdminSetsPage() {
     }
   }
 
+  async function refreshCategoryQuestions() {
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) { setCategoryQuestions([]); return; }
+    setQuestionsLoading(true);
+    try {
+      const res = await fetch(`/api/admin/category-questions?category=${encodeURIComponent(selectedCategory)}`);
+      if (!res.ok) { setCategoryQuestions([]); return; }
+      const data = await res.json();
+      setCategoryQuestions(data.questions || []);
+    } catch { setCategoryQuestions([]); }
+    finally { setQuestionsLoading(false); }
+  }
+
+  async function addCategoryQuestion() {
+    if (!newQuestionText.trim() || savingQuestion) return;
+    setSavingQuestion(true);
+    try {
+      const res = await fetch("/api/admin/category-questions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: selectedCategory, question: newQuestionText.trim(), answer: newAnswerText.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể thêm câu hỏi.");
+      await refreshCategoryQuestions();
+      setNewQuestionText("");
+      setNewAnswerText("");
+      toast("Đã Thêm câu hỏi Speaking.");
+    } catch { toast("Không thể kết nối."); }
+    finally { setSavingQuestion(false); }
+  }
+
+  async function saveQuestionEdit(id: number) {
+    if (!editQuestionText.trim() || savingQuestion) return;
+    setSavingQuestion(true);
+    try {
+      const res = await fetch("/api/admin/category-questions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, question: editQuestionText.trim(), answer: editAnswerText.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return toast(data.error || "Không thể lưu câu hỏi.");
+      setCategoryQuestions((current) => current.map((q) => q.id === id ? data.question : q));
+      setEditingQuestionId(null);
+      toast("Đã lưu câu hỏi.");
+    } catch { toast("Không thể kết nối."); }
+    finally { setSavingQuestion(false); }
+  }
+
+  async function deleteCategoryQuestion(id: number) {
+    if (!confirm("Xóa câu hỏi này?")) return;
+    try {
+      const res = await fetch("/api/admin/category-questions", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [id] }),
+      });
+      if (!res.ok) return toast("Không thể xóa câu hỏi.");
+      setCategoryQuestions((current) => current.filter((q) => q.id !== id));
+      if (editingQuestionId === id) setEditingQuestionId(null);
+      toast("Đã xóa câu hỏi.");
+    } catch { toast("Không thể kết nối."); }
+  }
+
+  async function moveQuestionOrder(id: number, direction: -1 | 1) {
+    const ordered = categoryQuestions.map((q) => q.id);
+    const currentIndex = ordered.indexOf(id);
+    const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= ordered.length) return;
+    [ordered[currentIndex], ordered[targetIndex]] = [ordered[targetIndex], ordered[currentIndex]];
+    try {
+      const res = await fetch("/api/admin/category-questions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category: selectedCategory, orderedIds: ordered }),
+      });
+      if (!res.ok) return toast("Không thể sắp xếp câu hỏi.");
+      const data = await res.json();
+      setCategoryQuestions(data.questions || []);
+    } catch { toast("Không thể kết nối."); }
+  }
+
+  function toggleQuestionCollapse(id: number) {
+    setCollapsedQuestions((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
   async function refreshCategoryDocuments() {
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) return;
     const res = await fetch(`/api/admin/category-documents?category=${encodeURIComponent(selectedCategory)}`);
@@ -388,13 +486,14 @@ export default function AdminSetsPage() {
     setViewingDocument(null);
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) {
       setCategoryDocuments([]);
+      setCategoryQuestions([]);
       return;
     }
     const controller = new AbortController();
     setDocumentsLoading(true);
     fetch(`/api/admin/category-documents?category=${encodeURIComponent(selectedCategory)}`, { signal: controller.signal })
       .then(async (res) => { if (!res.ok) throw new Error(); return res.json(); })
-      .then((data) => setCategoryDocuments(data.documents || []))
+      .then((data) => { setCategoryDocuments(data.documents || []); void refreshCategoryQuestions(); })
       .catch((error) => { if ((error as Error).name !== "AbortError") toast("Không thể tải tài liệu PDF."); })
       .finally(() => { if (!controller.signal.aborted) setDocumentsLoading(false); });
     return () => controller.abort();
@@ -1024,6 +1123,79 @@ export default function AdminSetsPage() {
               <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><label className={`${cx.btn} ${cx.btnGhost} cursor-pointer !px-3 !py-1.5 ${replacingDocumentId !== null ? "pointer-events-none opacity-50" : ""}`}>{replacingDocumentId === document.id ? "Đang thay..." : "Thay file"}<input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={replacingDocumentId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void replaceCategoryDocument(document, file); }} /></label><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
           </div>}
+        </section>
+      )}
+
+      {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
+        <section className="mb-5 rounded-[14px] border border-line bg-white p-4">
+          <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+            <div><h3 className="text-sm font-bold text-ink">Câu hỏi IELTS Speaking</h3><p className="mt-1 text-xs text-muted">Đặt câu hỏi và ghi câu trả lời mẫu. Học sinh sẽ luyện nói và xem gợi ý trả lời.</p></div>
+            <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span>
+          </div>
+          <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-3">
+            <div className="mb-3">
+              <label className={cx.label}>Câu hỏi (hỗ trợ Markdown)</label>
+              <textarea className={`${cx.input} !mb-0 min-h-[80px]`} placeholder="Describe a time when you..." value={newQuestionText} onChange={(event) => setNewQuestionText(event.target.value)} />
+            </div>
+            <div className="mb-3">
+              <label className={cx.label}>Câu trả lời mẫu — gợi ý cho học sinh (hỗ trợ Markdown)</label>
+              <textarea className={`${cx.input} !mb-0 min-h-[120px]`} placeholder="One experience that comes to mind is..." value={newAnswerText} onChange={(event) => setNewAnswerText(event.target.value)} />
+            </div>
+            <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={savingQuestion || !newQuestionText.trim()} onClick={addCategoryQuestion}>
+              {savingQuestion ? "Đang thêm..." : "+ Thêm câu hỏi Speaking"}
+            </button>
+          </div>
+          {questionsLoading ? <p className="text-xs text-muted">Đang tải câu hỏi...</p> : categoryQuestions.length === 0 ? (
+            <p className="text-sm text-muted">Thư mục này chưa có câu hỏi nào. Hãy thêm câu hỏi IELTS Speaking ở phía trên.</p>
+          ) : (
+            <div className="space-y-3">
+              {categoryQuestions.map((q, index) => {
+                const isEditing = editingQuestionId === q.id;
+                const isCollapsed = collapsedQuestions.has(q.id);
+                return (
+                  <article key={q.id} className={`rounded-xl border ${isEditing ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line bg-[#FBFAFE]"} p-3`}>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-xs font-bold text-[#6550DB]">{index + 1}</span>
+                        <span className="text-xs font-bold text-muted">Câu hỏi #{q.id}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={index === 0} onClick={() => moveQuestionOrder(q.id, -1)} aria-label="Lên trước">↑</button>
+                        <button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={index === categoryQuestions.length - 1} onClick={() => moveQuestionOrder(q.id, 1)} aria-label="Xuống sau">↓</button>
+                        <button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs" onClick={() => toggleQuestionCollapse(q.id)} aria-label={isCollapsed ? "Mở rộng" : "Thu gọn"}>
+                          {isCollapsed ? "▶" : "▼"}
+                        </button>
+                      </div>
+                    </div>
+                    {isEditing ? (
+                      <div className="space-y-2">
+                        <textarea className={`${cx.input} !mb-0 min-h-[80px]`} value={editQuestionText} onChange={(event) => setEditQuestionText(event.target.value)} />
+                        <textarea className={`${cx.input} !mb-0 min-h-[100px]`} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
+                        <div className="flex gap-2">
+                          <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} disabled={savingQuestion || !editQuestionText.trim()} onClick={() => saveQuestionEdit(q.id)}>{savingQuestion ? "Đang lưu..." : "Lưu"}</button>
+                          <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setEditingQuestionId(null); }}>Hủy</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="prose prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap">{q.question}</div>
+                        {q.answer && !isCollapsed && (
+                          <div className="mt-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2">
+                            <div className="mb-1 text-[0.7rem] font-bold uppercase tracking-wider text-golddark">Gợi ý trả lời mẫu</div>
+                            <div className="prose prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap">{q.answer}</div>
+                          </div>
+                        )}
+                        <div className="mt-2 flex gap-2">
+                          <button className="text-xs font-bold text-[#6550DB] hover:underline" onClick={() => { setEditingQuestionId(q.id); setEditQuestionText(q.question); setEditAnswerText(q.answer || ""); }}>Sửa</button>
+                          <button className="text-xs font-bold text-bad hover:underline" onClick={() => deleteCategoryQuestion(q.id)}>Xóa</button>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       )}
 
