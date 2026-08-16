@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { categoryQuestions } from "@/db/schema";
@@ -24,12 +24,31 @@ const reorderSchema = z.object({
   orderedIds: z.array(z.number().int().positive()).min(1).max(500),
 });
 
+
+async function ensureTable() {
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "category_questions" (
+      "id" serial PRIMARY KEY NOT NULL,
+      "category" varchar(128) NOT NULL,
+      "question" text NOT NULL,
+      "answer" text DEFAULT '' NOT NULL,
+      "order" integer DEFAULT 0 NOT NULL,
+      "created_by" integer,
+      "created_at" timestamp DEFAULT now() NOT NULL,
+      "updated_at" timestamp DEFAULT now() NOT NULL
+    );
+  `);
+  try {
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS "category_questions_category_idx" ON "category_questions" USING btree ("category");`);
+  } catch { /* index may already exist */ }
+}
 async function requireAdmin() {
   const session = await getSession();
   return session?.role === "admin" ? session : null;
 }
 
 export async function GET(request: NextRequest) {
+  await ensureTable();
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { searchParams } = new URL(request.url);
   const parsed = listSchema.safeParse({ category: searchParams.get("category") });
@@ -43,6 +62,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  await ensureTable();
   const session = await requireAdmin();
   if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
@@ -63,6 +83,7 @@ export async function POST(request: NextRequest) {
 
 
 export async function PATCH(request: NextRequest) {
+  await ensureTable();
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu cập nhật không hợp lệ." }, { status: 400 });
@@ -78,6 +99,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  await ensureTable();
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await request.json().catch(() => null);
   const parsed = deleteSchema.safeParse(body);
@@ -88,6 +110,7 @@ export async function DELETE(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  await ensureTable();
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = reorderSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu sắp xếp không hợp lệ." }, { status: 400 });
