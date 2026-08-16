@@ -197,6 +197,7 @@ function WritingInner() {
         {!submitted && (
           <div className="mb-4 rounded-xl border border-dashed border-[#CFC7FF] bg-[#F8F6FF] p-3">
             <div className="text-xs font-bold text-muted mb-1">Dựa vào nghĩa tiếng Việt bên trên, hãy viết câu tiếng Anh</div>
+            <div className="text-sm font-semibold text-ink mt-1">{current?.vnMeaning ? splitSentences(current.fullAnswer).length > 0 ? splitSentences(current.vnMeaning)[current.sentenceIndex] || current.vnMeaning : current.vnMeaning : "Chưa có nghĩa tiếng Việt"}</div>
           </div>
         )}
 
