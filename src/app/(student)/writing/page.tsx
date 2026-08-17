@@ -240,9 +240,9 @@ function WritingInner() {
   function saveDraftNow() {
     try {
       localStorage.setItem(draftKey, JSON.stringify({
-        scores,
-        attempts,
-        currentIndex,
+        scores: scoresRef.current,
+        attempts: attemptsRef.current,
+        currentIndex: currentIndexRef.current,
         elapsed,
         savedAt: Date.now(),
       }));
@@ -258,12 +258,13 @@ function WritingInner() {
     const idx = currentIndexRef.current;
     setScores((prev) => ({ ...prev, [idx]: result.score }));
     setAttempts((prev) => ({ ...prev, [idx]: (prev[idx] || 0) + 1 }));
-    // Save immediately so F5 does not lose progress
-    setTimeout(() => saveDraftNow(), 50);
+    // Update refs immediately then save so F5 never loses progress
+    scoresRef.current = { ...scoresRef.current, [idx]: result.score };
+    attemptsRef.current = { ...attemptsRef.current, [idx]: (attemptsRef.current[idx] || 0) + 1 };
+    saveDraftNow();
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }, [current]);
-
-  const nextSentence = useCallback(() => {
+const nextSentence = useCallback(() => {
     if (currentIndex < displayExercises.length - 1) {
       setCurrentIndex((i) => i + 1);
       setUserAnswer("");
