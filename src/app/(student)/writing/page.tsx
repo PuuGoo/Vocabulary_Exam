@@ -32,21 +32,24 @@ type CategoryOpt = {
 
 const DRAFT_KEY_PREFIX = "lexora-writing-draft-";
 
+function stripPunct(s: string) {
+  return s.replace(/[.,!?;:()""''\[\]{}«»]/g, "");
+}
+
 function norm(s: string) {
-  return s.trim().toLowerCase().replace(/\s+/g, " ").replace(/[.,!?;:()""''""\[\]{}]/g, "").trim();
+  return stripPunct(s).trim().toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function splitSentences(text: string): string[] {
   return text
     .split(/\.\s+/)
-    .map((s) => s.replace(/^[^a-zA-ZÀ-ỹ0-9]/g, "").trim())
+    .map((s) => s.replace(/^[^a-zA-ZÀ-ỹ0-9]/g, "").replace(/\.?$/, "").trim())
     .filter((s) => s.length > 0);
 }
 
 function tokenize(s: string): string[] {
-  return s.trim().toLowerCase().replace(/[.,!?;:()""''""\[\]{}]/g, "").split(/\s+/).filter(Boolean);
+  return stripPunct(s).trim().toLowerCase().split(/\s+/).filter(Boolean);
 }
-
 function sentenceMatchScore(userSentence: string, sampleSentence: string): {
   score: number;
   userTokens: { word: string; matched: boolean }[];
