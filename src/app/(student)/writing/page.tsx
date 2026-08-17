@@ -103,6 +103,7 @@ function WritingInner() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
+  const [savedAnswers, setSavedAnswers] = useState<Record<number, string>>({});
   const [submitted, setSubmitted] = useState(false);
   const [matchResult, setMatchResult] = useState<{
     score: number;
@@ -273,27 +274,27 @@ function WritingInner() {
   }, [current, retryMode, exercises]);
 const nextSentence = useCallback(() => {
     if (currentIndex < displayExercises.length - 1) {
+      setSavedAnswers((prev) => ({ ...prev, [currentIndex]: userAnswer }));
       setCurrentIndex((i) => i + 1);
-      setUserAnswer("");
       setSubmitted(false);
       submittedRef.current = false;
       setMatchResult(null);
       setShowAnswer(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
-  }, [currentIndex, displayExercises.length]);
+  }, [currentIndex, displayExercises.length, userAnswer]);
 
   const prevSentence = useCallback(() => {
     if (currentIndex > 0) {
+      setSavedAnswers((prev) => ({ ...prev, [currentIndex]: userAnswer }));
       setCurrentIndex((i) => i - 1);
-      setUserAnswer("");
       setSubmitted(false);
       submittedRef.current = false;
       setMatchResult(null);
       setShowAnswer(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
-  }, [currentIndex]);
+  }, [currentIndex, userAnswer]);
 
   const resetCurrent = useCallback(() => {
     setSubmitted(false);
@@ -312,14 +313,36 @@ const nextSentence = useCallback(() => {
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, [retryMode, current, exercises, currentIndex]);
 
+  // Restore saved answer when navigating
+  useEffect(() => {
+    const saved = savedAnswers[currentIndex];
+    if (saved !== undefined) {
+      setUserAnswer(saved);
+      setSubmitted(true);
+      submittedRef.current = true;
+      // Use exercises array directly since current may not be updated yet
+      const target = exercises[currentIndex];
+      if (target) {
+        const result = sentenceMatchScore(saved, target.targetSentence);
+        setMatchResult(result);
+        scoresRef.current = { ...scoresRef.current, [currentIndex]: result.score };
+      }
+    } else {
+      setUserAnswer("");
+      setSubmitted(false);
+      submittedRef.current = false;
+      setMatchResult(null);
+    }
+  }, [currentIndex, exercises, savedAnswers]);
   const jumpTo = useCallback((index: number) => {
+    // Save current answer before navigating
+    setSavedAnswers((prev) => ({ ...prev, [currentIndex]: userAnswer }));
     setCurrentIndex(index);
-    setUserAnswer("");
     setSubmitted(false);
     submittedRef.current = false;
     setMatchResult(null);
     setShowAnswer(false);
-  }, []);
+  }, [currentIndex, userAnswer]);
 
   function selectCategory(value: string) {
     router.push(`/writing?category=${encodeURIComponent(value)}`);
@@ -382,22 +405,16 @@ const nextSentence = useCallback(() => {
   // Keyboard: Ctrl+Enter submit, Arrow keys navigate
   useEffect(() => {
     function handleGlobalKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        if (e.key === "ArrowLeft" || e.key === "ArrowRight") return; // let native cursor work
+      if (e.key === "Escape" && document.activeElement instanceof HTMLTextAreaElement) {
+        (document.activeElement as HTMLTextAreaElement).blur();
+        return;
       }
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !submittedRef.current && userAnswerRef.current.trim()) {
         e.preventDefault();
         handleSubmit();
         return;
       }
-      // After submit, Enter to go next
-      if (e.key === "Enter" && submittedRef.current && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        if (currentIndexRef.current < displayExercises.length - 1) {
-          nextSentence();
-        }
-        return;
-      }
+
       // Arrow navigation
       if (e.key === "ArrowRight" && !submittedRef.current && currentIndexRef.current < displayExercises.length - 1) {
         e.preventDefault();
@@ -567,7 +584,7 @@ const nextSentence = useCallback(() => {
             return (
               <button
                 key={i}
-                onClick={() => { if (done || (!retryMode && i === currentIndex)) jumpTo(i); }}
+                onClick={() => jumpTo(i)}
                 className={`h-7 min-w-7 rounded-md text-[0.65rem] font-bold transition ${(active || isRetryActive) ? "bg-[#7865EE] text-white ring-2 ring-[#7865EE]/40" : done ? "hover:opacity-80" : "cursor-default"} ${bg}`}
                 title={`Câu ${i + 1}${done ? `: ${Math.round(score * 100)}%` : ""}`}
               >
