@@ -255,7 +255,11 @@ function WritingInner() {
     setMatchResult(result);
     setSubmitted(true);
     submittedRef.current = true;
-    const idx = currentIndexRef.current;
+    // Use original exercises index for scores key, even in retry mode
+    const origIdx = retryMode
+      ? exercises.findIndex((e) => e.questionId === current.questionId && e.sentenceIndex === current.sentenceIndex)
+      : currentIndexRef.current;
+    const idx = origIdx >= 0 ? origIdx : currentIndexRef.current;
     setScores((prev) => ({ ...prev, [idx]: result.score }));
     setAttempts((prev) => ({ ...prev, [idx]: (prev[idx] || 0) + 1 }));
     // Update refs immediately then save so F5 never loses progress
@@ -263,7 +267,7 @@ function WritingInner() {
     attemptsRef.current = { ...attemptsRef.current, [idx]: (attemptsRef.current[idx] || 0) + 1 };
     saveDraftNow();
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
-  }, [current]);
+  }, [current, retryMode, exercises]);
 const nextSentence = useCallback(() => {
     if (currentIndex < displayExercises.length - 1) {
       setCurrentIndex((i) => i + 1);
