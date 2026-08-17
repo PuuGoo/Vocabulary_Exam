@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
+import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { Suspense } from "react";
 
@@ -40,15 +41,17 @@ function splitSentences(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-function sentenceMatchRate(userSentence: string, sampleSentence: string): number {
+function sentenceMatchScore(userSentence: string, sampleSentence: string): { score: number; matchedWords: string[]; missedWords: string[] } {
   const u = norm(userSentence);
   const s = norm(sampleSentence);
-  if (!u || !s) return 0;
-  const uWords = u.split(/\s+/);
-  const sWords = s.split(/\s+/);
-  if (sWords.length === 0) return 0;
-  const matched = uWords.filter((w) => sWords.includes(w)).length;
-  return matched / Math.max(uWords.length, sWords.length);
+  if (!u || !s) return { score: 0, matchedWords: [], missedWords: [] };
+  const uWords = [...new Set(u.split(/\s+/))];
+  const sWords = [...new Set(s.split(/\s+/))];
+  if (sWords.length === 0) return { score: 0, matchedWords: [], missedWords: [] };
+  const matched = uWords.filter((w) => sWords.includes(w));
+  const missed = sWords.filter((w) => !uWords.includes(w));
+  const score = matched.length / Math.max(uWords.length, sWords.length);
+  return { score, matchedWords: matched, missedWords: missed };
 }
 
 export default function WritingPage() {
@@ -72,9 +75,10 @@ function WritingInner() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [matchScore, setMatchScore] = useState(0);
+  const [matchResult, setMatchResult] = useState<{ score: number; matchedWords: string[]; missedWords: string[] } | null>(null);
   const [scores, setScores] = useState<Record<number, number>>({});
   const [showAllDone, setShowAllDone] = useState(false);
+  const [showAnswer, setShowAnswer] = useState(false);
 
   const resultRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -123,9 +127,10 @@ function WritingInner() {
     setCurrentIndex(0);
     setUserAnswer("");
     setSubmitted(false);
-    setMatchScore(0);
+    setMatchResult(null);
     setScores({});
     setShowAllDone(false);
+    setShowAnswer(false);
     fetch(`/api/category-questions?category=${encodeURIComponent(category)}`)
       .then(async (res) => {
         if (!res.ok) throw new Error();
@@ -137,11 +142,11 @@ function WritingInner() {
   }, [category]);
 
   function handleSubmit() {
-    if (!current || !userAnswer.trim()) return;
-    const score = sentenceMatchRate(userAnswer, current.targetSentence);
-    setMatchScore(score);
+    if (!current || !userAnswer.trim() || submitted) return;
+    const result = sentenceMatchScore(userAnswer, current.targetSentence);
+    setMatchResult(result);
     setSubmitted(true);
-    setScores((prev) => ({ ...prev, [currentIndex]: score }));
+    setScores((prev) => ({ ...prev, [currentIndex]: result.score }));
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
@@ -150,7 +155,8 @@ function WritingInner() {
       setCurrentIndex((i) => i + 1);
       setUserAnswer("");
       setSubmitted(false);
-      setMatchScore(0);
+      setMatchResult(null);
+      setShowAnswer(false);
       textareaRef.current?.focus();
     }
   }
@@ -158,7 +164,8 @@ function WritingInner() {
   function resetCurrent() {
     setSubmitted(false);
     setUserAnswer("");
-    setMatchScore(0);
+    setMatchResult(null);
+    setShowAnswer(false);
     setScores((prev) => { const next = { ...prev }; delete next[currentIndex]; return next; });
     textareaRef.current?.focus();
   }
@@ -167,7 +174,8 @@ function WritingInner() {
     setCurrentIndex(index);
     setUserAnswer("");
     setSubmitted(false);
-    setMatchScore(0);
+    setMatchResult(null);
+    setShowAnswer(false);
   }
 
   function selectCategory(value: string) {
@@ -177,6 +185,12 @@ function WritingInner() {
   function overallScore(): number {
     if (completedCount === 0) return 0;
     return Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / completedCount * 100);
+  }
+
+  function restartAll() {
+    jumpTo(0);
+    setScores({});
+    setShowAllDone(false);
   }
 
   // --- RENDER ---
@@ -238,6 +252,7 @@ function WritingInner() {
   // All done celebration
   if (allDone && showAllDone) {
     const avg = overallScore();
+    const wrongCount = Object.entries(scores).filter(([, s]) => s < 0.7).length;
     return (
       <div className="max-w-3xl mx-auto">
         <div className={cx.panel}>
@@ -249,8 +264,11 @@ function WritingInner() {
               <span className="text-3xl font-bold text-golddark">{avg}%</span>
               <span className="text-sm text-muted">điểm trung bình</span>
             </div>
+            {wrongCount > 0 && (
+              <p className="mt-3 text-sm text-muted">{wrongCount} câu cần cải thiện (dưới 70%)</p>
+            )}
             <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { setShowAllDone(false); jumpTo(0); setScores({}); }}>
+              <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>
                 Làm lại từ đầu
               </button>
               <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>
@@ -307,7 +325,7 @@ function WritingInner() {
                 className={`h-7 min-w-7 rounded-md text-[0.65rem] font-bold transition ${active ? "ring-2 ring-[#7865EE]/40 bg-[#7865EE] text-white" : done ? "hover:opacity-80" : "cursor-default"} ${bg}`}
                 title={`Câu ${i + 1}${done ? `: ${Math.round(score * 100)}%` : ""}`}
               >
-                {done ? Math.round(score * 100) : i + 1}
+                {done ? `${Math.round(score * 100)}` : i + 1}
               </button>
             );
           })}
@@ -378,8 +396,8 @@ function WritingInner() {
         ) : (
           <div className="space-y-4" ref={resultRef}>
             {/* Result card */}
-            {(() => {
-              const score = matchScore;
+            {matchResult && (() => {
+              const { score, matchedWords, missedWords } = matchResult;
               let color = "bg-red-50 border-red-300";
               let label = "Chưa khớp";
               let textColor = "text-red-800";
@@ -406,6 +424,21 @@ function WritingInner() {
                       <div className="text-sm font-medium text-green-700">{current?.targetSentence}</div>
                     </div>
                   </div>
+                  {missedWords.length > 0 && (
+                    <div className="mt-3 rounded-lg bg-white/60 p-3">
+                      <span className="text-xs font-bold text-muted block mb-1">Từ còn thiếu:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {missedWords.map((w, i) => (
+                          <span key={i} className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{w}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {/* Speak sample */}
+                  <div className="mt-3 flex items-center gap-2">
+                    <SpeakButton text={current?.targetSentence || ""} />
+                    <span className="text-xs text-muted">Nghe câu mẫu</span>
+                  </div>
                 </div>
               );
             })()}
@@ -426,13 +459,21 @@ function WritingInner() {
               )}
             </div>
 
+            {/* Toggle answer */}
+            <button
+              className="text-xs font-bold text-[#6550DB] hover:underline"
+              onClick={() => setShowAnswer(!showAnswer)}
+            >
+              {showAnswer ? "Ẩn câu trả lời mẫu" : "Hiện câu trả lời mẫu"}
+            </button>
+
             {/* Full answer reference */}
-            {current && (
-              <details className="rounded-xl border border-line bg-white">
-                <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">
-                  📖 Xem câu trả lời mẫu đầy đủ ({splitSentences(current.fullAnswer).length} câu)
-                </summary>
-                <div className="border-t border-line px-4 py-3">
+            {showAnswer && current && (
+              <div className="rounded-xl border border-line bg-[#FBFAFE]">
+                <div className="border-b border-line px-4 py-2 text-xs font-bold text-muted">
+                  📖 Câu trả lời mẫu đầy đủ ({splitSentences(current.fullAnswer).length} câu)
+                </div>
+                <div className="px-4 py-3">
                   <div className="space-y-2">
                     {splitSentences(current.fullAnswer).map((s, i) => (
                       <div key={i} className={`rounded-lg border p-2.5 text-sm ${i === current.sentenceIndex ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line"}`}>
@@ -442,12 +483,12 @@ function WritingInner() {
                     ))}
                   </div>
                 </div>
-              </details>
+              </div>
             )}
 
             {/* Full question context */}
             {current?.fullQuestion && (
-              <details className="rounded-xl border border-line bg-[#FBFAFE]">
+              <details className="rounded-xl border border-line bg-white">
                 <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">
                   📝 Xem câu hỏi gốc
                 </summary>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { sql, count, asc } from "drizzle-orm";
+import { count, asc } from "drizzle-orm";
 import { db } from "@/db";
-import { categoryQuestions, vocabCategories } from "@/db/schema";
+import { categoryQuestions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export async function GET() {
