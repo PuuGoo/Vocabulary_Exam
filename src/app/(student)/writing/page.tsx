@@ -110,6 +110,7 @@ function WritingInner() {
   const [scores, setScores] = useState<Record<number, number>>({});
   const [attempts, setAttempts] = useState<Record<number, number>>({});
   const [showAllDone, setShowAllDone] = useState(false);
+  const [savingResult, setSavingResult] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
   const [retryMode, setRetryMode] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -323,6 +324,27 @@ function WritingInner() {
     setRetryMode(false);
     setElapsed(0);
     try { localStorage.removeItem(draftKey); } catch { /* ignore */ }
+  }
+
+  async function saveResult() {
+    if (savingResult || completedCount === 0) return;
+    setSavingResult(true);
+    try {
+      await fetch("/api/results", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          setId: null,
+          setName: category,
+          mode: "writing",
+          score: Math.round(overallScore() * totalCount / 100),
+          total: totalCount,
+          durationSeconds: elapsed,
+          wordsPracticed: totalCount,
+        }),
+      });
+    } catch { /* silent */ }
+    finally { setSavingResult(false); }
   }
 
   function startRetry() {
@@ -645,7 +667,7 @@ function WritingInner() {
                       });
                       if (nextIdx >= 0) jumpTo(nextIdx);
                     }
-                  } else setShowAllDone(true);
+                  } else { setShowAllDone(true); setTimeout(() => saveResult(), 100); }
                 }}>{retryMode ? "Xem kết quả ôn tập →" : "Xem kết quả →"}</button>
               )}
             </div>

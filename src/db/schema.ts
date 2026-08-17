@@ -15,7 +15,7 @@ import { relations } from "drizzle-orm";
 
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab"] as const;
-export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily"] as const;
+export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily", "writing"] as const;
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable(

@@ -21,7 +21,7 @@ export async function GET() {
 const schema = z.object({
   setId: z.number().int().nullable(),
   setName: z.string().min(1),
-  mode: z.enum(["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed"]),
+  mode: z.enum(["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "writing"]),
   score: z.number().int().min(0),
   total: z.number().int().min(0),
   durationSeconds: z.number().int().min(0).optional(),
