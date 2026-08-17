@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import { Suspense } from "react";
@@ -22,6 +22,11 @@ type SentenceExercise = {
   phonetic: string | null;
   fullQuestion: string;
   fullAnswer: string;
+};
+
+type CategoryOpt = {
+  name: string;
+  count: number;
 };
 
 function norm(s: string) {
@@ -56,12 +61,24 @@ export default function WritingPage() {
 
 function WritingInner() {
   const search = useSearchParams();
+  const router = useRouter();
   const category = search.get("category") || "";
 
+  const [categories, setCategories] = useState<CategoryOpt[]>([]);
+  const [catLoading, setCatLoading] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Flatten: each sentence in each answer becomes one exercise
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [userAnswer, setUserAnswer] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [matchScore, setMatchScore] = useState(0);
+  const [scores, setScores] = useState<Record<number, number>>({});
+  const [showAllDone, setShowAllDone] = useState(false);
+
+  const resultRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const exercises = useMemo<SentenceExercise[]>(() => {
     const result: SentenceExercise[] = [];
     for (const q of questions) {
@@ -82,19 +99,33 @@ function WritingInner() {
     return result;
   }, [questions]);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [userAnswer, setUserAnswer] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [matchScore, setMatchScore] = useState(0);
-
   const current = exercises[currentIndex] || null;
-
-  // Overall progress
-  const completedCount = submitted ? currentIndex + 1 : currentIndex;
+  const completedCount = Object.keys(scores).length;
   const totalCount = exercises.length;
+  const allDone = totalCount > 0 && completedCount === totalCount;
 
+  // Load categories
+  useEffect(() => {
+    fetch("/api/writing-categories")
+      .then(async (res) => {
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setCategories(data.categories || []);
+      })
+      .catch(() => {})
+      .finally(() => setCatLoading(false));
+  }, []);
+
+  // Load questions when category changes
   useEffect(() => {
     if (!category) { setLoading(false); return; }
+    setLoading(true);
+    setCurrentIndex(0);
+    setUserAnswer("");
+    setSubmitted(false);
+    setMatchScore(0);
+    setScores({});
+    setShowAllDone(false);
     fetch(`/api/category-questions?category=${encodeURIComponent(category)}`)
       .then(async (res) => {
         if (!res.ok) throw new Error();
@@ -110,6 +141,8 @@ function WritingInner() {
     const score = sentenceMatchRate(userAnswer, current.targetSentence);
     setMatchScore(score);
     setSubmitted(true);
+    setScores((prev) => ({ ...prev, [currentIndex]: score }));
+    setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   function nextSentence() {
@@ -118,6 +151,7 @@ function WritingInner() {
       setUserAnswer("");
       setSubmitted(false);
       setMatchScore(0);
+      textareaRef.current?.focus();
     }
   }
 
@@ -125,44 +159,159 @@ function WritingInner() {
     setSubmitted(false);
     setUserAnswer("");
     setMatchScore(0);
+    setScores((prev) => { const next = { ...prev }; delete next[currentIndex]; return next; });
+    textareaRef.current?.focus();
+  }
+
+  function jumpTo(index: number) {
+    setCurrentIndex(index);
+    setUserAnswer("");
+    setSubmitted(false);
+    setMatchScore(0);
+  }
+
+  function selectCategory(value: string) {
+    router.push(`/writing?category=${encodeURIComponent(value)}`);
+  }
+
+  function overallScore(): number {
+    if (completedCount === 0) return 0;
+    return Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / completedCount * 100);
+  }
+
+  // --- RENDER ---
+
+  // Category selection screen
+  if (!category) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className={cx.panel}>
+          <div className="text-center mb-6">
+            <div className="text-4xl mb-3">✍️</div>
+            <h2 className={cx.h2}>Luyện viết IELTS</h2>
+            <p className={cx.desc}>Chọn một thư mục câu hỏi để bắt đầu luyện viết.</p>
+          </div>
+          {catLoading ? (
+            <div className={cx.empty}>Đang tải danh mục...</div>
+          ) : categories.length === 0 ? (
+            <div className={cx.empty}>
+              <p>Chưa có thư mục câu hỏi nào.</p>
+              <p className="mt-2 text-xs text-muted">Vào <strong>Khu quản trị → Bộ từ vựng</strong>, chọn thư mục con, rồi thêm câu hỏi Speaking.</p>
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {categories.map((cat) => (
+                <button
+                  key={cat.name}
+                  onClick={() => selectCategory(cat.name)}
+                  className="flex min-h-[68px] items-center gap-3 rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFECFF] text-lg" aria-hidden="true">📁</span>
+                  <span className="min-w-0 flex-1">
+                    <b className="block truncate text-sm text-ink">{cat.name}</b>
+                    <span className="mt-0.5 block text-xs text-muted">{cat.count} câu hỏi</span>
+                  </span>
+                  <span className="text-lg text-muted" aria-hidden="true">›</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   if (loading) return <div className={cx.panel}><div className={cx.empty}>Đang tải câu hỏi...</div></div>;
 
-  if (!category) return (
-    <div className="max-w-3xl mx-auto">
-      <div className={cx.panel}>
-        <h2 className={cx.h2}>Luyện viết IELTS</h2>
-        <p className={cx.desc}>Thêm <code>?category=Tên thư mục</code> vào URL để bắt đầu.</p>
-        <div className="text-sm text-muted">Ví dụ: <code>/writing?category=Vocabulary</code></div>
-      </div>
-    </div>
-  );
-
   if (exercises.length === 0) return (
     <div className="max-w-3xl mx-auto">
       <div className={cx.panel}>
-        <h2 className={cx.h2}>Luyện viết IELTS</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className={cx.h2}>Luyện viết IELTS</h2>
+          <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => router.push("/writing")}>← Chọn thư mục khác</button>
+        </div>
         <p className={cx.desc}>Thư mục này chưa có câu hỏi hoặc câu trả lời mẫu chưa được nhập.</p>
       </div>
     </div>
   );
 
+  // All done celebration
+  if (allDone && showAllDone) {
+    const avg = overallScore();
+    return (
+      <div className="max-w-3xl mx-auto">
+        <div className={cx.panel}>
+          <div className="text-center py-6">
+            <div className="text-5xl mb-4">🎉</div>
+            <h2 className="text-xl font-serif font-bold text-ink">Hoàn thành!</h2>
+            <p className="text-muted mt-1">Bạn đã viết xong {totalCount} câu.</p>
+            <div className="mt-6 inline-flex items-center gap-3 rounded-2xl border-2 border-gold bg-goldpale/50 px-8 py-4">
+              <span className="text-3xl font-bold text-golddark">{avg}%</span>
+              <span className="text-sm text-muted">điểm trung bình</span>
+            </div>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => { setShowAllDone(false); jumpTo(0); setScores({}); }}>
+                Làm lại từ đầu
+              </button>
+              <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>
+                ← Chọn thư mục khác
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto">
-      {/* Progress bar */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className={cx.h2}>Luyện viết IELTS</h2>
-          <span className="text-xs font-bold text-muted">{completedCount}/{totalCount} câu</span>
+      {/* Top bar */}
+      <div className="mb-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <h2 className={cx.h2}>Luyện viết</h2>
+            <span className="hidden sm:inline-block rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB] max-w-[200px] truncate" title={category}>{category}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3 !py-1.5 text-xs`} onClick={() => router.push("/writing")}>
+              Đổi thư mục
+            </button>
+            <span className="text-xs font-bold text-muted">{completedCount}/{totalCount}</span>
+          </div>
         </div>
+
+        {/* Progress bar */}
         <div className="h-2 w-full rounded-full bg-[#EFECFF] overflow-hidden">
           <div
             className="h-full rounded-full bg-[#7865EE] transition-all duration-300"
             style={{ width: `${totalCount > 0 ? (completedCount / totalCount) * 100 : 0}%` }}
           />
         </div>
-        <p className="mt-1 text-xs text-muted">{category}</p>
+
+        {/* Score dots */}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {exercises.map((ex, i) => {
+            const score = scores[i];
+            const active = i === currentIndex;
+            const done = score !== undefined;
+            let bg = "bg-[#F1EFF8] text-muted";
+            if (done) {
+              bg = score >= 0.7 ? "bg-green-100 text-green-700 border border-green-300" :
+                   score >= 0.4 ? "bg-yellow-100 text-yellow-700 border border-yellow-300" :
+                   "bg-red-100 text-red-700 border border-red-300";
+            }
+            return (
+              <button
+                key={i}
+                onClick={() => { if (done || i === currentIndex) jumpTo(i); }}
+                className={`h-7 min-w-7 rounded-md text-[0.65rem] font-bold transition ${active ? "ring-2 ring-[#7865EE]/40 bg-[#7865EE] text-white" : done ? "hover:opacity-80" : "cursor-default"} ${bg}`}
+                title={`Câu ${i + 1}${done ? `: ${Math.round(score * 100)}%` : ""}`}
+              >
+                {done ? Math.round(score * 100) : i + 1}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className={cx.panel}>
@@ -174,30 +323,29 @@ function WritingInner() {
           <div className="min-w-0 flex-1">
             <span className="text-xs font-bold text-muted uppercase tracking-wider">Viết câu tiếng Anh</span>
             <div className="text-xs text-muted">
-              Câu {current!.sentenceIndex + 1}/{splitSentences(current!.fullAnswer).length} của câu hỏi #{current!.questionId}
+              Câu {current!.sentenceIndex + 1}/{splitSentences(current!.fullAnswer).length} · Câu hỏi #{current!.questionId}
             </div>
           </div>
           {current!.sentenceIndex === 0 && current!.fullQuestion && (
-            <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.65rem] font-bold text-[#6550DB]">Câu hỏi mới</span>
+            <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.65rem] font-bold text-[#6550DB]">Chủ đề mới</span>
           )}
         </div>
 
-        {/* Prompt: Vietnamese meaning */}
+        {/* Vietnamese meaning prompt */}
         <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-4">
-          <div className="text-xs font-bold text-muted mb-1">Nghĩa tiếng Việt</div>
+          <div className="text-xs font-bold text-muted mb-1">🇻🇳 Nghĩa tiếng Việt</div>
           <div className="text-lg font-semibold text-ink leading-relaxed">
-            {current?.vnMeaning || "Chưa có nghĩa tiếng Việt"}
+            {current?.vnMeaning ? splitSentences(current.vnMeaning)[current.sentenceIndex] || current.vnMeaning : "Chưa có nghĩa tiếng Việt"}
           </div>
           {current?.phonetic && (
             <div className="mt-1 font-mono text-sm text-golddark">{current.phonetic}</div>
           )}
         </div>
 
-        {/* Reference: English sentence to write */}
+        {/* Instruction */}
         {!submitted && (
-          <div className="mb-4 rounded-xl border border-dashed border-[#CFC7FF] bg-[#F8F6FF] p-3">
-            <div className="text-xs font-bold text-muted mb-1">Dựa vào nghĩa tiếng Việt bên trên, hãy viết câu tiếng Anh</div>
-            <div className="text-sm font-semibold text-ink mt-1">{current?.vnMeaning ? splitSentences(current.fullAnswer).length > 0 ? splitSentences(current.vnMeaning)[current.sentenceIndex] || current.vnMeaning : current.vnMeaning : "Chưa có nghĩa tiếng Việt"}</div>
+          <div className="mb-4 rounded-xl border border-dashed border-gold bg-goldpale/30 p-3">
+            <div className="text-xs font-bold text-muted mb-1">✏️ Dựa vào nghĩa tiếng Việt bên trên, hãy viết câu tiếng Anh</div>
           </div>
         )}
 
@@ -205,12 +353,18 @@ function WritingInner() {
         <div className="mb-4">
           <label className={cx.label}>Nhập câu tiếng Anh của bạn</label>
           <textarea
-            className={`${cx.input} !mb-0 min-h-[120px] ${submitted ? "opacity-60" : ""}`}
+            ref={textareaRef}
+            className={`${cx.input} !mb-0 min-h-[120px] ${submitted ? "opacity-60" : "focus:border-gold focus:ring-2 focus:ring-gold/20"}`}
             placeholder="Gõ câu tiếng Anh tương ứng với nghĩa tiếng Việt..."
             value={userAnswer}
             onChange={(e) => setUserAnswer(e.target.value)}
             disabled={submitted}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !submitted && userAnswer.trim()) { e.preventDefault(); handleSubmit(); } }}
           />
+          <div className="mt-1 flex justify-between text-xs text-muted">
+            <span>{userAnswer.trim() ? userAnswer.trim().split(/\s+/).length + " từ" : ""}</span>
+            <span>Enter ↵ để kiểm tra</span>
+          </div>
         </div>
 
         {!submitted ? (
@@ -219,32 +373,38 @@ function WritingInner() {
             disabled={!userAnswer.trim()}
             onClick={handleSubmit}
           >
-            {userAnswer.trim() ? "Kiểm tra" : "Hãy nhập câu trả lời trước"}
+            {userAnswer.trim() ? "Kiểm tra ↵" : "Hãy nhập câu trả lời trước"}
           </button>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4" ref={resultRef}>
             {/* Result card */}
             {(() => {
               const score = matchScore;
               let color = "bg-red-50 border-red-300";
               let label = "Chưa khớp";
               let textColor = "text-red-800";
-              if (score >= 0.7) { color = "bg-green-50 border-green-300"; label = "Tốt"; textColor = "text-green-800"; }
-              else if (score >= 0.4) { color = "bg-yellow-50 border-yellow-300"; label = "Tạm ổn"; textColor = "text-yellow-800"; }
+              let icon = "✗";
+              if (score >= 0.7) { color = "bg-green-50 border-green-300"; label = "Tốt"; textColor = "text-green-800"; icon = "✓"; }
+              else if (score >= 0.4) { color = "bg-yellow-50 border-yellow-300"; label = "Tạm ổn"; textColor = "text-yellow-800"; icon = "~"; }
 
               return (
                 <div className={`rounded-xl border p-4 ${color}`}>
                   <div className="flex items-center justify-between mb-3">
-                    <span className={`text-xs font-bold uppercase ${textColor}`}>{label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-lg ${textColor}`}>{icon}</span>
+                      <span className={`text-xs font-bold uppercase ${textColor}`}>{label}</span>
+                    </div>
                     <span className={`text-lg font-bold ${textColor}`}>{Math.round(score * 100)}%</span>
                   </div>
-                  <div className="mb-2">
-                    <span className="text-xs text-muted">Bạn viết:</span>
-                    <div className="text-sm mt-0.5">{userAnswer || <span className="italic">(trống)</span>}</div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted">Mẫu:</span>
-                    <div className="text-sm font-medium mt-0.5 text-green-700">{current?.targetSentence}</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-lg bg-white/60 p-3">
+                      <span className="text-xs font-bold text-muted block mb-1">Bạn viết:</span>
+                      <div className="text-sm">{userAnswer || <span className="italic">(trống)</span>}</div>
+                    </div>
+                    <div className="rounded-lg bg-white/60 p-3">
+                      <span className="text-xs font-bold text-muted block mb-1">Mẫu:</span>
+                      <div className="text-sm font-medium text-green-700">{current?.targetSentence}</div>
+                    </div>
                   </div>
                 </div>
               );
@@ -253,11 +413,15 @@ function WritingInner() {
             {/* Action buttons */}
             <div className="flex gap-3">
               <button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={resetCurrent}>
-                Làm lại câu này
+                ⟲ Làm lại
               </button>
-              {currentIndex < exercises.length - 1 && (
+              {currentIndex < exercises.length - 1 ? (
                 <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={nextSentence}>
-                  Câu tiếp theo ({currentIndex + 2}/{totalCount}) →
+                  Câu tiếp ({currentIndex + 2}/{totalCount}) →
+                </button>
+              ) : (
+                <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={() => setShowAllDone(true)}>
+                  Xem kết quả →
                 </button>
               )}
             </div>
@@ -266,7 +430,7 @@ function WritingInner() {
             {current && (
               <details className="rounded-xl border border-line bg-white">
                 <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">
-                  Xem câu trả lời mẫu đầy đủ ({splitSentences(current.fullAnswer).length} câu)
+                  📖 Xem câu trả lời mẫu đầy đủ ({splitSentences(current.fullAnswer).length} câu)
                 </summary>
                 <div className="border-t border-line px-4 py-3">
                   <div className="space-y-2">
@@ -285,7 +449,7 @@ function WritingInner() {
             {current?.fullQuestion && (
               <details className="rounded-xl border border-line bg-[#FBFAFE]">
                 <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">
-                  Xem câu hỏi gốc
+                  📝 Xem câu hỏi gốc
                 </summary>
                 <div className="border-t border-line px-4 py-3 text-sm text-muted italic">
                   {current.fullQuestion}
@@ -295,35 +459,6 @@ function WritingInner() {
           </div>
         )}
       </div>
-
-      {/* All-sentences overview */}
-      {submitted && (
-        <div className={cx.panel}>
-          <h3 className="text-sm font-bold text-ink mb-3">Tiến độ các câu</h3>
-          <div className="flex flex-wrap gap-2">
-            {exercises.map((ex, i) => {
-              const done = i < currentIndex;
-              const active = i === currentIndex;
-              const remaining = i > currentIndex;
-              return (
-                <button
-                  key={`${ex.questionId}-${ex.sentenceIndex}`}
-                  disabled={!done && !active}
-                  onClick={() => { if (done) { setCurrentIndex(i); setUserAnswer(""); setSubmitted(false); setMatchScore(0); } }}
-                  className={`h-8 w-8 rounded-lg text-xs font-bold transition ${
-                    active ? "bg-[#7865EE] text-white ring-2 ring-[#7865EE]/30" :
-                    done ? "bg-green-100 text-green-700 border border-green-300" :
-                    "bg-[#F1EFF8] text-muted cursor-default"
-                  }`}
-                  title={`Câu ${i + 1}${done ? " ✓" : active ? " (hiện tại)" : ""}`}
-                >
-                  {done ? "✓" : i + 1}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
