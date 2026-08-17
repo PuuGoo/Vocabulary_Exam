@@ -41,17 +41,44 @@ function splitSentences(text: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-function sentenceMatchScore(userSentence: string, sampleSentence: string): { score: number; matchedWords: string[]; missedWords: string[] } {
+function tokenize(s: string): string[] {
+  return s.trim().toLowerCase().replace(/[.,!?;:()""''""\[\]{}]/g, "").split(/\s+/).filter(Boolean);
+}
+
+function sentenceMatchScore(userSentence: string, sampleSentence: string): {
+  score: number;
+  userTokens: { word: string; matched: boolean }[];
+  sampleTokens: { word: string; matched: boolean }[];
+  missedWords: string[];
+} {
   const u = norm(userSentence);
   const s = norm(sampleSentence);
-  if (!u || !s) return { score: 0, matchedWords: [], missedWords: [] };
-  const uWords = [...new Set(u.split(/\s+/))];
-  const sWords = [...new Set(s.split(/\s+/))];
-  if (sWords.length === 0) return { score: 0, matchedWords: [], missedWords: [] };
-  const matched = uWords.filter((w) => sWords.includes(w));
-  const missed = sWords.filter((w) => !uWords.includes(w));
-  const score = matched.length / Math.max(uWords.length, sWords.length);
-  return { score, matchedWords: matched, missedWords: missed };
+  if (!u || !s) return { score: 0, userTokens: [], sampleTokens: [], missedWords: [] };
+
+  const uTokens = tokenize(u);
+  const sTokens = tokenize(s);
+  const sSet = new Set(sTokens);
+
+  const userTokens = uTokens.map((w) => ({ word: w, matched: sSet.has(w) }));
+  const matchedSet = new Set(userTokens.filter((t) => t.matched).map((t) => t.word));
+  const sampleTokens = sTokens.map((w) => ({ word: w, matched: matchedSet.has(w) }));
+  const missedWords = sTokens.filter((w) => !matchedSet.has(w));
+
+  const maxLen = Math.max(uTokens.length, sTokens.length);
+  const score = maxLen > 0 ? (uTokens.length - userTokens.filter((t) => !t.matched).length) / maxLen : 0;
+
+  return { score, userTokens, sampleTokens, missedWords };
+}
+
+function renderHighlightedTokens(tokens: { word: string; matched: boolean }[], className?: string) {
+  return tokens.map((t, i) => (
+    <span
+      key={i}
+      className={`${t.matched ? "text-green-700" : "text-red-500 line-through"} ${className || ""}`}
+    >
+      {i > 0 && " "}{t.word}
+    </span>
+  ));
 }
 
 export default function WritingPage() {
@@ -75,10 +102,16 @@ function WritingInner() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [userAnswer, setUserAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [matchResult, setMatchResult] = useState<{ score: number; matchedWords: string[]; missedWords: string[] } | null>(null);
+  const [matchResult, setMatchResult] = useState<{
+    score: number;
+    userTokens: { word: string; matched: boolean }[];
+    sampleTokens: { word: string; matched: boolean }[];
+    missedWords: string[];
+  } | null>(null);
   const [scores, setScores] = useState<Record<number, number>>({});
   const [showAllDone, setShowAllDone] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [retryMode, setRetryMode] = useState(false);
 
   const resultRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -103,10 +136,21 @@ function WritingInner() {
     return result;
   }, [questions]);
 
-  const current = exercises[currentIndex] || null;
+  // In retry mode, only show exercises with score < 0.7
+  const filteredExercises = useMemo(() => {
+    if (!retryMode) return exercises;
+    return exercises.filter((_, i) => {
+      const s = scores[i];
+      return s !== undefined && s < 0.7;
+    });
+  }, [exercises, scores, retryMode]);
+
+  const displayExercises = retryMode ? filteredExercises : exercises;
+  const current = displayExercises[currentIndex] || null;
   const completedCount = Object.keys(scores).length;
   const totalCount = exercises.length;
   const allDone = totalCount > 0 && completedCount === totalCount;
+  const wrongCount = Object.entries(scores).filter(([, s]) => s < 0.7).length;
 
   // Load categories
   useEffect(() => {
@@ -131,6 +175,7 @@ function WritingInner() {
     setScores({});
     setShowAllDone(false);
     setShowAnswer(false);
+    setRetryMode(false);
     fetch(`/api/category-questions?category=${encodeURIComponent(category)}`)
       .then(async (res) => {
         if (!res.ok) throw new Error();
@@ -141,17 +186,29 @@ function WritingInner() {
       .finally(() => setLoading(false));
   }, [category]);
 
+  // Keyboard: Ctrl+Enter to submit
+  useEffect(() => {
+    function handleGlobalKey(e: KeyboardEvent) {
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !submitted && userAnswer.trim()) {
+        e.preventDefault();
+        handleSubmit();
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKey);
+    return () => window.removeEventListener("keydown", handleGlobalKey);
+  });
+
   function handleSubmit() {
     if (!current || !userAnswer.trim() || submitted) return;
     const result = sentenceMatchScore(userAnswer, current.targetSentence);
     setMatchResult(result);
     setSubmitted(true);
-    setScores((prev) => ({ ...prev, [currentIndex]: result.score }));
+    setScores((prev) => ({ ...prev, [currentIndex >= displayExercises.length ? 0 : currentIndex]: result.score }));
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }
 
   function nextSentence() {
-    if (currentIndex < exercises.length - 1) {
+    if (currentIndex < displayExercises.length - 1) {
       setCurrentIndex((i) => i + 1);
       setUserAnswer("");
       setSubmitted(false);
@@ -166,7 +223,13 @@ function WritingInner() {
     setUserAnswer("");
     setMatchResult(null);
     setShowAnswer(false);
-    setScores((prev) => { const next = { ...prev }; delete next[currentIndex]; return next; });
+    setScores((prev) => {
+      const next = { ...prev };
+      // find the original index in exercises for this retry item
+      const origIdx = retryMode && current ? exercises.findIndex((e) => e.questionId === current.questionId && e.sentenceIndex === current.sentenceIndex) : currentIndex;
+      if (origIdx >= 0) delete next[origIdx];
+      return next;
+    });
     textareaRef.current?.focus();
   }
 
@@ -188,8 +251,21 @@ function WritingInner() {
   }
 
   function restartAll() {
-    jumpTo(0);
+    setCurrentIndex(0);
+    setUserAnswer("");
+    setSubmitted(false);
+    setMatchResult(null);
     setScores({});
+    setShowAllDone(false);
+    setRetryMode(false);
+  }
+
+  function startRetry() {
+    setRetryMode(true);
+    setCurrentIndex(0);
+    setUserAnswer("");
+    setSubmitted(false);
+    setMatchResult(null);
     setShowAllDone(false);
   }
 
@@ -249,10 +325,32 @@ function WritingInner() {
     </div>
   );
 
+  // Retry mode empty screen
+  if (retryMode && displayExercises.length === 0) {
+    return (
+      <div className="max-w-3xl mx-auto">
+        <div className={cx.panel}>
+          <div className="text-center py-6">
+            <div className="text-5xl mb-4">🎉</div>
+            <h2 className="text-xl font-serif font-bold text-ink">Tất cả đã đúng!</h2>
+            <p className="text-muted mt-1">Không còn câu nào dưới 70% để làm lại.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>
+                Làm lại toàn bộ
+              </button>
+              <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>
+                ← Chọn thư mục khác
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // All done celebration
   if (allDone && showAllDone) {
     const avg = overallScore();
-    const wrongCount = Object.entries(scores).filter(([, s]) => s < 0.7).length;
     return (
       <div className="max-w-3xl mx-auto">
         <div className={cx.panel}>
@@ -271,6 +369,11 @@ function WritingInner() {
               <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>
                 Làm lại từ đầu
               </button>
+              {wrongCount > 0 && (
+                <button className={`${cx.btn} ${cx.btnGold}`} onClick={startRetry}>
+                  Làm lại {wrongCount} câu sai
+                </button>
+              )}
               <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>
                 ← Chọn thư mục khác
               </button>
@@ -281,13 +384,16 @@ function WritingInner() {
     );
   }
 
+  const displayTotal = displayExercises.length;
+
   return (
     <div className="max-w-3xl mx-auto">
       {/* Top bar */}
       <div className="mb-5">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3 min-w-0">
-            <h2 className={cx.h2}>Luyện viết</h2>
+            <h2 className={cx.h2}>{retryMode ? "Làm lại câu sai" : "Luyện viết"}</h2>
+            {retryMode && <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">Ôn tập</span>}
             <span className="hidden sm:inline-block rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB] max-w-[200px] truncate" title={category}>{category}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -310,7 +416,7 @@ function WritingInner() {
         <div className="flex flex-wrap gap-1.5 mt-3">
           {exercises.map((ex, i) => {
             const score = scores[i];
-            const active = i === currentIndex;
+            const active = !retryMode && i === currentIndex;
             const done = score !== undefined;
             let bg = "bg-[#F1EFF8] text-muted";
             if (done) {
@@ -318,11 +424,16 @@ function WritingInner() {
                    score >= 0.4 ? "bg-yellow-100 text-yellow-700 border border-yellow-300" :
                    "bg-red-100 text-red-700 border border-red-300";
             }
+            // Highlight retry active item
+            let isRetryActive = false;
+            if (retryMode && current) {
+              isRetryActive = ex.questionId === current.questionId && ex.sentenceIndex === current.sentenceIndex;
+            }
             return (
               <button
                 key={i}
-                onClick={() => { if (done || i === currentIndex) jumpTo(i); }}
-                className={`h-7 min-w-7 rounded-md text-[0.65rem] font-bold transition ${active ? "ring-2 ring-[#7865EE]/40 bg-[#7865EE] text-white" : done ? "hover:opacity-80" : "cursor-default"} ${bg}`}
+                onClick={() => { if (done || (!retryMode && i === currentIndex)) jumpTo(i); }}
+                className={`h-7 min-w-7 rounded-md text-[0.65rem] font-bold transition ${(active || isRetryActive) ? "ring-2 ring-[#7865EE]/40 bg-[#7865EE] text-white" : done ? "hover:opacity-80" : "cursor-default"} ${retryMode && isRetryActive ? "ring-2 ring-amber-400/60 bg-amber-500 text-white" : ""} ${bg}`}
                 title={`Câu ${i + 1}${done ? `: ${Math.round(score * 100)}%` : ""}`}
               >
                 {done ? `${Math.round(score * 100)}` : i + 1}
@@ -330,6 +441,11 @@ function WritingInner() {
             );
           })}
         </div>
+        {retryMode && (
+          <div className="mt-2 text-xs text-muted italic">
+            Ôn tập {displayExercises.length} câu cần cải thiện. Bỏ qua các câu đã đạt.
+          </div>
+        )}
       </div>
 
       <div className={cx.panel}>
@@ -381,7 +497,7 @@ function WritingInner() {
           />
           <div className="mt-1 flex justify-between text-xs text-muted">
             <span>{userAnswer.trim() ? userAnswer.trim().split(/\s+/).length + " từ" : ""}</span>
-            <span>Enter ↵ để kiểm tra</span>
+            <span>Enter ↵ · Ctrl+Enter ↵ để kiểm tra</span>
           </div>
         </div>
 
@@ -395,9 +511,9 @@ function WritingInner() {
           </button>
         ) : (
           <div className="space-y-4" ref={resultRef}>
-            {/* Result card */}
+            {/* Result card with inline highlighting */}
             {matchResult && (() => {
-              const { score, matchedWords, missedWords } = matchResult;
+              const { score, userTokens, sampleTokens, missedWords } = matchResult;
               let color = "bg-red-50 border-red-300";
               let label = "Chưa khớp";
               let textColor = "text-red-800";
@@ -417,11 +533,15 @@ function WritingInner() {
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-lg bg-white/60 p-3">
                       <span className="text-xs font-bold text-muted block mb-1">Bạn viết:</span>
-                      <div className="text-sm">{userAnswer || <span className="italic">(trống)</span>}</div>
+                      <div className="text-sm leading-relaxed">
+                        {userTokens.length > 0 ? renderHighlightedTokens(userTokens) : <span className="italic">(trống)</span>}
+                      </div>
                     </div>
                     <div className="rounded-lg bg-white/60 p-3">
                       <span className="text-xs font-bold text-muted block mb-1">Mẫu:</span>
-                      <div className="text-sm font-medium text-green-700">{current?.targetSentence}</div>
+                      <div className="text-sm leading-relaxed">
+                        {sampleTokens.length > 0 ? renderHighlightedTokens(sampleTokens) : <span className="italic">(trống)</span>}
+                      </div>
                     </div>
                   </div>
                   {missedWords.length > 0 && (
@@ -448,13 +568,34 @@ function WritingInner() {
               <button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={resetCurrent}>
                 ⟲ Làm lại
               </button>
-              {currentIndex < exercises.length - 1 ? (
+              {currentIndex < displayTotal - 1 ? (
                 <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={nextSentence}>
-                  Câu tiếp ({currentIndex + 2}/{totalCount}) →
+                  Câu tiếp ({currentIndex + 2}/{displayTotal}) →
                 </button>
               ) : (
-                <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={() => setShowAllDone(true)}>
-                  Xem kết quả →
+                <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={() => {
+                  if (retryMode) {
+                    // Check if all retry items are done
+                    const retryRemaining = displayExercises.some((_, i) => {
+                      const origIdx = exercises.findIndex((e) => e.questionId === displayExercises[i].questionId && e.sentenceIndex === displayExercises[i].sentenceIndex);
+                      return scores[origIdx] === undefined || scores[origIdx] < 0.7;
+                    });
+                    if (!retryRemaining) {
+                      setRetryMode(false);
+                      setShowAllDone(true);
+                    } else {
+                      // Find next undone
+                      const nextIdx = displayExercises.findIndex((_, i) => {
+                        const origIdx = exercises.findIndex((e) => e.questionId === displayExercises[i].questionId && e.sentenceIndex === displayExercises[i].sentenceIndex);
+                        return scores[origIdx] === undefined || scores[origIdx] < 0.7;
+                      });
+                      if (nextIdx >= 0) jumpTo(nextIdx);
+                    }
+                  } else {
+                    setShowAllDone(true);
+                  }
+                }}>
+                  {retryMode ? "Xem kết quả ôn tập →" : "Xem kết quả →"}
                 </button>
               )}
             </div>
