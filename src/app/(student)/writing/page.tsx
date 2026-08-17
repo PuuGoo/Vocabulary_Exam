@@ -108,6 +108,7 @@ function WritingInner() {
     missedWords: string[];
   } | null>(null);
   const [scores, setScores] = useState<Record<number, number>>({});
+  const [attempts, setAttempts] = useState<Record<number, number>>({});
   const [showAllDone, setShowAllDone] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
   const [retryMode, setRetryMode] = useState(false);
@@ -119,11 +120,12 @@ function WritingInner() {
   const userAnswerRef = useRef(userAnswer);
   const currentIndexRef = useRef(currentIndex);
   const scoresRef = useRef(scores);
+  const attemptsRef = useRef(attempts);
 
-  // Keep refs in sync
   userAnswerRef.current = userAnswer;
   currentIndexRef.current = currentIndex;
   scoresRef.current = scores;
+  attemptsRef.current = attempts;
   submittedRef.current = submitted;
 
   const exercises = useMemo<SentenceExercise[]>(() => {
@@ -190,6 +192,7 @@ function WritingInner() {
     setSubmitted(false);
     setMatchResult(null);
     setScores({});
+    setAttempts({});
     setShowAllDone(false);
     setShowAnswer(false);
     setRetryMode(false);
@@ -199,13 +202,13 @@ function WritingInner() {
         if (!res.ok) throw new Error();
         const data = await res.json();
         setQuestions(data.questions || []);
-        // Restore draft
         try {
           const raw = localStorage.getItem(draftKey);
           if (raw) {
             const draft = JSON.parse(raw);
             if (draft && typeof draft.scores === "object" && draft.currentIndex >= 0) {
-              setScores(draft.scores);
+              setScores(draft.scores || {});
+              setAttempts(draft.attempts || {});
               setCurrentIndex(draft.currentIndex);
               setElapsed(draft.elapsed || 0);
             }
@@ -223,6 +226,7 @@ function WritingInner() {
       try {
         localStorage.setItem(draftKey, JSON.stringify({
           scores,
+          attempts,
           currentIndex,
           elapsed,
           savedAt: Date.now(),
@@ -230,7 +234,7 @@ function WritingInner() {
       } catch { /* storage full */ }
     }, 1500);
     return () => clearTimeout(timer);
-  }, [draftKey, category, scores, currentIndex, elapsed, loading, allDone]);
+  }, [draftKey, category, scores, attempts, currentIndex, elapsed, loading, allDone]);
 
   const handleSubmit = useCallback(() => {
     if (!current || !userAnswerRef.current.trim() || submittedRef.current) return;
@@ -238,7 +242,9 @@ function WritingInner() {
     setMatchResult(result);
     setSubmitted(true);
     submittedRef.current = true;
-    setScores((prev) => ({ ...prev, [currentIndexRef.current]: result.score }));
+    const idx = currentIndexRef.current;
+    setScores((prev) => ({ ...prev, [idx]: result.score }));
+    setAttempts((prev) => ({ ...prev, [idx]: (prev[idx] || 0) + 1 }));
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }, [current]);
 
@@ -253,6 +259,18 @@ function WritingInner() {
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [currentIndex, displayExercises.length]);
+
+  const prevSentence = useCallback(() => {
+    if (currentIndex > 0) {
+      setCurrentIndex((i) => i - 1);
+      setUserAnswer("");
+      setSubmitted(false);
+      submittedRef.current = false;
+      setMatchResult(null);
+      setShowAnswer(false);
+      setTimeout(() => textareaRef.current?.focus(), 50);
+    }
+  }, [currentIndex]);
 
   const resetCurrent = useCallback(() => {
     setSubmitted(false);
@@ -289,6 +307,10 @@ function WritingInner() {
     return Math.round(Object.values(scores).reduce((a, b) => a + b, 0) / completedCount * 100);
   }
 
+  function totalAttempts(): number {
+    return Object.values(attempts).reduce((a, b) => a + b, 0);
+  }
+
   function restartAll() {
     setCurrentIndex(0);
     setUserAnswer("");
@@ -296,6 +318,7 @@ function WritingInner() {
     submittedRef.current = false;
     setMatchResult(null);
     setScores({});
+    setAttempts({});
     setShowAllDone(false);
     setRetryMode(false);
     setElapsed(0);
@@ -312,17 +335,40 @@ function WritingInner() {
     setShowAllDone(false);
   }
 
-  // Keyboard handler using refs to avoid stale closure
+  // Keyboard: Ctrl+Enter submit, Arrow keys navigate
   useEffect(() => {
     function handleGlobalKey(e: KeyboardEvent) {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") return; // let native cursor work
+      }
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !submittedRef.current && userAnswerRef.current.trim()) {
         e.preventDefault();
         handleSubmit();
+        return;
+      }
+      // After submit, Enter to go next
+      if (e.key === "Enter" && submittedRef.current && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        if (currentIndexRef.current < displayExercises.length - 1) {
+          nextSentence();
+        }
+        return;
+      }
+      // Arrow navigation
+      if (e.key === "ArrowRight" && !submittedRef.current && currentIndexRef.current < displayExercises.length - 1) {
+        e.preventDefault();
+        nextSentence();
+        return;
+      }
+      if (e.key === "ArrowLeft" && !submittedRef.current && currentIndexRef.current > 0) {
+        e.preventDefault();
+        prevSentence();
+        return;
       }
     }
     window.addEventListener("keydown", handleGlobalKey);
     return () => window.removeEventListener("keydown", handleGlobalKey);
-  }, [handleSubmit]);
+  }, [handleSubmit, nextSentence, prevSentence, displayExercises.length]);
 
   function fmtTime(seconds: number) {
     const m = Math.floor(seconds / 60);
@@ -332,7 +378,6 @@ function WritingInner() {
 
   // --- RENDER ---
 
-  // Category selection screen
   if (!category) {
     return (
       <div className="max-w-2xl mx-auto">
@@ -406,6 +451,7 @@ function WritingInner() {
 
   if (allDone && showAllDone) {
     const avg = overallScore();
+    const totalAtt = totalAttempts();
     return (
       <div className="max-w-3xl mx-auto">
         <div className={cx.panel}>
@@ -413,9 +459,15 @@ function WritingInner() {
             <div className="text-5xl mb-4">🎉</div>
             <h2 className="text-xl font-serif font-bold text-ink">Hoàn thành!</h2>
             <p className="text-muted mt-1">Bạn đã viết xong {totalCount} câu trong {fmtTime(elapsed)}.</p>
-            <div className="mt-6 inline-flex items-center gap-3 rounded-2xl border-2 border-gold bg-goldpale/50 px-8 py-4">
-              <span className="text-3xl font-bold text-golddark">{avg}%</span>
-              <span className="text-sm text-muted">điểm trung bình</span>
+            <div className="mt-4 flex flex-wrap justify-center gap-4">
+              <div className="inline-flex items-center gap-3 rounded-2xl border-2 border-gold bg-goldpale/50 px-8 py-4">
+                <span className="text-3xl font-bold text-golddark">{avg}%</span>
+                <span className="text-sm text-muted">điểm trung bình</span>
+              </div>
+              <div className="inline-flex items-center gap-3 rounded-2xl border border-line bg-white px-6 py-4">
+                <span className="text-2xl font-bold text-[#6550DB]">{totalAtt}</span>
+                <span className="text-sm text-muted">lần kiểm tra</span>
+              </div>
             </div>
             {wrongCount > 0 && <p className="mt-3 text-sm text-muted">{wrongCount} câu cần cải thiện (dưới 70%)</p>}
             <div className="mt-6 flex flex-wrap justify-center gap-3">
@@ -488,7 +540,10 @@ function WritingInner() {
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-sm font-bold text-[#6550DB]">{currentIndex + 1}</span>
           <div className="min-w-0 flex-1">
             <span className="text-xs font-bold text-muted uppercase tracking-wider">Viết câu tiếng Anh</span>
-            <div className="text-xs text-muted">Câu {current!.sentenceIndex + 1}/{splitSentences(current!.fullAnswer).length} · Câu hỏi #{current!.questionId}</div>
+            <div className="text-xs text-muted">
+              Câu {current!.sentenceIndex + 1}/{splitSentences(current!.fullAnswer).length} · Câu hỏi #{current!.questionId}
+              {attempts[currentIndex] > 0 && <span className="ml-2">· {attempts[currentIndex]} lần</span>}
+            </div>
           </div>
           {current!.sentenceIndex === 0 && current!.fullQuestion && (
             <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.65rem] font-bold text-[#6550DB]">Chủ đề mới</span>
@@ -522,7 +577,7 @@ function WritingInner() {
           />
           <div className="mt-1 flex justify-between text-xs text-muted">
             <span>{userAnswer.trim() ? userAnswer.trim().split(/\s+/).length + " từ" : ""}</span>
-            <span>Enter ↵ · Ctrl+Enter ↵</span>
+            <span>Enter ↵ · Ctrl+Enter ↵ · ← → điều hướng</span>
           </div>
         </div>
 
