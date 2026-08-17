@@ -313,27 +313,21 @@ const nextSentence = useCallback(() => {
     setTimeout(() => textareaRef.current?.focus(), 50);
   }, [retryMode, current, exercises, currentIndex]);
 
-  // Restore saved answer when navigating
+  // Restore saved answer when navigating — do NOT auto-submit
   useEffect(() => {
     const saved = savedAnswers[currentIndex];
     if (saved !== undefined) {
       setUserAnswer(saved);
-      setSubmitted(true);
-      submittedRef.current = true;
-      // Use exercises array directly since current may not be updated yet
-      const target = exercises[currentIndex];
-      if (target) {
-        const result = sentenceMatchScore(saved, target.targetSentence);
-        setMatchResult(result);
-        scoresRef.current = { ...scoresRef.current, [currentIndex]: result.score };
-      }
+      setSubmitted(false);
+      submittedRef.current = false;
+      setMatchResult(null);
     } else {
       setUserAnswer("");
       setSubmitted(false);
       submittedRef.current = false;
       setMatchResult(null);
     }
-  }, [currentIndex, exercises, savedAnswers]);
+  }, [currentIndex, savedAnswers]);
   const jumpTo = useCallback((index: number) => {
     // Save current answer before navigating
     setSavedAnswers((prev) => ({ ...prev, [currentIndex]: userAnswer }));
