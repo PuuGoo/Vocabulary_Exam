@@ -220,7 +220,7 @@ function WritingInner() {
       .finally(() => setLoading(false));
   }, [category]);
 
-  // Auto-save draft
+  // Auto-save draft (debounced for non-submit changes)
   useEffect(() => {
     if (!draftKey || !category || loading || allDone) return;
     const timer = setTimeout(() => {
@@ -237,6 +237,18 @@ function WritingInner() {
     return () => clearTimeout(timer);
   }, [draftKey, category, scores, attempts, currentIndex, elapsed, loading, allDone]);
 
+  function saveDraftNow() {
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({
+        scores,
+        attempts,
+        currentIndex,
+        elapsed,
+        savedAt: Date.now(),
+      }));
+    } catch { /* storage full */ }
+  }
+
   const handleSubmit = useCallback(() => {
     if (!current || !userAnswerRef.current.trim() || submittedRef.current) return;
     const result = sentenceMatchScore(userAnswerRef.current, current.targetSentence);
@@ -246,6 +258,8 @@ function WritingInner() {
     const idx = currentIndexRef.current;
     setScores((prev) => ({ ...prev, [idx]: result.score }));
     setAttempts((prev) => ({ ...prev, [idx]: (prev[idx] || 0) + 1 }));
+    // Save immediately so F5 does not lose progress
+    setTimeout(() => saveDraftNow(), 50);
     setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
   }, [current]);
 
