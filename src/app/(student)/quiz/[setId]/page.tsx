@@ -44,10 +44,26 @@ const GROUP_SIZE = 10;
 function norm(s: string | undefined | null) {
   return (s || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
 }
+function expandAnswerVariants(text: string): string[] {
+  // "in an/the outfit" -> ["in an outfit", "in the outfit"]
+  const tokens = text.trim().split(/\s+/);
+  let results = [""];
+  for (const token of tokens) {
+    const alternatives = token.split("/");
+    if (alternatives.length > 1) {
+      results = results.flatMap((r) => alternatives.map((a) => r + " " + a));
+    } else {
+      results = results.map((r) => r + " " + token);
+    }
+  }
+  return results.map((s) => s.trim()).filter(Boolean);
+}
 function checkMatch(userVal: string | undefined, answerKey: string | null | undefined) {
   const u = norm(userVal);
   if (!u) return false;
-  return (answerKey || "").split("/").map(norm).includes(u);
+  const ak = (answerKey || "").trim();
+  if (!ak) return false;
+  return expandAnswerVariants(ak).map(norm).includes(u);
 }
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
