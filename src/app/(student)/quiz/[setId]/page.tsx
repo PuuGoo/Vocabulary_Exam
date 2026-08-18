@@ -944,7 +944,18 @@ function QuizPlayerInner() {
                 <>
                   <div className="font-bold mb-2">{w.meaning}</div>
                   <div className="flex flex-col max-w-xs">
-                    <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">TỪ TIẾNG ANH</span>
+                    
+                  {w.wtype && !effectiveChecked && (
+                    <div className="mb-2 text-xs text-muted">
+                      <span className="font-semibold">Loại từ:</span> {w.wtype}
+                    </div>
+                  )}
+                  {w.example && !effectiveChecked && (
+                    <div className="mb-2 text-xs text-muted italic">
+                      <span className="font-semibold not-italic">VD:</span> {w.example}
+                    </div>
+                  )}
+                  <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">TỪ TIẾNG ANH</span>
                     <input
                       type="text"
                       autoComplete="off"
