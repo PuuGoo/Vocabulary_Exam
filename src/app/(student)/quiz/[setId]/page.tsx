@@ -108,6 +108,7 @@ function QuizPlayerInner() {
   const [quickRecommendation, setQuickRecommendation] = useState<{ reviewCount: number; newCount: number } | null>(null);
   const [group, setGroup] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Record<string, string>>>({});
+  const [hintIds, setHintIds] = useState<Set<number>>(new Set());
   const [mcOptions, setMcOptions] = useState<Record<number, string[]>>({});
 
   // grading, keyed by group index so a group's graded state survives navigating away and back
@@ -376,6 +377,14 @@ function QuizPlayerInner() {
     setPendingFocus(null);
   }, [group, currentWords, pendingFocus, inputRefs, rowRefs]);
 
+
+  function toggleHint(wordId: number) {
+    setHintIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(wordId)) next.delete(wordId); else next.add(wordId);
+      return next;
+    });
+  }
   function setAnswer(wordId: number, part: string, value: string) {
     setAnswers((prev) => ({ ...prev, [wordId]: { ...prev[wordId], [part]: value } }));
   }
@@ -412,6 +421,20 @@ function QuizPlayerInner() {
   }
 
   function handleFillEnter(event: React.KeyboardEvent<HTMLInputElement>, currentIndex: number) {
+    if (effectiveChecked || grading) return;
+    if (event.key === "Tab") {
+      event.preventDefault();
+      const dir = event.shiftKey ? -1 : 1;
+      const next = currentWords[currentIndex + dir];
+      if (next) {
+        const input = inputRefs.get(next.id);
+        input?.focus();
+        input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return;
+    }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
     if (event.key !== "Enter" || effectiveChecked || grading) return;
     event.preventDefault();
     const remaining = [...currentWords.slice(currentIndex + 1), ...currentWords.slice(0, currentIndex)]
@@ -846,7 +869,30 @@ function QuizPlayerInner() {
             <div>
               {isVerb ? (
                 <>
-                  <div className="font-bold mb-2">{w.meaning}</div>
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <div className="font-bold">{w.meaning}</div>
+                    <button
+                      type="button"
+                      onClick={() => toggleHint(w.id)}
+                      className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-white hover:bg-[#F0EDFF] transition"
+                      title={hintIds.has(w.id) ? "Ẩn gợi ý" : "Xem gợi ý"}
+                    >
+                      {hintIds.has(w.id) ? "Ẩn gợi ý" : "Gợi ý"}
+                    </button>
+                  </div>
+                  {hintIds.has(w.id) && w.term && (
+                    <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
+                      <span className="text-xs font-bold text-muted">Gợi ý: </span>
+                      <span className="font-mono">
+                        {w.term.split("").map((ch, ci) => (
+                          <span key={ci} className={ch === " " ? "mx-1" : ""}>
+                            {ch === " " ? "·" : ci === 0 ? ch : "_"}
+                          </span>
+                        ))}
+                        <span className="ml-2 text-muted text-xs">({w.term.length} ký tự)</span>
+                      </span>
+                    </div>
+                  )}
                   <div className="flex gap-2 flex-wrap">
                     {(["v1", "v2", "v3"] as const).map((part) => {
                       const val = answers[w.id]?.[part] || "";
