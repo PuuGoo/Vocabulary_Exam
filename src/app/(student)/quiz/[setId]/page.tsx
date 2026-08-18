@@ -942,7 +942,31 @@ function QuizPlayerInner() {
                 </>
               ) : mode === "fill" ? (
                 <>
-                  <div className="font-bold mb-2">{w.meaning}</div>
+                  <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <div className="font-bold">{w.meaning}</div>
+                    <SpeakButton text={w.term || ""} />
+                    <button
+                      type="button"
+                      onClick={() => toggleHint(w.id)}
+                      className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-white hover:bg-[#F0EDFF] transition"
+                      title={hintIds.has(w.id) ? "Ẩn gợi ý" : "Xem gợi ý"}
+                    >
+                      {hintIds.has(w.id) ? "Ẩn gợi ý" : "Gợi ý"}
+                    </button>
+                  </div>
+                  {hintIds.has(w.id) && w.term && (
+                    <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
+                      <span className="text-xs font-bold text-muted">Gợi ý: </span>
+                      <span className="font-mono">
+                        {w.term.split("").map((ch, ci) => (
+                          <span key={ci} className={ch === " " ? "mx-1" : ""}>
+                            {ch === " " ? "·" : ci === 0 ? ch : "_"}
+                          </span>
+                        ))}
+                        <span className="ml-2 text-muted text-xs">({w.term.length} ký tự)</span>
+                      </span>
+                    </div>
+                  )}
                   <div className="flex flex-col max-w-xs">
                     
                   {w.wtype && !effectiveChecked && (
