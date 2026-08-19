@@ -122,9 +122,14 @@ function QuizPlayerInner() {
   const quickMode = search.get("quick") === "1";
   const quickCount = [5, 10, 20].includes(Number(search.get("count"))) ? Number(search.get("count")) : 10;
   const draftEnabled = !quickMode;
-  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}`;
+  const rangeFromParam = Math.max(1, Number(search.get("from")) || 0);
+  const rangeToParam = Math.max(0, Number(search.get("to")) || 0);
+  const hasRangeParam = rangeFromParam > 0 && rangeToParam > 0 && rangeFromParam <= rangeToParam;
+
+  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}${hasRangeParam ? `-range-${rangeFromParam}-${rangeToParam}` : ""}`;
 
   const [set, setSet] = useState<SetDetail | null>(null);
+  const totalWordCountRef = useRef<number>(0);
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [mistakeIdByWordId, setMistakeIdByWordId] = useState<Record<number, number>>({});
@@ -150,6 +155,8 @@ function QuizPlayerInner() {
 
   // navigation / autofocus
   const [jumpQuestion, setJumpQuestion] = useState("");
+  const [rangeFromInput, setRangeFromInput] = useState<string>(rangeFromParam > 0 ? String(rangeFromParam) : "");
+  const [rangeToInput, setRangeToInput] = useState<string>(rangeToParam > 0 ? String(rangeToParam) : "");
   const [pendingFocus, setPendingFocus] = useState<number | "first" | null>(null);
   const inputRefs = useRef(new Map<number, HTMLInputElement>()).current;
   const rowRefs = useRef(new Map<number, HTMLDivElement>()).current;
@@ -167,7 +174,9 @@ function QuizPlayerInner() {
         if (!res.ok) throw new Error("load failed");
         const data = await res.json();
         if (!data.set) throw new Error("missing set");
+        totalWordCountRef.current = data.set.words.length;
         let loadedSet: SetDetail = data.set;
+        
         if (data.recommendation) setQuickRecommendation(data.recommendation);
         let mistakeMap: Record<number, number> = data.mistakeIdByWordId || {};
         if (retest) {
@@ -222,6 +231,12 @@ function QuizPlayerInner() {
           submittedRef.current = false;
           setTimedSubmitted(false);
           setTimedScore(null);
+          if (hasRangeParam) {
+            const startIdx = Math.max(0, rangeFromParam - 1);
+            const endIdx = Math.max(startIdx + 1, rangeToParam);
+            const sliced = loadedSet.words.slice(startIdx, endIdx);
+            if (sliced.length > 0) loadedSet = { ...loadedSet, words: sliced };
+          }
           setSet(loadedSet);
           setMistakeIdByWordId(mistakeMap);
           draftHydratedRef.current = true;
@@ -235,7 +250,7 @@ function QuizPlayerInner() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.setId, retest, quickMode, quickCount, loadAttempt, draftEnabled, draftKey, minutes, timedMode]);
+  }, [params.setId, retest, quickMode, quickCount, loadAttempt, draftEnabled, draftKey, minutes, timedMode, hasRangeParam, rangeFromParam, rangeToParam]);
 
   const totalGroups = set ? Math.ceil(set.words.length / GROUP_SIZE) : 0;
   const start = group * GROUP_SIZE;
@@ -475,7 +490,25 @@ function QuizPlayerInner() {
     document.getElementById("quiz-completion-summary")?.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 
-  function submitJumpQuestion() {
+  function applyRange(from: number, to: number) {
+    if (!set) return;
+    const total = set.words.length;
+    const safeFrom = Math.min(Math.max(1, Math.floor(from) || 1), total);
+    const safeTo = Math.min(Math.max(safeFrom, Math.floor(to) || safeFrom), total);
+    const params = new URLSearchParams(Array.from(search.entries()));
+    if (safeFrom <= 1 && safeTo >= total) {
+      params.delete("from");
+      params.delete("to");
+    } else {
+      params.set("from", String(safeFrom));
+      params.set("to", String(safeTo));
+    }
+    const query = params.toString();
+    const nextUrl = `/quiz/${set.id}${query ? `?${query}` : ""}`;
+    if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;
+    router.push(nextUrl);
+  }
+function submitJumpQuestion() {
     if (!set) return;
     const n = Number(jumpQuestion);
     if (!jumpQuestion.trim() || Number.isNaN(n) || n < 1 || n > set.words.length) {
@@ -802,7 +835,63 @@ function QuizPlayerInner() {
         </section>
       )}
 
-      <div className="flex items-center justify-center gap-2 flex-wrap mb-3">
+      {!retest && !quickMode && (
+        <div className="mb-3 flex items-center justify-center gap-2 flex-wrap rounded-xl border border-line bg-white px-3 py-2.5" role="group" aria-label="Chọn phạm vi câu hỏi">
+          <label className="text-[0.8rem] text-muted font-semibold">Phạm vi:</label>
+          <span className="text-[0.8rem] text-muted">Từ câu</span>
+          <input
+            type="number"
+            min={1}
+            max={totalWordCountRef.current || set.words.length}
+            placeholder="1"
+            value={rangeFromInput}
+            onChange={(e) => setRangeFromInput(e.target.value)}
+            className={`${cx.input} !mb-0 !w-20 !py-1.5`}
+          />
+          <span className="text-[0.8rem] text-muted">đến câu</span>
+          <input
+            type="number"
+            min={1}
+            max={totalWordCountRef.current || set.words.length}
+            placeholder={String(totalWordCountRef.current || set.words.length)}
+            value={rangeToInput}
+            onChange={(e) => setRangeToInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const f = Number(rangeFromInput) || 1;
+                const t = Number(rangeToInput) || totalWordCountRef.current || set.words.length;
+                applyRange(f, t);
+              }
+            }}
+            className={`${cx.input} !mb-0 !w-20 !py-1.5`}
+          />
+          <button
+            type="button"
+            className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`}
+            onClick={() => {
+              const f = Number(rangeFromInput) || 1;
+              const t = Number(rangeToInput) || totalWordCountRef.current || set.words.length;
+              applyRange(f, t);
+            }}
+          >
+            Áp dụng
+          </button>
+          {hasRangeParam && (
+            <button
+              type="button"
+              className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`}
+              onClick={() => applyRange(1, totalWordCountRef.current || set.words.length)}
+              title="Bỏ chọn phạm vi, làm toàn bộ bộ từ"
+            >
+              Cả bộ
+            </button>
+          )}
+          <span className="text-[0.72rem] text-muted ml-1">
+            (Tổng: {totalWordCountRef.current || set.words.length} câu)
+          </span>
+        </div>
+      )}
+<div className="flex items-center justify-center gap-2 flex-wrap mb-3">
         <label className="text-[0.8rem] text-muted">Nhóm:</label>
         <select
           className={`${cx.input} !mb-0 !w-auto !py-1.5`}
