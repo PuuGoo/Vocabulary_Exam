@@ -366,6 +366,29 @@ function QuizPlayerInner() {
     return () => window.removeEventListener("keydown", handleShortcut);
   }, [menuOpen, set?.id, isVerb, hasUnsubmittedAnswers]);
 
+  // Alt + Arrow Left / Right to jump between groups (works even when focused on input).
+  useEffect(() => {
+    function handleGroupNav(event: KeyboardEvent) {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (timedMode || menuOpen) return;
+      event.preventDefault();
+      const direction = event.key === "ArrowLeft" ? -1 : 1;
+      const target = group + direction;
+      if (target < 0 || target >= totalGroups) return;
+      const graded = checkedGroups[group];
+      const isComplete = graded !== undefined && !retryActive && graded.score === graded.total;
+      if (!isComplete) {
+        const missing = currentWords.filter((w) => !isWordAnswered(w)).length;
+        const label = missing > 0 ? `còn ${missing} câu chưa trả lời` : `còn câu sai`;
+        toast(`Nhóm ${group + 1} chưa đúng 100% (${label}). Alt+${direction > 0 ? "→" : "←"} để chuyển sang nhóm ${target + 1}.`);
+      }
+      goGroup(target);
+    }
+    window.addEventListener("keydown", handleGroupNav);
+    return () => window.removeEventListener("keydown", handleGroupNav);
+  }, [group, totalGroups, timedMode, menuOpen, checkedGroups, retryActive, currentWords]);
+
   // build MC options for the words in the current group, once
   useEffect(() => {
     if (!set || isVerb || mode !== "mc") return;
@@ -1234,8 +1257,8 @@ function submitJumpQuestion() {
       )}
       <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : "mt-6 flex justify-center border-t border-line pt-4"}>
         <div className={timedMode ? "contents" : "flex w-full max-w-xl items-center gap-2 rounded-[18px] border border-line bg-white p-2 shadow-sm"}>
-          <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-12 !shrink-0 !px-3`} disabled={group === 0} onClick={() => goGroup(group - 1)} aria-label="Về nhóm trước">
-            ◀ <span className="hidden sm:inline">Nhóm trước</span>
+          <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-12 !shrink-0 !px-3`} disabled={group === 0} onClick={() => goGroup(group - 1)} aria-label="Về nhóm trước" title="Phím tắt: Alt + ←">
+            ◀ <span className="hidden sm:inline">Nhóm trước</span> <kbd className="hidden lg:inline rounded border border-line bg-[#F8F8FC] px-1.5 py-0.5 text-[0.62rem] font-bold text-muted">Alt+←</kbd>
           </button>
           {!timedMode && !effectiveChecked && (
             <button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-12 !flex-1`} disabled={grading || answeredInGroup === 0} onClick={() => void grade()}>
@@ -1243,8 +1266,8 @@ function submitJumpQuestion() {
             </button>
           )}
           {!timedMode && effectiveChecked && group < totalGroups - 1 && (
-            <button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-12 !flex-1`} onClick={() => goGroup(group + 1)}>
-              Tiếp tục nhóm {group + 2} →
+            <button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-12 !flex-1`} onClick={() => goGroup(group + 1)} title="Phím tắt: Alt + →">
+              Tiếp tục nhóm {group + 2} → <kbd className="hidden lg:inline rounded border border-white/40 bg-white/15 px-1.5 py-0.5 text-[0.62rem] font-bold">Alt+→</kbd>
             </button>
           )}
           {!timedMode && effectiveChecked && group === totalGroups - 1 && (
