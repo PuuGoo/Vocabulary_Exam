@@ -42,9 +42,10 @@ function norm(s: string) {
 
 function splitSentences(text: string): string[] {
   return text
-    .split(/\.\s+/)
-    .map((s) => s.replace(/^[^a-zA-ZÀ-ỹ0-9]/g, "").replace(/\.?$/, "").trim())
-    .filter((s) => s.length > 0);
+    .replace(/\r/g, "")
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((s) => s.replace(/^[^A-Za-z0-9\u00C0-\u1EF9]/g, "").replace(/[.!?]+$/, "").trim())
+    .filter((s) => /[A-Za-z\u00C0-\u1EF9]/.test(s));
 }
 
 function tokenize(s: string): string[] {
@@ -55,24 +56,31 @@ function sentenceMatchScore(userSentence: string, sampleSentence: string): {
   userTokens: { word: string; matched: boolean }[];
   sampleTokens: { word: string; matched: boolean }[];
   missedWords: string[];
+  extraWords: string[];
 } {
   const u = norm(userSentence);
   const s = norm(sampleSentence);
-  if (!u || !s) return { score: 0, userTokens: [], sampleTokens: [], missedWords: [] };
+  if (!u || !s) return { score: 0, userTokens: [], sampleTokens: [], missedWords: [], extraWords: [] };
 
   const uTokens = tokenize(u);
   const sTokens = tokenize(s);
   const sSet = new Set(sTokens);
+  const uSet = new Set(uTokens);
 
   const userTokens = uTokens.map((w) => ({ word: w, matched: sSet.has(w) }));
   const matchedSet = new Set(userTokens.filter((t) => t.matched).map((t) => t.word));
   const sampleTokens = sTokens.map((w) => ({ word: w, matched: matchedSet.has(w) }));
-  const missedWords = sTokens.filter((w) => !matchedSet.has(w));
+  const missedWords = sampleTokens.filter((t) => !t.matched).map((t) => t.word);
+  const extraWords = userTokens.filter((t) => !t.matched).map((t) => t.word);
 
-  const maxLen = Math.max(uTokens.length, sTokens.length);
-  const score = maxLen > 0 ? (uTokens.length - userTokens.filter((t) => !t.matched).length) / maxLen : 0;
+  // Fairer scoring: use sample length as denominator, count correct matches in sample tokens.
+  // Extra words in user answer get a small penalty (each extra word = 1 point off, capped at half a sample).
+  const matchedSampleCount = sampleTokens.filter((t) => t.matched).length;
+  const sLen = sTokens.length;
+  const extraPenalty = Math.min(extraWords.length, Math.ceil(sLen / 2));
+  const score = sLen > 0 ? Math.max(0, (matchedSampleCount - extraPenalty) / sLen) : 0;
 
-  return { score, userTokens, sampleTokens, missedWords };
+  return { score, userTokens, sampleTokens, missedWords, extraWords };
 }
 
 function renderHighlightedTokens(tokens: { word: string; matched: boolean }[], className?: string) {
@@ -110,6 +118,7 @@ function WritingInner() {
     userTokens: { word: string; matched: boolean }[];
     sampleTokens: { word: string; matched: boolean }[];
     missedWords: string[];
+    extraWords: string[];
   } | null>(null);
   const [scores, setScores] = useState<Record<number, number>>({});
   const [attempts, setAttempts] = useState<Record<number, number>>({});
