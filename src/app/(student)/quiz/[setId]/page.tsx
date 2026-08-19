@@ -171,6 +171,18 @@ function QuizPlayerInner() {
       setSet(null);
       try {
         const res = await fetch(quickMode ? `/api/quick-practice?count=${quickCount}` : `/api/sets/${params.setId}`);
+        const serverProgressUrl = `/api/quiz-progress?setId=` + params.setId + `&mode=` + mode + `&timed=` + (timedMode ? `1` : `0`) + `&retest=` + (retest ? `1` : `0`) + (hasRangeParam ? `&rangeFrom=` + rangeFromParam + `&rangeTo=` + rangeToParam : ``);
+        let serverProgress = null;
+        if (userId > 0) {
+          try {
+            const progRes = await fetch(serverProgressUrl);
+            if (progRes.ok) {
+              const pData = await progRes.json().catch(() => null);
+              serverProgress = (pData && pData.progress && pData.progress[0]) || null;
+            }
+          } catch {}
+        }
+
         if (!res.ok) throw new Error("load failed");
         const data = await res.json();
         if (!data.set) throw new Error("missing set");
@@ -231,6 +243,27 @@ function QuizPlayerInner() {
           submittedRef.current = false;
           setTimedSubmitted(false);
           setTimedScore(null);
+
+          if (serverProgress && Array.isArray(serverProgress.wordIds) && serverProgress.wordIds.length > 0) {
+            const serverRestoredWords = restoreItemsByIds(loadedSet.words, serverProgress.wordIds);
+            if (serverRestoredWords && serverRestoredWords.length === serverProgress.wordIds.length) {
+              loadedSet = { ...loadedSet, words: serverRestoredWords };
+              if (!restored) {
+                const targetGroup = Math.min(Math.max(0, Number(serverProgress.groupIndex) || 0), Math.max(0, Math.ceil(serverRestoredWords.length / GROUP_SIZE) - 1));
+                setGroup(targetGroup);
+                setAnswers(serverProgress.answers || {});
+                setMcOptions(serverProgress.mcOptions || {});
+                setCheckedGroups(serverProgress.checkedGroups || {});
+                setRetryWordIdsByGroup(serverProgress.retryWordIdsByGroup || {});
+                if (Array.isArray(serverProgress.hintIds)) setHintIds(new Set(serverProgress.hintIds));
+                startedAtRef.current = Date.now() - Math.max(0, Number(serverProgress.elapsed) || 0) * 1000;
+                if (timedMode && serverProgress.timedEndsAt) {
+                  timedEndsAtRef.current = Number(serverProgress.timedEndsAt);
+                  setSecondsLeft(Math.max(0, Math.ceil((Number(serverProgress.timedEndsAt) - Date.now()) / 1000)));
+                }
+              }
+            }
+          }
           if (hasRangeParam) {
             const startIdx = Math.max(0, rangeFromParam - 1);
             const endIdx = Math.max(startIdx + 1, rangeToParam);
@@ -322,6 +355,40 @@ function QuizPlayerInner() {
     }, 250);
     return () => window.clearTimeout(timer);
   }, [allGroupsGraded, answers, checkedGroups, draftEnabled, draftKey, group, mcOptions, retryWordIdsByGroup, set, timedMode, timedSubmitted]);
+
+  // Sync progress to server (debounced) so user keeps their state across devices.
+  useEffect(() => {
+    if (!set || userId <= 0) return;
+    const hasActivity = Object.keys(answers).length > 0 || Object.keys(checkedGroups).length > 0 || Object.keys(retryWordIdsByGroup).length > 0;
+    if (timedSubmitted || allGroupsGraded || !hasActivity) {
+      void fetch(`/api/quiz-progress?setId=` + (set?.id ?? '') + `&mode=` + mode + `&timed=` + (timedMode ? `1` : `0`) + `&retest=` + (retest ? `1` : `0`) + (hasRangeParam ? `&rangeFrom=` + rangeFromParam + `&rangeTo=` + rangeToParam : ``), { method: `DELETE` }).catch(() => {});
+      return;
+    }
+    const payload = {
+      setId: set?.id ?? null,
+      mode,
+      timed: timedMode,
+      timedMinutes: timedMode ? minutes : null,
+      retest,
+      rangeFrom: hasRangeParam ? rangeFromParam : null,
+      rangeTo: hasRangeParam ? rangeToParam : null,
+      groupIndex: group,
+      answers,
+      mcOptions,
+      checkedGroups,
+      retryWordIdsByGroup,
+      hintIds: Array.from(hintIds),
+      wordIds: set.words.map((w) => w.id),
+      elapsed: Math.max(0, Math.round((Date.now() - startedAtRef.current) / 1000)),
+      timedEndsAt: timedMode ? timedEndsAtRef.current : null,
+    };
+    const timer = window.setTimeout(() => {
+      try {
+        fetch(`/api/quiz-progress`, { method: `POST`, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), keepalive: true }).catch(() => {});
+      } catch { /* ignore */ }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [allGroupsGraded, answers, checkedGroups, group, hintIds, hasRangeParam, mcOptions, minutes, mode, rangeFromParam, rangeToParam, retryWordIdsByGroup, retest, set, timedEndsAtRef, timedMode, timedSubmitted, userId]);
 
   function navigateQuiz(url: string) {
     if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;

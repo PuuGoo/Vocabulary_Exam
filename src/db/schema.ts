@@ -272,6 +272,45 @@ export const wordProgress = pgTable(
     dueIdx: index("word_progress_user_due_idx").on(table.userId, table.nextReviewAt),
   })
 );
+export const quizProgress = pgTable(
+  "quiz_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    setId: integer("set_id").references(() => vocabSets.id, { onDelete: "cascade" }),
+    mode: varchar("mode", { length: 16 }).notNull(),
+    timed: boolean("timed").notNull().default(false),
+    timedMinutes: integer("timed_minutes"),
+    retest: boolean("retest").notNull().default(false),
+    rangeFrom: integer("range_from"),
+    rangeTo: integer("range_to"),
+    groupIndex: integer("group_index").notNull().default(0),
+    answers: text("answers").notNull().default("{}"),
+    mcOptions: text("mc_options").notNull().default("{}"),
+    checkedGroups: text("checked_groups").notNull().default("{}"),
+    retryWordIdsByGroup: text("retry_word_ids_by_group").notNull().default("{}"),
+    hintIds: text("hint_ids").notNull().default("[]"),
+    wordIds: text("word_ids").notNull().default("[]"),
+    elapsed: integer("elapsed").notNull().default(0),
+    timedEndsAt: integer("timed_ends_at"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqProgress: uniqueIndex("quiz_progress_user_set_idx").on(
+      table.userId,
+      table.setId,
+      table.mode,
+      table.timed,
+      table.timedMinutes,
+      table.retest,
+      table.rangeFrom,
+      table.rangeTo
+    ),
+    userIdx: index("quiz_progress_user_idx").on(table.userId),
+  })
+);
 
 export const wordBookmarks = pgTable(
   "word_bookmarks",
@@ -404,6 +443,7 @@ export type TeachBackNote = typeof teachBackNotes.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;
+export type QuizProgress = typeof quizProgress.$inferSelect;
 export type WordBookmark = typeof wordBookmarks.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type LearningGoal = typeof learningGoals.$inferSelect;
