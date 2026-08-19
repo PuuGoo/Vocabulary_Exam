@@ -65,6 +65,29 @@ function checkMatch(userVal: string | undefined, answerKey: string | null | unde
   if (!ak) return false;
   return expandAnswerVariants(ak).map(norm).includes(u);
 }
+
+function maskAnswerInExample(example: string, answer: string): string {
+  if (!example) return "";
+  const trimmed = (answer || "").trim();
+  if (!trimmed) return example;
+  const variants = expandAnswerVariants(trimmed).filter(Boolean);
+  let result = example;
+  for (const variant of variants) {
+    const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`\\b${escaped}\\b`, "gi");
+    result = result.replace(re, "...");
+  }
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length > 1) {
+    for (const token of tokens) {
+      if (token.includes("/")) continue;
+      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`\\b${escaped}\\b`, "gi");
+      result = result.replace(re, "...");
+    }
+  }
+  return result;
+}
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -976,7 +999,7 @@ function QuizPlayerInner() {
                   )}
                   {w.example && !effectiveChecked && (
                     <div className="mb-2 text-xs text-muted italic">
-                      <span className="font-semibold not-italic">VD:</span> {w.example}
+                      <span className="font-semibold not-italic">VD:</span> {maskAnswerInExample(w.example || "", w.term || "")}
                     </div>
                   )}
                   <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">TỪ TIẾNG ANH</span>
