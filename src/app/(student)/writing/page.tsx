@@ -654,6 +654,23 @@ const nextSentence = useCallback(() => {
             {current?.vnMeaning ? splitSentences(current.vnMeaning)[current.sentenceIndex] || current.vnMeaning : "Chưa có nghĩa tiếng Việt"}
           </div>
           {current?.phonetic && <div className="mt-1 font-mono text-sm text-golddark">{current.phonetic}</div>}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+                {current && (() => {
+                  const d = sentenceDifficulty(current.targetSentence);
+                  const meta = DIFFICULTY_META[d];
+                  return (
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-bold ${meta.cls}`}>
+                      <span aria-hidden="true">{d === "easy" ? "?" : d === "medium" ? "??" : "???"}</span>
+                      �? kh�: {meta.label}
+                    </span>
+                  );
+                })()}
+                {current?.fullQuestion && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2 py-0.5 text-[0.7rem] font-bold text-muted">
+                    C�u {current.sentenceIndex + 1}/{splitSentences(current.fullAnswer).length}
+                  </span>
+                )}
+              </div>
         </div>
 
         {!submitted && (
