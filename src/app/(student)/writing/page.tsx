@@ -547,38 +547,102 @@ const nextSentence = useCallback(() => {
     );
   }
 
-  if (allDone && showAllDone) {
+    if (allDone && showAllDone) {
     const avg = overallScore();
     const totalAtt = totalAttempts();
+    const bestScore = Math.max(0, ...Object.values(scores).map((s) => Math.round(s * 100)));
+    const perfectCount = Object.values(scores).filter((s) => s >= 1).length;
+    const goodCount = Object.values(scores).filter((s) => s >= 0.7 && s < 1).length;
+    const retryNeeded = Object.values(scores).filter((s) => s < 0.7).length;
+    const difficultyStats = (["easy", "medium", "hard"] as const).map((d) => {
+      const items = exercises.filter((ex) => sentenceDifficulty(ex.targetSentence) === d);
+      const scoresArr = items.map((_, i) => {
+        const exIdx = exercises.indexOf(items[items.indexOf(_)]);
+        return scores[exIdx];
+      }).filter((s): s is number => s !== undefined);
+      const avgD = scoresArr.length > 0 ? Math.round(scoresArr.reduce((a, b) => a + b, 0) / scoresArr.length * 100) : null;
+      return { d, count: items.length, avg: avgD };
+    });
+    const wordsWritten = Object.values(scores).length;
+    const avgTimePerSentence = wordsWritten > 0 ? Math.round(elapsed / wordsWritten) : 0;
     return (
       <div className="max-w-3xl mx-auto">
         <div className={cx.panel}>
-          <div className="text-center py-6">
-            <div className="text-5xl mb-4">🎉</div>
-            <h2 className="text-xl font-serif font-bold text-ink">Hoàn thành!</h2>
-            <p className="text-muted mt-1">Bạn đã viết xong {totalCount} câu trong {fmtTime(elapsed)}.</p>
-            <div className="mt-4 flex flex-wrap justify-center gap-4">
-              <div className="inline-flex items-center gap-3 rounded-2xl border-2 border-gold bg-goldpale/50 px-8 py-4">
-                <span className="text-3xl font-bold text-golddark">{avg}%</span>
-                <span className="text-sm text-muted">điểm trung bình</span>
-              </div>
-              <div className="inline-flex items-center gap-3 rounded-2xl border border-line bg-white px-6 py-4">
-                <span className="text-2xl font-bold text-[#6550DB]">{totalAtt}</span>
-                <span className="text-sm text-muted">lần kiểm tra</span>
-              </div>
+          <div className="text-center py-4">
+            <div className="text-5xl mb-3" aria-hidden="true">??</div>
+            <h2 className="text-2xl font-serif font-bold text-ink">Ho�n th�nh b�i luy?n vi?t!</h2>
+            <p className="text-muted mt-1">B?n d� vi?t xong <b className="text-ink">{totalCount} c�u</b> trong <b className="text-ink">{fmtTime(elapsed)}</b>.</p>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-5">
+            <div className="rounded-2xl border-2 border-gold bg-goldpale/40 p-4 text-center">
+              <div className="text-3xl font-bold text-golddark">{avg}%</div>
+              <div className="text-xs text-muted mt-1">?i?m TB</div>
             </div>
-            {wrongCount > 0 && <p className="mt-3 text-sm text-muted">{wrongCount} câu cần cải thiện (dưới 70%)</p>}
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>Làm lại từ đầu</button>
-              {wrongCount > 0 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startRetry}>Làm lại {wrongCount} câu sai</button>}
-              <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>← Chọn thư mục khác</button>
+            <div className="rounded-2xl border border-line bg-white p-4 text-center">
+              <div className="text-2xl font-bold text-[#6550DB]">{bestScore}%</div>
+              <div className="text-xs text-muted mt-1">Cao nh?t</div>
             </div>
+            <div className="rounded-2xl border border-line bg-white p-4 text-center">
+              <div className="text-2xl font-bold text-emerald-600">{perfectCount}</div>
+              <div className="text-xs text-muted mt-1">Ho�n h?o (100%)</div>
+            </div>
+            <div className="rounded-2xl border border-line bg-white p-4 text-center">
+              <div className="text-2xl font-bold text-ink">{totalAtt}</div>
+              <div className="text-xs text-muted mt-1">L?n ki?m tra</div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-line bg-[#FBFAFE] p-4 mb-4">
+            <h3 className="text-sm font-bold text-ink mb-3">Ph�n t�ch theo d? kh�</h3>
+            <div className="space-y-2">
+              {difficultyStats.map(({ d, count, avg: avgD }) => {
+                const meta = DIFFICULTY_META[d];
+                return (
+                  <div key={d} className="flex items-center gap-3">
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-bold shrink-0 w-24 justify-center ${meta.cls}`}>
+                      <span aria-hidden="true">{d === "easy" ? "?" : d === "medium" ? "??" : "???"}</span>
+                      {meta.label}
+                    </span>
+                    <div className="flex-1 h-2 rounded-full bg-white border border-line overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${d === "easy" ? "bg-emerald-500" : d === "medium" ? "bg-amber-500" : "bg-rose-500"}`}
+                        style={{ width: `${avgD ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-xs font-mono font-bold text-muted shrink-0 w-20 text-right">
+                      {avgD !== null ? `${avgD}%` : "�"} � {count} c�u
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 text-center">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5">
+              <div className="text-lg font-bold text-emerald-700">{goodCount}</div>
+              <div className="text-[0.7rem] text-emerald-700">Kh� (=70%)</div>
+            </div>
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5">
+              <div className="text-lg font-bold text-rose-700">{retryNeeded}</div>
+              <div className="text-[0.7rem] text-rose-700">C?n �n (&lt;70%)</div>
+            </div>
+            <div className="rounded-lg border border-line bg-white p-2.5">
+              <div className="text-lg font-bold text-ink">{fmtTime(avgTimePerSentence)}</div>
+              <div className="text-[0.7rem] text-muted">Trung b�nh/c�u</div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>L�m l?i t? d?u</button>
+            {retryNeeded > 0 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startRetry}>�n {retryNeeded} c�u sai</button>}
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>? Ch?n thu m?c kh�c</button>
           </div>
         </div>
       </div>
     );
   }
-
   const displayTotal = displayExercises.length;
 
   return (
