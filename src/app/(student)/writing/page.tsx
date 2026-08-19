@@ -267,18 +267,37 @@ function WritingInner() {
         if (!res.ok) throw new Error();
         const data = await res.json();
         setQuestions(data.questions || []);
+        // Try server progress first so users keep state across devices
+        let serverDraft: { scores: Record<number, number>; attempts: Record<number, number>; currentIndex: number; elapsed: number; savedAt?: number } | null = null;
+        try {
+          const res = await fetch("/api/writing-progress?category=" + encodeURIComponent(category));
+          if (res.ok) {
+            const data = await res.json();
+            const p = (data.progress || [])[0];
+            if (p && p.scores && p.attempts && p.currentIndex >= 0) {
+              serverDraft = { scores: p.scores, attempts: p.attempts, currentIndex: p.currentIndex, elapsed: p.elapsed || 0, savedAt: p.updatedAt ? new Date(p.updatedAt).getTime() : 0 };
+            }
+          }
+        } catch { /* ignore */ }
+        let localDraft: typeof serverDraft = null;
         try {
           const raw = localStorage.getItem(draftKey);
           if (raw) {
             const draft = JSON.parse(raw);
             if (draft && typeof draft.scores === "object" && draft.currentIndex >= 0) {
-              setScores(draft.scores || {});
-              setAttempts(draft.attempts || {});
-              setCurrentIndex(draft.currentIndex);
-              setElapsed(draft.elapsed || 0);
+              localDraft = { scores: draft.scores, attempts: draft.attempts, currentIndex: draft.currentIndex, elapsed: draft.elapsed || 0, savedAt: draft.savedAt || 0 };
             }
           }
         } catch { /* ignore */ }
+        const chosen = (serverDraft && localDraft)
+          ? ((serverDraft.savedAt && serverDraft.savedAt > (localDraft.savedAt || 0)) ? serverDraft : localDraft)
+          : (serverDraft || localDraft);
+        if (chosen) {
+          setScores(chosen.scores || {});
+          setAttempts(chosen.attempts || {});
+          setCurrentIndex(chosen.currentIndex);
+          setElapsed(chosen.elapsed || 0);
+        }
       })
       .catch(() => toast("Không thể tải câu hỏi."))
       .finally(() => setLoading(false));
@@ -313,6 +332,43 @@ function WritingInner() {
     } catch { /* storage full */ }
   }
 
+  // Sync progress to server (debounced) so users keep state across devices.
+  const serverSyncTimerRef = useRef<number | null>(null);
+  function syncServerDraftNow() {
+    if (!category) return;
+    const payload = {
+      category,
+      scores: scoresRef.current,
+      attempts: attemptsRef.current,
+      currentIndex: currentIndexRef.current,
+      elapsed,
+    };
+    try {
+      fetch("/api/writing-progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        keepalive: true,
+      }).catch(() => {});
+    } catch { /* ignore */ }
+  }
+  useEffect(() => {
+    if (!category || loading) return;
+    if (allDone) {
+      try {
+        fetch("/api/writing-progress?category=" + encodeURIComponent(category), { method: "DELETE" }).catch(() => {});
+      } catch { /* ignore */ }
+      return;
+    }
+    const hasActivity = Object.keys(scores).length > 0 || Object.keys(attempts).length > 0;
+    if (!hasActivity) return;
+    if (serverSyncTimerRef.current) window.clearTimeout(serverSyncTimerRef.current);
+    serverSyncTimerRef.current = window.setTimeout(syncServerDraftNow, 2000);
+    return () => {
+      if (serverSyncTimerRef.current) window.clearTimeout(serverSyncTimerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDone, attempts, category, elapsed, loading, scores]);
   const handleSubmit = useCallback(() => {
     if (!current || !userAnswerRef.current.trim() || submittedRef.current) return;
     const result = sentenceMatchScore(userAnswerRef.current, current.targetSentence);

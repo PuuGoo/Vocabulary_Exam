@@ -432,6 +432,28 @@ export const mistakesRelations = relations(mistakes, ({ one }) => ({
   set: one(vocabSets, { fields: [mistakes.setId], references: [vocabSets.id] }),
 }));
 
+export const writingProgress = pgTable(
+  "writing_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    category: varchar("category", { length: 256 }).notNull(),
+    scores: text("scores").notNull().default("{}"),
+    attempts: text("attempts").notNull().default("{}"),
+    currentIndex: integer("current_index").notNull().default(0),
+    elapsed: integer("elapsed").notNull().default(0),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("writing_progress_user_category_idx").on(table.userId, table.category),
+    userIdx: index("writing_progress_user_idx").on(table.userId),
+  })
+);
+
+
+
 export type User = typeof users.$inferSelect;
 export type VocabSet = typeof vocabSets.$inferSelect;
 export type Word = typeof words.$inferSelect;
@@ -444,6 +466,7 @@ export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;
 export type QuizProgress = typeof quizProgress.$inferSelect;
+export type WritingProgress = typeof writingProgress.$inferSelect;
 export type WordBookmark = typeof wordBookmarks.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type LearningGoal = typeof learningGoals.$inferSelect;
