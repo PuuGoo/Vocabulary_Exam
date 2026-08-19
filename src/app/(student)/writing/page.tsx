@@ -91,6 +91,34 @@ function renderHighlightedTokens(tokens: { word: string; matched: boolean }[], c
   ));
 }
 
+
+function generateHint(sentence: string): string {
+  const tokens = tokenize(sentence);
+  return tokens
+    .map((w) => {
+      if (w.length <= 2) return w;
+      const first = w[0];
+      const blanks = "_".repeat(Math.max(1, w.length - 1));
+      return first + blanks;
+    })
+    .join(" ");
+}
+
+function sentenceDifficulty(sentence: string): "easy" | "medium" | "hard" {
+  const tokens = tokenize(sentence);
+  const len = tokens.length;
+  const longWordCount = tokens.filter((w) => w.length >= 8).length;
+  if (len <= 7 && longWordCount === 0) return "easy";
+  if (len >= 14 || longWordCount >= 3) return "hard";
+  return "medium";
+}
+
+const DIFFICULTY_META = {
+  easy: { label: "D?", cls: "bg-emerald-100 text-emerald-700 border-emerald-300" },
+  medium: { label: "Trung b�nh", cls: "bg-amber-100 text-amber-700 border-amber-300" },
+  hard: { label: "Kh�", cls: "bg-rose-100 text-rose-700 border-rose-300" },
+};
+
 export default function WritingPage() {
   return (
     <Suspense fallback={<div className={cx.panel}><div className={cx.empty} role="status">Đang tải...</div></div>}>
@@ -126,6 +154,7 @@ function WritingInner() {
   const [savingResult, setSavingResult] = useState(false);
   const [showAnswer, setShowAnswer] = useState(false);
   const [retryMode, setRetryMode] = useState(false);
+  const [showHint, setShowHint] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
   const resultRef = useRef<HTMLDivElement>(null);
@@ -209,6 +238,7 @@ function WritingInner() {
     setAttempts({});
     setShowAllDone(false);
     setShowAnswer(false);
+      setShowHint(false);
     setRetryMode(false);
     setElapsed(0);
     fetch(`/api/category-questions?category=${encodeURIComponent(category)}`)
@@ -289,6 +319,7 @@ const nextSentence = useCallback(() => {
       submittedRef.current = false;
       setMatchResult(null);
       setShowAnswer(false);
+      setShowHint(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [currentIndex, displayExercises.length, userAnswer]);
@@ -301,6 +332,7 @@ const nextSentence = useCallback(() => {
       submittedRef.current = false;
       setMatchResult(null);
       setShowAnswer(false);
+      setShowHint(false);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
   }, [currentIndex, userAnswer]);
@@ -311,6 +343,7 @@ const nextSentence = useCallback(() => {
     setUserAnswer("");
     setMatchResult(null);
     setShowAnswer(false);
+      setShowHint(false);
     setScores((prev) => {
       const next = { ...prev };
       const origIdx = retryMode && current
@@ -345,6 +378,7 @@ const nextSentence = useCallback(() => {
     submittedRef.current = false;
     setMatchResult(null);
     setShowAnswer(false);
+      setShowHint(false);
   }, [currentIndex, userAnswer]);
 
   function selectCategory(value: string) {
@@ -629,7 +663,23 @@ const nextSentence = useCallback(() => {
         )}
 
         <div className="mb-4">
-          <label className={cx.label}>Nhập câu tiếng Anh của bạn</label>
+          <label className={`cx.label mb-0`}>Nh?p c�u ti?ng Anh c?a b?n</label>
+            </div>
+            {showHint && current && (
+              <div className={`mb-3 rounded-lg border border-dashed border-[#7865EE] bg-[#F5F2FF] px-3 py-2`}>
+                <div className={`text-[0.7rem] font-bold text-[#6550DB] mb-1`}>G?i � (ch? ch? c�i d?u):</div>
+                <div className={`font-mono text-sm text-ink leading-relaxed`}>{generateHint(current.targetSentence)}</div>
+              </div>
+            )}
+            <div className="flex items-center justify-between mb-1">
+              <button
+                type={`button`}
+                onClick={() => setShowHint(!showHint)}
+                className={`text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md hover:bg-[#F0EDFF] transition`}
+                title={`Hi?n g?i �: ch? ch? c�i d?u c?a m?i t?`}
+              >
+                {showHint ? '?n g?i �' : '?? G?i �'}
+              </button>
           <textarea
             ref={textareaRef}
             className={`${cx.input} !mb-0 min-h-[120px] ${submitted ? "opacity-60" : "focus:border-gold focus:ring-2 focus:ring-gold/20"}`}
