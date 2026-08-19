@@ -161,7 +161,7 @@ function WritingInner() {
   const [elapsed, setElapsed] = useState(0);
 
   const resultRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const submittedRef = useRef(false);
   const userAnswerRef = useRef(userAnswer);
   const currentIndexRef = useRef(currentIndex);
@@ -851,9 +851,20 @@ const nextSentence = useCallback(() => {
               >
                 {showHint ? '?n g?i �' : '?? G?i �'}
               </button>
-          <textarea
-            ref={textareaRef}
-            className={`${cx.input} !mb-0 min-h-[120px] ${submitted ? "opacity-60" : "focus:border-gold focus:ring-2 focus:ring-gold/20"}`}
+<textarea
+            ref={(el) => {
+              textareaRef.current = el;
+              if (el) {
+                el.style.height = "auto";
+                el.style.height = Math.min(el.scrollHeight + 8, 240) + "px";
+              }
+            }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight + 8, 240) + "px";
+            }}
+            className={`${cx.input} !mb-0 min-h-[80px] resize-none overflow-hidden transition-all ${submitted ? "opacity-60" : "focus:border-gold focus:ring-2 focus:ring-gold/20"}`}
             placeholder="Gõ câu tiếng Anh tương ứng với nghĩa tiếng Việt..."
             value={userAnswer}
             onChange={(e) => setUserAnswer(e.target.value)}
