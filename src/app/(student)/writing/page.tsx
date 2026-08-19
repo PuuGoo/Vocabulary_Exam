@@ -28,6 +28,9 @@ type SentenceExercise = {
 type CategoryOpt = {
   name: string;
   count: number;
+  progress?: number;
+  avgScore?: number | null;
+  attempts?: number;
 };
 
 const DRAFT_KEY_PREFIX = "lexora-writing-draft-";
@@ -214,13 +217,31 @@ function WritingInner() {
     return () => clearInterval(t);
   }, [category, allDone]);
 
-  // Load categories
+  // Load categories + per-category progress from localStorage drafts
   useEffect(() => {
     fetch("/api/writing-categories")
       .then(async (res) => {
         if (!res.ok) throw new Error();
         const data = await res.json();
-        setCategories(data.categories || []);
+        const cats = data.categories || [];
+        const enriched = cats.map((c: CategoryOpt) => {
+          try {
+            const raw = localStorage.getItem(DRAFT_KEY_PREFIX + c.name);
+            if (!raw) return { ...c, progress: 0, avgScore: null, attempts: 0 };
+            const draft = JSON.parse(raw);
+            const scores = draft.scores || {};
+            const attemptsMap = draft.attempts || {};
+            const completed = Object.keys(scores).length;
+            const total = Object.values(attemptsMap).reduce((a: number, b: unknown) => a + ((b as number) || 0), 0);
+            const avgScore = completed > 0
+              ? Math.round(Object.values(scores).reduce((a: number, b: unknown) => a + ((b as number) || 0), 0) / completed * 100)
+              : null;
+            return { ...c, progress: completed, avgScore, attempts: total };
+          } catch {
+            return { ...c, progress: 0, avgScore: null, attempts: 0 };
+          }
+        });
+        setCategories(enriched);
       })
       .catch(() => {})
       .finally(() => setCatLoading(false));
@@ -498,15 +519,28 @@ const nextSentence = useCallback(() => {
                 <button
                   key={cat.name}
                   onClick={() => selectCategory(cat.name)}
-                  className="flex min-h-[68px] items-center gap-3 rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
+                  className="flex min-h-[72px] flex-col gap-1.5 rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
                 >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFECFF] text-lg" aria-hidden="true">📁</span>
-                  <span className="min-w-0 flex-1">
-                    <b className="block truncate text-sm text-ink">{cat.name}</b>
-                    <span className="mt-0.5 block text-xs text-muted">{cat.count} câu hỏi</span>
-                  </span>
-                  <span className="text-lg text-muted" aria-hidden="true">›</span>
+                  <div className="flex items-center gap-3 w-full">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFECFF] text-lg" aria-hidden="true">??</span>
+                    <span className="min-w-0 flex-1">
+                      <b className="block truncate text-sm text-ink">{cat.name}</b>
+                      <span className="mt-0.5 block text-xs text-muted">{cat.count} c�u h?i � {Math.max(1, Math.round(cat.count * 4))} c�u vi?t</span>
+                    </span>
+                    <span className="text-lg text-muted" aria-hidden="true">�</span>
+                  </div>
+                  {(cat.progress && cat.progress > 0) ? (
+                    <div className="flex items-center gap-2 pl-[52px]">
+                      <div className="flex-1 h-1.5 rounded-full bg-line overflow-hidden">
+                        <div className="h-full rounded-full bg-[#7865EE]" style={{ width: `${Math.min(100, Math.round(((cat.progress || 0) / Math.max(1, cat.count * 4)) * 100))}%` }} />
+                      </div>
+                      <span className="text-[0.7rem] font-bold text-muted whitespace-nowrap">
+                        {cat.avgScore !== null && cat.avgScore !== undefined ? `${cat.avgScore}%` : `${cat.progress || 0}?`}
+                      </span>
+                    </div>
+                  ) : null}
                 </button>
+
               ))}
             </div>
           )}
