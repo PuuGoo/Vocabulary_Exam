@@ -570,16 +570,18 @@ function QuizPlayerInner() {
     }
   }
 
-  function restartAllGroups() {
+  function restartAllGroups(confirmMessage = "Xoá toàn bộ câu trả lời và kết quả chấm của cả bộ để làm lại từ đầu?") {
+    if ((Object.keys(answers).length > 0 || Object.keys(checkedGroups).length > 0) && !confirm(confirmMessage)) return;
+    try { localStorage.removeItem(draftKey); } catch { /* Storage is optional. */ }
     setAnswers({});
     setCheckedGroups({});
     setRetryWordIdsByGroup({});
     setGroup(0);
     setJumpQuestion("");
+    setHintIds(new Set());
     startedAtRef.current = Date.now();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
-
   async function grade() {
     if (!set || grading || answeredInGroup === 0) return;
     setGrading(true);
@@ -739,9 +741,20 @@ function QuizPlayerInner() {
           {retest && <span className={cx.badgeGold}>Làm lại từ sai</span>}{" "}
           {quickMode && <span className={cx.badgeGold}>Luyện nhanh</span>}
         </h2>
-        <button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveQuiz}>
-          ← Chọn bộ khác
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            type="button"
+            className={`${cx.btn} ${cx.btnGhost}`}
+            onClick={() => restartAllGroups()}
+            disabled={Object.keys(answers).length === 0 && Object.keys(checkedGroups).length === 0}
+            title="Xoá toàn bộ câu trả lời và kết quả chấm của cả bộ"
+          >
+            Làm lại từ đầu
+          </button>
+          <button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveQuiz}>
+            ← Chọn bộ khác
+          </button>
+        </div>
       </div>
       {!retest && !quickMode && (
         <StudyModeNav
@@ -782,7 +795,7 @@ function QuizPlayerInner() {
           <div className="mt-2 text-3xl font-bold text-golddark">{overallScore}/{overallTotal}</div>
           <p className="mt-1 text-sm text-muted">Độ chính xác {overallTotal ? Math.round((overallScore / overallTotal) * 100) : 0}%</p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAllGroups}>Làm lại toàn bộ</button>
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => restartAllGroups("Bạn đã hoàn thành xuất sắc. Làm lại toàn bộ bài từ đầu?")}>Làm lại toàn bộ</button>
             {overallScore < overallTotal && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/review")}>Ôn lại từ sai</button>}
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/learn/${set.id}`)}>Học lại bằng thẻ</button>
           </div>
