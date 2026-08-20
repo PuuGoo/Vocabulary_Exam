@@ -157,6 +157,12 @@ function QuizPlayerInner() {
   const [jumpQuestion, setJumpQuestion] = useState("");
   const [rangeFromInput, setRangeFromInput] = useState<string>(rangeFromParam > 0 ? String(rangeFromParam) : "");
   const [rangeToInput, setRangeToInput] = useState<string>(rangeToParam > 0 ? String(rangeToParam) : "");
+
+  // Sync input fields with URL params after navigation
+  useEffect(() => {
+    setRangeFromInput(rangeFromParam > 0 ? String(rangeFromParam) : "");
+    setRangeToInput(rangeToParam > 0 ? String(rangeToParam) : "");
+  }, [rangeFromParam, rangeToParam]);
   const [pendingFocus, setPendingFocus] = useState<number | "first" | null>(null);
   const inputRefs = useRef(new Map<number, HTMLInputElement>()).current;
   const rowRefs = useRef(new Map<number, HTMLDivElement>()).current;
@@ -582,7 +588,7 @@ function QuizPlayerInner() {
 
   function applyRange(from: number, to: number) {
     if (!set) return;
-    const total = set.words.length;
+    const total = totalWordCountRef.current || set.words.length;
     const safeFrom = Math.min(Math.max(1, Math.floor(from) || 1), total);
     const safeTo = Math.min(Math.max(safeFrom, Math.floor(to) || safeFrom), total);
     const params = new URLSearchParams(Array.from(search.entries()));
