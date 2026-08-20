@@ -6,8 +6,8 @@ import { BACKUP_COLLECTIONS, BackupCollection } from "@/lib/backup";
 
 const STORAGE_KEY = "lexora_last_backup_at";
 const CONFIRMATION = "KHOI PHUC";
-const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
-const MAX_DECOMPRESSED_CHARS = 60 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 750 * 1024 * 1024; // 750 MB raw upload cap (chunked server-side).
+const UPLOAD_CONCURRENCY = 3;
 
 const LABELS: Record<BackupCollection, string> = {
   users: "Tài khoản", classes: "Lớp học", classMembers: "Thành viên lớp", vocabCategories: "Danh mục", categoryDocuments: "Tài liệu PDF", vocabSets: "Bộ từ",
@@ -18,24 +18,65 @@ const LABELS: Record<BackupCollection, string> = {
   appSettings: "Cấu hình hệ thống",
 };
 
+async function uploadFileInChunks(file: File, onProgress: (received: number, total: number) => void): Promise<string> {
+  const total = file.size;
+  const start = await fetch("/api/admin/backup/restore/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ originalName: file.name, totalBytes: total }),
+  }).then(async (r) => {
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "Không thể khởi tạo phiên khôi phục.");
+    return data as { sessionId: string; chunkSize: number; expectedChunks: number; totalBytes: number };
+  });
+  const { sessionId, chunkSize, expectedChunks } = start;
+  let cancelled = false;
+  let next = 0;
+  let received = 0;
+  const tryUploadOne = async () => {
+    while (!cancelled) {
+      const index = next++;
+      if (index >= expectedChunks) return;
+      const begin = index * chunkSize;
+      const end = Math.min(begin + chunkSize, total);
+      const blob = file.slice(begin, end);
+      const buf = await blob.arrayBuffer();
+      const response = await fetch(`/api/admin/backup/restore/chunk?session=${sessionId}&index=${index}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: buf,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        cancelled = true;
+        throw new Error(payload.error || `Phân đoạn ${index} thất bại.`);
+      }
+      received += end - begin;
+      onProgress(received, total);
+    }
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, expectedChunks) }, () => tryUploadOne()));
+  } catch (error) {
+    await fetch("/api/admin/backup/restore/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    }).catch(() => undefined);
+    throw error;
+  }
+  return sessionId;
+}
+
 type Preview = { createdAt: string; version: number; integrity: "verified" | "legacy"; counts: Record<BackupCollection, number>; unknownUsers: string[]; strategy: string };
 type RestoreReport = { added: Record<BackupCollection, number>; skipped: Record<BackupCollection, number>; warnings: string[] };
-type EmailSchedule = { enabled: boolean; recipient: string; hour: number; timezone: "Asia/Ho_Chi_Minh"; lastSentAt: string; lastError: string; lastCronAt: string; lastAttemptAt: string; lastAttemptStatus: string };
+type EmailSchedule = { enabled: boolean; recipient: string; hour?: number; timezone?: string; lastSentAt: string; lastError: string; lastCronAt: string; lastAttemptAt: string; lastAttemptStatus: string };
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-async function readBackupFile(file: File) {
-  if (!file.name.toLocaleLowerCase().endsWith(".gz")) return file.text();
-  if (typeof DecompressionStream === "undefined") throw new Error("Trình duyệt này chưa hỗ trợ đọc gzip. Hãy giải nén file trước khi khôi phục.");
-  const decompressed = file.stream().pipeThrough(new DecompressionStream("gzip"));
-  const text = await new Response(decompressed).text();
-  if (text.length > MAX_DECOMPRESSED_CHARS) throw new Error("Dữ liệu sau giải nén lớn hơn giới hạn 60 MB.");
-  return text;
 }
 
 export default function BackupPage() {
@@ -46,9 +87,10 @@ export default function BackupPage() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [previewing, setPreviewing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ received: number; total: number } | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [report, setReport] = useState<RestoreReport | null>(null);
-  const [emailSchedule, setEmailSchedule] = useState<EmailSchedule>({ enabled: false, recipient: "", hour: 20, timezone: "Asia/Ho_Chi_Minh", lastSentAt: "", lastError: "", lastCronAt: "", lastAttemptAt: "", lastAttemptStatus: "" });
+  const [emailSchedule, setEmailSchedule] = useState<EmailSchedule>({ enabled: false, recipient: "", hour: 0, timezone: "Asia/Ho_Chi_Minh", lastSentAt: "", lastError: "", lastCronAt: "", lastAttemptAt: "", lastAttemptStatus: "" });
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [testingEmail, setTestingEmail] = useState(false);
@@ -106,18 +148,22 @@ export default function BackupPage() {
   }
 
   async function inspectFile(file?: File) {
-    setBackup(null); setPreview(null); setReport(null); setConfirmation(""); setFileName(file?.name || "");
+    setBackup(null); setPreview(null); setReport(null); setConfirmation(""); setUploadProgress(null); setFileName(file?.name || "");
     if (!file) return;
-    if (file.size > MAX_UPLOAD_BYTES) { toast("File lớn hơn 20 MB. Hãy kiểm tra lại file sao lưu."); setFileName(""); return; }
+    if (file.size > MAX_UPLOAD_BYTES) { toast(`File lớn hơn ${(MAX_UPLOAD_BYTES / 1024 / 1024).toFixed(0)} MB. Hãy kiểm tra lại.`); setFileName(""); return; }
     setPreviewing(true);
     try {
-      const parsed = JSON.parse(await readBackupFile(file));
-      const response = await fetch("/api/admin/backup/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "preview", backup: parsed }) });
+      const sessionId = await uploadFileInChunks(file, (received, total) => setUploadProgress({ received, total }));
+      const response = await fetch("/api/admin/backup/restore/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "preview", sessionId }),
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Không thể đọc file sao lưu.");
-      setBackup(parsed); setPreview(payload); toast("File hợp lệ. Hãy kiểm tra bản xem trước.");
+      setBackup({ sessionId }); setPreview(payload); toast("File hợp lệ. Hãy kiểm tra bản xem trước.");
     } catch (error) { setFileName(""); toast(error instanceof Error ? error.message : "File JSON không hợp lệ."); }
-    finally { setPreviewing(false); }
+    finally { setPreviewing(false); setUploadProgress(null); }
   }
 
   async function chooseFile(event: ChangeEvent<HTMLInputElement>) {
@@ -132,7 +178,13 @@ export default function BackupPage() {
     try {
       const backedUp = await downloadBackup(false);
       if (!backedUp) throw new Error("Đã dừng khôi phục vì chưa thể sao lưu dữ liệu hiện tại.");
-      const response = await fetch("/api/admin/backup/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore", confirmation, backup }) });
+      const session = (backup as { sessionId?: string } | null)?.sessionId;
+      if (!session) throw new Error("Phiên khôi phục đã hết hạn. Hãy chọn lại file.");
+      const response = await fetch("/api/admin/backup/restore/commit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restore", confirmation, sessionId: session }),
+      });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Không thể khôi phục dữ liệu.");
       setReport(payload.report); setConfirmation(""); toast("Khôi phục hoàn tất. Dữ liệu hiện có vẫn được giữ nguyên.");
@@ -146,7 +198,7 @@ export default function BackupPage() {
     <section className="grid gap-5 lg:grid-cols-2">
       <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EAE7FF] text-xl text-[#6550DB]">↓</span><div><h2 className="font-extrabold">Tạo bản sao lưu mới</h2><p className="mt-1 text-sm leading-6 text-muted">Bao gồm tài khoản, cấu hình, lớp, bộ từ, tiến độ, bài làm, ghi chú và file đã tải lên.</p></div></div></div><div className="p-5 sm:p-6"><dl className="grid gap-3 text-sm sm:grid-cols-2"><div className="rounded-[13px] border border-line p-4"><dt className="text-xs font-semibold text-muted">Định dạng</dt><dd className="mt-1 font-bold">Lexora JSON v2 · SHA-256</dd></div><div className="rounded-[13px] border border-line p-4"><dt className="text-xs font-semibold text-muted">Lần tải trên thiết bị này</dt><dd className="mt-1 font-bold">{lastBackupAt ? new Date(lastBackupAt).toLocaleString("vi-VN") : "Chưa có"}</dd></div></dl><button type="button" onClick={() => void downloadBackup()} disabled={downloading || restoring} className="mt-6 inline-flex h-12 items-center justify-center rounded-[12px] bg-gold px-5 text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-golddark disabled:cursor-wait disabled:opacity-60">{downloading ? "Đang đóng gói và kiểm tra…" : "Tải bản sao lưu an toàn"}</button></div></article>
 
-      <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#E8F6EF] text-xl text-[#267A52]">↥</span><div><h2 className="font-extrabold">Khôi phục từ file JSON</h2><p className="mt-1 text-sm leading-6 text-muted">Kiểm tra toàn vẹn trước, chỉ thêm dữ liệu còn thiếu và tự tải bản sao hiện tại.</p></div></div></div><div className="p-5 sm:p-6"><label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void inspectFile(event.dataTransfer.files?.[0]); }} className="group flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed border-[#D9D5EC] bg-[#FAF9FD] px-4 text-center transition hover:border-[#8A79E7] hover:bg-[#F7F5FF]"><span className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg text-[#6550DB] shadow-sm transition group-hover:-translate-y-0.5">↥</span><span className="text-sm font-bold text-main">{previewing ? "Đang giải nén và kiểm tra checksum…" : fileName || "Kéo thả hoặc chọn file sao lưu"}</span><span className="mt-1 text-xs text-muted">Hỗ trợ .json và .json.gz · tối đa 20 MB</span><input className="sr-only" type="file" accept="application/json,application/gzip,.json,.json.gz,.gz" onChange={(event) => void chooseFile(event)} disabled={previewing || restoring} /></label>{fileName && !preview && !previewing ? <p className="mt-3 text-xs text-[#A34141]">File chưa vượt qua bước kiểm tra.</p> : null}</div></article>
+      <article className="lexora-card overflow-hidden"><div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#E8F6EF] text-xl text-[#267A52]">↥</span><div><h2 className="font-extrabold">Khôi phục từ file JSON</h2><p className="mt-1 text-sm leading-6 text-muted">Kiểm tra toàn vẹn trước, chỉ thêm dữ liệu còn thiếu và tự tải bản sao hiện tại.</p></div></div></div><div className="p-5 sm:p-6"><label onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void inspectFile(event.dataTransfer.files?.[0]); }} className="group flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed border-[#D9D5EC] bg-[#FAF9FD] px-4 text-center transition hover:border-[#8A79E7] hover:bg-[#F7F5FF]"><span className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg text-[#6550DB] shadow-sm transition group-hover:-translate-y-0.5">↥</span><span className="text-sm font-bold text-main">{previewing ? (uploadProgress ? "Đang tải lên… " + (uploadProgress.received / 1024 / 1024).toFixed(1) + "/" + (uploadProgress.total / 1024 / 1024).toFixed(1) + " MB" : "Đang kiểm tra và khôi phục…") : fileName || "Kéo thả hoặc chọn file sao lưu"}</span><span className="mt-1 text-xs text-muted">Hỗ trợ .json và .json.gz · tối đa 750 MB (tải theo phân đoạn</span><input className="sr-only" type="file" accept="application/json,application/gzip,.json,.json.gz,.gz" onChange={(event) => void chooseFile(event)} disabled={previewing || restoring} /></label>{fileName && !preview && !previewing ? <p className="mt-3 text-xs text-[#A34141]">File chưa vượt qua bước kiểm tra.</p> : null}</div></article>
     </section>
 
     <section className="lexora-card overflow-hidden">
@@ -158,9 +210,9 @@ export default function BackupPage() {
         {(!emailConfigured || !cronConfigured) ? <div className="mb-5 rounded-[14px] border border-[#F0DDA2] bg-[#FFF9E7] p-4 text-sm leading-6 text-[#72591A]"><b className="block text-[#56410E]">Chưa thể chạy tự động trên production</b>{!emailConfigured ? "Thiếu cấu hình SMTP. " : ""}{!cronConfigured ? "Thiếu biến môi trường CRON_SECRET. " : ""}Bạn vẫn có thể lưu cấu hình sau khi bổ sung các biến trên Vercel.</div> : null}
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
           <label className="block"><span className="mb-2 block text-xs font-bold text-muted">Email cố định nhận sao lưu</span><input type="email" value={emailSchedule.recipient} onChange={(event) => setEmailSchedule((value) => ({ ...value, recipient: event.target.value }))} placeholder="backup@vidu.com" className="h-12 w-full rounded-[12px] border border-line bg-white px-4 text-sm outline-none transition focus:border-[#7865EE] focus:ring-4 focus:ring-[#7865EE]/10" disabled={scheduleLoading} /></label>
-          <label className="block"><span className="mb-2 block text-xs font-bold text-muted">Khung giờ gửi mỗi ngày</span><select value={emailSchedule.hour} onChange={(event) => setEmailSchedule((value) => ({ ...value, hour: Number(event.target.value) }))} className="h-12 w-full rounded-[12px] border border-line bg-white px-4 text-sm font-bold outline-none focus:border-[#7865EE]" disabled={scheduleLoading}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, "0")}:00 – {String(hour).padStart(2, "0")}:59</option>)}</select></label>
+          <div className="rounded-[13px] border border-line bg-[#FAF9FD] p-4 text-sm leading-6"><span className="block text-xs font-bold uppercase tracking-[0.12em] text-muted">Giờ gửi cố định</span><b className="mt-1 block text-base text-ink">00:00 mỗi ngày (ICT)</b><span className="mt-2 block text-xs leading-5 text-muted">Cron Vercel chạy 1 lần/ngày lúc 17:00 UTC để phù hợp giới hạn gói Hobby.</span></div>
         </div>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" onClick={() => void saveSchedule()} disabled={scheduleLoading || scheduleSaving || testingEmail} className="h-11 rounded-[11px] bg-gold px-5 text-sm font-bold text-white transition hover:bg-golddark disabled:cursor-wait disabled:opacity-50">{scheduleSaving ? "Đang lưu…" : "Lưu lịch tự động"}</button><button type="button" onClick={() => void sendTestEmail()} disabled={scheduleLoading || scheduleSaving || testingEmail || !emailConfigured} className="h-11 rounded-[11px] border border-line bg-white px-5 text-sm font-bold transition hover:border-[#CFC7FF] hover:text-gold disabled:cursor-wait disabled:opacity-50">{testingEmail ? "Đang tạo và gửi…" : "Gửi bản thử ngay"}</button><span className="text-xs leading-5 text-muted">Múi giờ Việt Nam (UTC+7). Vercel Hobby có thể gửi vào bất kỳ phút nào trong khung giờ.</span></div>
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" onClick={() => void saveSchedule()} disabled={scheduleLoading || scheduleSaving || testingEmail} className="h-11 rounded-[11px] bg-gold px-5 text-sm font-bold text-white transition hover:bg-golddark disabled:cursor-wait disabled:opacity-50">{scheduleSaving ? "Đang lưu…" : "Lưu lịch tự động"}</button><button type="button" onClick={() => void sendTestEmail()} disabled={scheduleLoading || scheduleSaving || testingEmail || !emailConfigured} className="h-11 rounded-[11px] border border-line bg-white px-5 text-sm font-bold transition hover:border-[#CFC7FF] hover:text-gold disabled:cursor-wait disabled:opacity-50">{testingEmail ? "Đang tạo và gửi…" : "Gửi bản thử ngay"}</button><span className="text-xs leading-5 text-muted">Sao lưu được gửi lúc 00:00 ICT mỗi ngày qua một cron Vercel duy nhất (phù hợp giới hạn 2 cron/ngày của gói Hobby).</span></div>
         {emailSchedule.lastSentAt ? <p className="mt-4 text-xs text-[#267A52]">✓ Gửi thành công gần nhất: {new Date(emailSchedule.lastSentAt).toLocaleString("vi-VN")}</p> : null}
         {emailSchedule.lastError ? <p className="mt-2 text-xs text-[#A34141]">Lỗi gần nhất: {emailSchedule.lastError}</p> : null}
         <div className="mt-4 grid gap-2 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs sm:grid-cols-2">

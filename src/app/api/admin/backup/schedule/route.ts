@@ -11,8 +11,10 @@ export const maxDuration = 60;
 const scheduleSchema = z.object({
   enabled: z.boolean(),
   recipient: z.string().trim().email("Email nhận không hợp lệ.").max(256),
-  hour: z.number().int().min(0).max(23),
-  timezone: z.literal("Asia/Ho_Chi_Minh"),
+  // hour/timezone are kept for backward compatibility but no longer used: the
+  // single Vercel cron fires at 00:00 ICT every day to fit the Hobby plan limit.
+  hour: z.number().int().min(0).max(23).optional().default(0),
+  timezone: z.literal("Asia/Ho_Chi_Minh").optional().default("Asia/Ho_Chi_Minh"),
 });
 
 async function requireAdmin() {
@@ -33,7 +35,12 @@ export async function PUT(request: Request) {
   if (!await requireAdmin()) return Response.json({ error: "Bạn không có quyền sửa lịch sao lưu." }, { status: 403 });
   const parsed = scheduleSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Cấu hình không hợp lệ." }, { status: 400 });
-  await saveBackupEmailSchedule(parsed.data);
+  await saveBackupEmailSchedule({
+  enabled: parsed.data.enabled,
+  recipient: parsed.data.recipient,
+  hour: 0,
+  timezone: "Asia/Ho_Chi_Minh",
+});
   return Response.json({ ok: true, schedule: await getBackupEmailSchedule() });
 }
 
