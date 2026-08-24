@@ -244,6 +244,28 @@ html.lexora-native-app :is(a, button, [role="button"]) {
   }
 }
 
+.docx-preview {
+  color: #242337;
+  line-height: 1.7;
+}
+
+.docx-preview h1, .docx-preview h2, .docx-preview h3 {
+  margin: 1.25em 0 .55em;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.docx-preview h1 { font-size: 1.65rem; }
+.docx-preview h2 { font-size: 1.35rem; }
+.docx-preview h3 { font-size: 1.12rem; }
+.docx-preview p { margin: .65em 0; }
+.docx-preview ul, .docx-preview ol { margin: .75em 0; padding-left: 1.5rem; }
+.docx-preview ul { list-style: disc; }
+.docx-preview ol { list-style: decimal; }
+.docx-preview table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+.docx-preview td, .docx-preview th { border: 1px solid #ebeaf2; padding: .55rem; vertical-align: top; }
+.docx-preview img { max-width: 100%; height: auto; }
+
 @keyframes lexora-undo-in {
   from { opacity: 0; transform: translateY(12px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }

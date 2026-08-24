@@ -452,6 +452,32 @@ export const writingProgress = pgTable(
   })
 );
 
+export const categoryDocumentUploads = pgTable("category_document_uploads", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  category: varchar("category", { length: 128 }).notNull(),
+  title: varchar("title", { length: 256 }).notNull(),
+  fileName: varchar("file_name", { length: 256 }).notNull(),
+  fileType: varchar("file_type", { length: 128 }).notNull(),
+  fileSize: integer("file_size").notNull(),
+  chunkCount: integer("chunk_count").notNull(),
+  targetDocumentId: integer("target_document_id").references(() => categoryDocuments.id, { onDelete: "cascade" }),
+  createdBy: integer("created_by").references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const categoryDocumentUploadChunks = pgTable(
+  "category_document_upload_chunks",
+  {
+    id: serial("id").primaryKey(),
+    uploadId: varchar("upload_id", { length: 64 }).notNull().references(() => categoryDocumentUploads.id, { onDelete: "cascade" }),
+    chunkIndex: integer("chunk_index").notNull(),
+    fileData: bytea("file_data").notNull(),
+  },
+  (table) => ({
+    uploadChunkIdx: uniqueIndex("category_document_upload_chunk_idx").on(table.uploadId, table.chunkIndex),
+  }),
+);
+
 
 
 export type User = typeof users.$inferSelect;

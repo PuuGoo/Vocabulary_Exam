@@ -16,9 +16,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   const encodedName = encodeURIComponent(document.fileName).replace(/['()]/g, escape);
   return new Response(new Uint8Array(document.fileData), {
     headers: {
-      "Content-Type": "application/pdf",
+      "Content-Type": document.fileType || "application/octet-stream",
       "Content-Length": String(document.fileSize),
-      "Content-Disposition": `inline; filename="document.pdf"; filename*=UTF-8''${encodedName}`,
+      "Content-Disposition": `inline; filename="document${document.fileName.toLowerCase().endsWith(".docx") ? ".docx" : document.fileName.toLowerCase().endsWith(".doc") ? ".doc" : ".pdf"}"; filename*=UTF-8''${encodedName}`,
       "Cache-Control": "private, max-age=3600",
       "X-Content-Type-Options": "nosniff",
     },

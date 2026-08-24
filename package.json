@@ -15,7 +15,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
     "db:fix-encoding": "tsx src/db/fix-encoding.ts",
-    "test": "node --import tsx --test src/lib/gemini.test.ts src/lib/quizGroups.test.ts src/lib/reviewGroups.test.ts src/lib/assignments.test.ts src/lib/backup.test.ts src/lib/restoreSession.test.ts src/lib/csv.test.ts src/lib/feynman.test.ts src/lib/pomodoro.test.ts src/lib/spacedRepetition.test.ts src/lib/swipe.test.ts src/lib/categorySequence.test.ts src/lib/documentDisplay.test.ts src/lib/learningDraft.test.ts src/lib/importDedup.test.ts"
+    "test": "node --import tsx --test src/lib/gemini.test.ts src/lib/quizGroups.test.ts src/lib/reviewGroups.test.ts src/lib/assignments.test.ts src/lib/backup.test.ts src/lib/restoreSession.test.ts src/lib/csv.test.ts src/lib/feynman.test.ts src/lib/pomodoro.test.ts src/lib/spacedRepetition.test.ts src/lib/swipe.test.ts src/lib/categorySequence.test.ts src/lib/documentDisplay.test.ts src/lib/categoryDocumentFile.test.ts src/lib/learningDraft.test.ts src/lib/importDedup.test.ts"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.8",
@@ -24,9 +24,11 @@
     "@capacitor/splash-screen": "^7.0.5",
     "@capacitor/status-bar": "^7.0.6",
     "bcryptjs": "2.4.3",
+    "dompurify": "^3.2.6",
     "dotenv": "^17.4.2",
     "drizzle-orm": "0.33.0",
     "jose": "^6.2.3",
+    "mammoth": "^1.10.0",
     "next": "14.2.35",
     "nodemailer": "^9.0.3",
     "papaparse": "5.4.1",
