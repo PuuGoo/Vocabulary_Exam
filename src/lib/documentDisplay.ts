@@ -5,7 +5,7 @@ export function removeDocumentDisplayPrefix(value: string) {
 }
 
 export function formatAggregatedDocumentName(order: number, value: string) {
-  const extensionMatch = value.match(/\.pdf$/i);
+  const extensionMatch = value.match(/\.(pdf|docx|doc)$/i);
   const extension = extensionMatch?.[0] || "";
   const stem = extension ? value.slice(0, -extension.length) : value;
   const label = removeDocumentDisplayPrefix(stem) || "Tài liệu";

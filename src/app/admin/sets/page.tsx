@@ -5,7 +5,9 @@ import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
+import DocumentPreview from "@/components/DocumentPreview";
 import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "@/lib/documentDisplay";
+import { SUPPORTED_DOCUMENT_ACCEPT, documentKind, isSupportedDocument } from "@/lib/categoryDocumentFile";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -41,7 +43,7 @@ type WordMatch = {
 };
 type ClassOpt = { id: number; name: string };
 type CategorySummary = { id: number; name: string; count: number };
-type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileSize: number; createdAt: string };
+type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileType: string; fileSize: number; createdAt: string };
 type VisibleCategoryDocument = CategoryDocument & { displayTitle: string; displayFileName: string; aggregateOrder: number | null };
 type DocumentSort = "newest" | "oldest" | "name" | "size";
 const ALL_CATEGORIES = "__all__";
@@ -110,6 +112,7 @@ export default function AdminSetsPage() {
   const [documentSort, setDocumentSort] = useState<DocumentSort>("name");
   const [documentsLoading, setDocumentsLoading] = useState(false);
   const [documentUploading, setDocumentUploading] = useState(false);
+  const [documentUploadProgress, setDocumentUploadProgress] = useState<{ fileName: string; fileIndex: number; totalFiles: number; percent: number } | null>(null);
   const [documentTitle, setDocumentTitle] = useState("");
   const [documentFiles, setDocumentFiles] = useState<File[]>([]);
   const [documentDragActive, setDocumentDragActive] = useState(false);
@@ -119,7 +122,7 @@ export default function AdminSetsPage() {
   const [editDocumentFileName, setEditDocumentFileName] = useState("");
   const [savingDocumentName, setSavingDocumentName] = useState(false);
   const [replacingDocumentId, setReplacingDocumentId] = useState<number | null>(null);
-    const [documentPreviewVersion, setDocumentPreviewVersion] = useState(0);
+  const [documentPreviewVersion, setDocumentPreviewVersion] = useState(0);
   const [categoryQuestions, setCategoryQuestions] = useState<any[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
@@ -275,38 +278,66 @@ export default function AdminSetsPage() {
     }
   }
 
+  async function uploadDocumentInChunks(file: File, title: string, fileIndex: number, totalFiles: number, targetDocumentId?: number, targetCategory = selectedCategory) {
+    const createResponse = await fetch("/api/admin/category-documents/uploads", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category: targetCategory, title, fileName: file.name, fileType: file.type, fileSize: file.size, targetDocumentId: targetDocumentId || null }),
+    });
+    const session = await createResponse.json().catch(() => ({}));
+    if (!createResponse.ok) throw new Error(session.error || `Không thể chuẩn bị tải “${file.name}”.`);
+    try {
+      for (let index = 0; index < session.chunkCount; index += 1) {
+        const chunk = file.slice(index * session.chunkBytes, Math.min(file.size, (index + 1) * session.chunkBytes));
+        let response: Response | null = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          response = await fetch(`/api/admin/category-documents/uploads/${session.uploadId}/chunks/${index}`, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: chunk });
+          if (response.ok) break;
+          if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 500 * (attempt + 1)));
+        }
+        if (!response?.ok) {
+          const error = await response?.json().catch(() => ({}));
+          throw new Error(error?.error || `Không thể tải phần ${index + 1}/${session.chunkCount} của “${file.name}”.`);
+        }
+        setDocumentUploadProgress({ fileName: file.name, fileIndex, totalFiles, percent: Math.round(((index + 1) / session.chunkCount) * 100) });
+      }
+      const completeResponse = await fetch(`/api/admin/category-documents/uploads/${session.uploadId}/complete`, { method: "POST" });
+      const complete = await completeResponse.json().catch(() => ({}));
+      if (!completeResponse.ok) throw new Error(complete.error || `Không thể hoàn tất “${file.name}”.`);
+      return complete.document as CategoryDocument;
+    } catch (error) {
+      void fetch(`/api/admin/category-documents/uploads/${session.uploadId}`, { method: "DELETE" });
+      throw error;
+    }
+  }
+
   async function uploadCategoryDocument() {
     if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED || documentFiles.length === 0 || documentUploading) return;
-    if (documentFiles.some((file) => file.size > 4 * 1024 * 1024)) return toast("Mỗi file PDF không được vượt quá 4 MB.");
-    const form = new FormData();
-    form.append("category", selectedCategory);
-    form.append("title", documentTitle.trim());
-    documentFiles.forEach((file) => form.append("files", file));
     setDocumentUploading(true);
+    const targetCategory = selectedCategory;
     try {
-      const res = await fetch("/api/admin/category-documents", { method: "POST", body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return toast(data.error || "Không thể tải PDF lên.");
+      for (let index = 0; index < documentFiles.length; index += 1) {
+        const file = documentFiles[index];
+        setDocumentUploadProgress({ fileName: file.name, fileIndex: index + 1, totalFiles: documentFiles.length, percent: 0 });
+        await uploadDocumentInChunks(file, documentFiles.length === 1 ? documentTitle.trim() : "", index + 1, documentFiles.length, undefined, targetCategory);
+      }
       await refreshCategoryDocuments();
-      setDocumentFiles([]);
-      setDocumentTitle("");
-      const input = document.getElementById("category-pdf-file") as HTMLInputElement | null;
+      setDocumentFiles([]); setDocumentTitle("");
+      const input = document.getElementById("category-document-file") as HTMLInputElement | null;
       if (input) input.value = "";
-      toast("Đã tải tài liệu PDF lên thư mục.");
-    } catch {
-      toast("Không thể kết nối để tải PDF lên.");
+      toast(`Đã tải ${documentFiles.length} tài liệu lên thư mục.`);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Không thể tải tài liệu lên.");
     } finally {
-      setDocumentUploading(false);
+      setDocumentUploading(false); setDocumentUploadProgress(null);
     }
   }
 
   function addDocumentFiles(incoming: File[]) {
-    const pdfs = incoming.filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"));
-    if (pdfs.length !== incoming.length) toast("Chỉ các file PDF được thêm vào danh sách.");
-    if (pdfs.some((file) => file.size > 4 * 1024 * 1024)) { toast("Mỗi file PDF không được vượt quá 4 MB."); return; }
+    const supported = incoming.filter((file) => isSupportedDocument(file.name, file.type) && file.size > 0);
+    if (supported.length !== incoming.length) toast("Chỉ file PDF, DOCX và DOC hợp lệ được thêm vào danh sách.");
     setDocumentFiles((current) => {
       const existing = new Set(current.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
-      return [...current, ...pdfs.filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))];
+      return [...current, ...supported.filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))];
     });
   }
 
@@ -317,7 +348,7 @@ export default function AdminSetsPage() {
     if (!res.ok) return toast(data.error || "Không thể xóa tài liệu.");
     await refreshCategoryDocuments();
     if (viewingDocument?.id === document.id) setViewingDocument(null);
-    toast("Đã xóa tài liệu PDF.");
+    toast("Đã xóa tài liệu.");
   }
 
   function startRenameDocument(document: CategoryDocument) {
@@ -336,11 +367,11 @@ export default function AdminSetsPage() {
         body: JSON.stringify({ id: editingDocument.id, title: editDocumentTitle, fileName: editDocumentFileName }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return toast(data.error || "Không thể đổi tên tài liệu PDF.");
+      if (!res.ok) return toast(data.error || "Không thể đổi tên tài liệu.");
       await refreshCategoryDocuments();
       setViewingDocument((current) => current?.id === data.document.id ? data.document : current);
       setEditingDocument(null);
-      toast("Đã đổi tên tài liệu PDF.");
+      toast("Đã đổi tên tài liệu.");
     } catch {
       toast("Không thể kết nối để đổi tên tài liệu.");
     } finally {
@@ -447,23 +478,20 @@ export default function AdminSetsPage() {
 
   async function replaceCategoryDocument(document: CategoryDocument, file: File) {
     if (replacingDocumentId !== null) return;
-    if (!confirm(`Thay nội dung “${document.title}” bằng file “${file.name}”? Tên hiện tại sẽ được giữ nguyên.`)) return;
-    const form = new FormData();
-    form.append("id", String(document.id));
-    form.append("file", file);
+    if (!isSupportedDocument(file.name, file.type) || file.size < 1) return toast("Chỉ chấp nhận file PDF, DOCX hoặc DOC hợp lệ.");
+    if (!confirm(`Thay nội dung “${document.title}” bằng file “${file.name}”?`)) return;
     setReplacingDocumentId(document.id);
     try {
-      const res = await fetch("/api/admin/category-documents", { method: "PUT", body: form });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return toast(data.error || "Không thể thay thế file PDF.");
-      setCategoryDocuments((current) => current.map((item) => item.id === document.id ? data.document : item));
-      setViewingDocument((current) => current?.id === document.id ? data.document : current);
+      setDocumentUploadProgress({ fileName: file.name, fileIndex: 1, totalFiles: 1, percent: 0 });
+      const updated = await uploadDocumentInChunks(file, document.title, 1, 1, document.id, document.category);
+      setCategoryDocuments((current) => current.map((item) => item.id === document.id ? updated : item));
+      setViewingDocument((current) => current?.id === document.id ? updated : current);
       setDocumentPreviewVersion((version) => version + 1);
-      toast("Đã thay thế nội dung PDF và giữ nguyên tên tài liệu.");
-    } catch {
-      toast("Không thể kết nối để thay thế PDF.");
+      toast("Đã thay thế tài liệu thành công.");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Không thể thay thế tài liệu.");
     } finally {
-      setReplacingDocumentId(null);
+      setReplacingDocumentId(null); setDocumentUploadProgress(null);
     }
   }
 
@@ -1095,13 +1123,13 @@ export default function AdminSetsPage() {
       {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
         <section className="mb-5 rounded-[14px] border border-line bg-white p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF</h3><p className="mt-1 text-xs text-muted">Tài liệu trong thư mục này và toàn bộ thư mục con sẽ được gom tại đây.{hasAggregatedCategoryDocuments ? " Danh sách tổng hợp được đánh số liên tục, không làm đổi tên trong thư mục con." : ""}</p></div>
+            <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF & Word</h3><p className="mt-1 text-xs text-muted">Tài liệu trong thư mục này và toàn bộ thư mục con sẽ được gom tại đây. File lớn được tự chia nhỏ khi tải lên nên không còn giới hạn 4–10 MB.{hasAggregatedCategoryDocuments ? " Danh sách tổng hợp được đánh số liên tục, không làm đổi tên trong thư mục con." : ""}</p></div>
             <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{categoryDocuments.length} tài liệu</span>
           </div>
           <div className="grid gap-3 rounded-xl border border-line bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-end">
             <label><span className={cx.label}>Tên tài liệu (chỉ áp dụng khi chọn 1 file)</span><input className={`${cx.input} !mb-0`} placeholder="VD: Tổng quan từ vựng sức khỏe" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={256} /></label>
             <div>
-              <span className={cx.label}>Chọn hoặc kéo thả nhiều PDF · tối đa 4 MB/file</span>
+              <span className={cx.label}>Chọn hoặc kéo thả nhiều PDF / Word · tải file lớn theo từng phần</span>
               <div
                 className={`relative rounded-xl border-2 border-dashed px-4 py-4 text-center transition ${documentDragActive ? "border-[#7865EE] bg-[#F0EDFF]" : "border-[#CFC7FF] bg-white hover:border-[#AFA2FF]"}`}
                 onDragEnter={(event) => { event.preventDefault(); setDocumentDragActive(true); }}
@@ -1109,22 +1137,22 @@ export default function AdminSetsPage() {
                 onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDocumentDragActive(false); }}
                 onDrop={(event) => { event.preventDefault(); setDocumentDragActive(false); addDocumentFiles(Array.from(event.dataTransfer.files)); }}
               >
-                <input id="category-pdf-file" multiple type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => { addDocumentFiles(Array.from(event.target.files || [])); event.target.value = ""; }} />
-                <label htmlFor="category-pdf-file" className="cursor-pointer"><span className="text-2xl" aria-hidden="true">⇧</span><b className="mt-1 block text-sm text-ink">Kéo thả file PDF vào đây</b><span className="mt-1 block text-xs text-muted">hoặc <span className="font-bold text-[#6550DB]">chọn file từ thiết bị</span></span></label>
+                <input id="category-document-file" multiple type="file" accept={SUPPORTED_DOCUMENT_ACCEPT} className="sr-only" onChange={(event) => { addDocumentFiles(Array.from(event.target.files || [])); event.target.value = ""; }} />
+                <label htmlFor="category-document-file" className="cursor-pointer"><span className="text-2xl" aria-hidden="true">⇧</span><b className="mt-1 block text-sm text-ink">Kéo thả PDF, DOCX hoặc DOC vào đây</b><span className="mt-1 block text-xs text-muted">hoặc <span className="font-bold text-[#6550DB]">chọn file từ thiết bị</span> · không còn giới hạn 10 MB</span></label>
               </div>
             </div>
           </div>
-          {documentFiles.length > 0 && <div className="mt-3 rounded-xl border border-line bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-bold text-ink">Đã chọn {documentFiles.length} file · {(documentFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB</span><button type="button" className="text-xs font-bold text-bad hover:underline" onClick={() => setDocumentFiles([])}>Xóa tất cả</button></div><div className="grid gap-1.5 sm:grid-cols-2">{documentFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FBFAFE] px-2.5 py-2 text-xs"><span className="font-bold text-[#B64242]">PDF</span><span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span><span className="shrink-0 text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" className="px-1 text-muted hover:text-bad" aria-label={`Xóa ${file.name}`} onClick={() => setDocumentFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div><button type="button" className={`${cx.btn} ${cx.btnGold} mt-3 min-h-11 w-full`} disabled={documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? "Đang tải..." : `↑ Tải ${documentFiles.length} PDF lên`}</button></div>}
+          {documentFiles.length > 0 && <div className="mt-3 rounded-xl border border-line bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-bold text-ink">Đã chọn {documentFiles.length} file · {(documentFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB</span><button type="button" disabled={documentUploading} className="text-xs font-bold text-bad hover:underline disabled:opacity-40" onClick={() => setDocumentFiles([])}>Xóa tất cả</button></div><div className="grid gap-1.5 sm:grid-cols-2">{documentFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FBFAFE] px-2.5 py-2 text-xs"><span className={`font-bold ${documentKind(file.name) === "PDF" ? "text-[#B64242]" : "text-[#3565A8]"}`}>{documentKind(file.name)}</span><span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span><span className="shrink-0 text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" disabled={documentUploading} className="px-1 text-muted hover:text-bad disabled:opacity-40" aria-label={`Xóa ${file.name}`} onClick={() => setDocumentFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div>{documentUploadProgress && <div className="mt-3" role="status"><div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-semibold">File {documentUploadProgress.fileIndex}/{documentUploadProgress.totalFiles}: {documentUploadProgress.fileName}</span><b>{documentUploadProgress.percent}%</b></div><div className="h-2 overflow-hidden rounded-full bg-[#EBEAF2]"><div className="h-full rounded-full bg-[#7865EE] transition-[width] duration-200" style={{ width: `${documentUploadProgress.percent}%` }} /></div></div>}<button type="button" className={`${cx.btn} ${cx.btnGold} mt-3 min-h-11 w-full`} disabled={documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? `Đang tải ${documentUploadProgress?.percent || 0}%…` : `↑ Tải ${documentFiles.length} tài liệu lên`}</button></div>}
           {!documentsLoading && categoryDocuments.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
-            <input type="search" value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className={`${cx.input} !mb-0`} placeholder="Tìm theo tên tài liệu, file hoặc thư mục..." aria-label="Tìm tài liệu PDF" />
-            <select value={documentSort} onChange={(event) => setDocumentSort(event.target.value as DocumentSort)} className={`${cx.input} !mb-0`} aria-label="Sắp xếp tài liệu PDF">
-              <option value="name">{hasAggregatedCategoryDocuments ? "Thư mục → thứ tự PDF" : "Tên A → Z"}</option><option value="newest">Mới tải lên trước</option><option value="oldest">Cũ nhất trước</option><option value="size">Dung lượng lớn trước</option>
+            <input type="search" value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className={`${cx.input} !mb-0`} placeholder="Tìm theo tên tài liệu, file hoặc thư mục..." aria-label="Tìm tài liệu PDF hoặc Word" />
+            <select value={documentSort} onChange={(event) => setDocumentSort(event.target.value as DocumentSort)} className={`${cx.input} !mb-0`} aria-label="Sắp xếp tài liệu">
+              <option value="name">{hasAggregatedCategoryDocuments ? "Thư mục → thứ tự tài liệu" : "Tên A → Z"}</option><option value="newest">Mới tải lên trước</option><option value="oldest">Cũ nhất trước</option><option value="size">Dung lượng lớn trước</option>
             </select>
           </div>}
-          {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF hoặc Word.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
-              <div className="flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFF1F1] text-lg" aria-hidden="true">PDF</span><div className="min-w-0"><div className="flex min-w-0 items-center gap-1.5"><b className="block min-w-0 truncate text-sm text-ink" title={document.displayTitle}>{document.displayTitle}</b>{document.aggregateOrder !== null && <span className="shrink-0 rounded-full bg-[#F0EDFF] px-1.5 py-0.5 text-[0.62rem] font-bold text-[#6550DB]">Số tổng hợp</span>}</div><span className="mt-0.5 block truncate text-xs text-muted" title={document.displayFileName}>{document.displayFileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <><span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted" title={document.fileName}>Tên trong thư mục con: {document.fileName}</span></>}</div></div>
-              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><label className={`${cx.btn} ${cx.btnGhost} cursor-pointer !px-3 !py-1.5 ${replacingDocumentId !== null ? "pointer-events-none opacity-50" : ""}`}>{replacingDocumentId === document.id ? "Đang thay..." : "Thay file"}<input className="sr-only" type="file" accept="application/pdf,.pdf" disabled={replacingDocumentId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void replaceCategoryDocument(document, file); }} /></label><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
+              <div className="flex items-start gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold ${documentKind(document.fileName) === "PDF" ? "bg-[#FFF1F1] text-[#B64242]" : "bg-[#EAF2FF] text-[#3565A8]"}`} aria-hidden="true">{documentKind(document.fileName)}</span><div className="min-w-0"><div className="flex min-w-0 items-center gap-1.5"><b className="block min-w-0 truncate text-sm text-ink" title={document.displayTitle}>{document.displayTitle}</b>{document.aggregateOrder !== null && <span className="shrink-0 rounded-full bg-[#F0EDFF] px-1.5 py-0.5 text-[0.62rem] font-bold text-[#6550DB]">Số tổng hợp</span>}</div><span className="mt-0.5 block truncate text-xs text-muted" title={document.displayFileName}>{document.displayFileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <><span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted" title={document.fileName}>Tên trong thư mục con: {document.fileName}</span></>}</div></div>
+              <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><label className={`${cx.btn} ${cx.btnGhost} cursor-pointer !px-3 !py-1.5 ${replacingDocumentId !== null ? "pointer-events-none opacity-50" : ""}`}>{replacingDocumentId === document.id ? `Đang thay ${documentUploadProgress?.percent || 0}%` : "Thay file"}<input className="sr-only" type="file" accept={SUPPORTED_DOCUMENT_ACCEPT} disabled={replacingDocumentId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void replaceCategoryDocument(document, file); }} /></label><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
           </div>}
         </section>
@@ -1276,15 +1304,15 @@ export default function AdminSetsPage() {
       {viewingDocument && (
         <Modal title={viewingDocument.title} onClose={() => setViewingDocument(null)} wide>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted"><span>{viewingDocument.fileName} · {(viewingDocument.fileSize / 1024 / 1024).toFixed(2)} MB</span><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${viewingDocument.id}/file`} target="_blank" rel="noopener noreferrer">Mở trong tab mới</a></div>
-          <iframe title={`Tài liệu ${viewingDocument.title}`} src={`/api/admin/category-documents/${viewingDocument.id}/file?v=${documentPreviewVersion}`} className="h-[70vh] min-h-[480px] w-full rounded-xl border border-line bg-[#F8F8FC]" />
+          <DocumentPreview document={viewingDocument} version={documentPreviewVersion} />
         </Modal>
       )}
 
       {editingDocument && (
-        <Modal title="Đổi tên tài liệu PDF" onClose={() => { if (!savingDocumentName) setEditingDocument(null); }}>
+        <Modal title="Đổi tên tài liệu" onClose={() => { if (!savingDocumentName) setEditingDocument(null); }}>
           <div className="grid gap-4">
             <label><span className={cx.label}>Tên hiển thị</span><input autoFocus className={`${cx.input} !mb-0`} value={editDocumentTitle} maxLength={256} onChange={(event) => setEditDocumentTitle(event.target.value)} /></label>
-            <div><span className={cx.label}>Tên file PDF</span><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><span className="mt-1 block text-xs text-muted">Chỉ cần nhập tên nội dung. Khi lưu, hệ thống tự đánh số đúng thứ tự dạng 01_Tên và đồng bộ cả tên hiển thị lẫn tên file.</span></div>
+            <div><span className={cx.label}>Tên file</span><input className={`${cx.input} !mb-0`} value={editDocumentFileName} maxLength={256} onChange={(event) => setEditDocumentFileName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void saveDocumentName(); }} /><span className="mt-1 block text-xs text-muted">Chỉ cần nhập tên nội dung. Khi lưu, hệ thống tự đánh số đúng thứ tự dạng 01_Tên, giữ nguyên đuôi PDF/Word và đồng bộ tên hiển thị.</span></div>
             <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} disabled={savingDocumentName} onClick={() => setEditingDocument(null)}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={savingDocumentName || !editDocumentTitle.trim() || !editDocumentFileName.trim()} onClick={() => void saveDocumentName()}>{savingDocumentName ? "Đang lưu..." : "Lưu tên mới"}</button></div>
           </div>
         </Modal>

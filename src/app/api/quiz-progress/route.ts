@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "D? li?u kh�ng h?p l?.", issues: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json({ error: "Dữ liệu không hợp lệ.", issues: parsed.error.flatten() }, { status: 400 });
   }
 
   const d = parsed.data;

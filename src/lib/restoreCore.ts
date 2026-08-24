@@ -8,9 +8,10 @@ import {
 import { hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
 import { verifyBackupChecksum } from "@/lib/backupIntegrity";
+import { documentContentLooksValid, documentMimeType, isSupportedDocument } from "@/lib/categoryDocumentFile";
 
 export const CONFIRMATION_WORD = "KHOI PHUC";
-export const MAX_FILE_BYTES = 50 * 1024 * 1024; // 50 MB per embedded file.
+export const MAX_FILE_BYTES = 400 * 1024 * 1024; // Leaves room for base64 inside the 600 MB JSON envelope.
 export const MAX_JSON_CHARS = 600 * 1024 * 1024; // 600 MB JSON limit.
 
 function text(row: BackupRow, key: string, fallback = "") { return typeof row[key] === "string" ? row[key] as string : fallback; }
@@ -134,8 +135,9 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       const base64 = nullableText(row, "fileDataBase64");
       if (!category || !title || !fileName || !base64 || documentKeys.has(key) || !categoriesByName.has(category.toLocaleLowerCase("vi"))) { report.skipped.categoryDocuments++; continue; }
       const fileData = Buffer.from(base64, "base64");
-      if (fileData.byteLength < 1 || fileData.byteLength > MAX_FILE_BYTES || fileData.subarray(0, 5).toString("ascii") !== "%PDF-") { report.skipped.categoryDocuments++; report.warnings.push(`Tài liệu ${fileName} không hợp lệ hoặc quá lớn nên được bỏ qua.`); continue; }
-      await tx.insert(categoryDocuments).values({ category, title, fileName, fileType: "application/pdf", fileSize: fileData.byteLength, fileData, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") });
+      const fileType = documentMimeType(fileName, text(row, "fileType"));
+      if (fileData.byteLength < 1 || fileData.byteLength > MAX_FILE_BYTES || !isSupportedDocument(fileName, fileType) || !documentContentLooksValid(fileName, fileData)) { report.skipped.categoryDocuments++; report.warnings.push(`Tài liệu ${fileName} không hợp lệ hoặc quá lớn nên được bỏ qua.`); continue; }
+      await tx.insert(categoryDocuments).values({ category, title, fileName, fileType, fileSize: fileData.byteLength, fileData, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") });
       documentKeys.add(key); report.added.categoryDocuments++;
     }
 

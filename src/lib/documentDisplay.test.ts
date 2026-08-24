@@ -13,6 +13,11 @@ test("aggregate numbering works for titles and leaves their useful label intact"
   assert.equal(removeDocumentDisplayPrefix("  07_ Lý thuyết "), "Lý thuyết");
 });
 
+test("aggregate numbering preserves Word extensions", () => {
+  assert.equal(formatAggregatedDocumentName(3, "01_Bài đọc.docx"), "03_Bài đọc.docx");
+  assert.equal(formatAggregatedDocumentName(4, "Bản cũ.doc"), "04_Bản cũ.doc");
+});
+
 test("parent view groups PDFs by child folder before ordering files inside it", () => {
   const documents = [
     { id: 4, category: "Vocabulary / 02_Giải trí", title: "01_Phần mở đầu" },
