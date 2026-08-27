@@ -6,6 +6,7 @@ import { cx } from "@/components/ui";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { Suspense } from "react";
+import SubjectQuestionPractice, { type SubjectQuestion } from "@/components/SubjectQuestionPractice";
 
 type Question = {
   id: number;
@@ -13,6 +14,9 @@ type Question = {
   phonetic: string | null;
   question: string;
   answer: string;
+  questionType: "speaking" | "multiple_choice" | "essay";
+  options: string[];
+  correctOption: "A" | "B" | "C" | "D" | null;
 };
 
 type SentenceExercise = {
@@ -177,6 +181,7 @@ function WritingInner() {
   const exercises = useMemo<SentenceExercise[]>(() => {
     const result: SentenceExercise[] = [];
     for (const q of questions) {
+      if (q.questionType && q.questionType !== "speaking") continue;
       if (!q.answer) continue;
       const sentences = splitSentences(q.answer);
       for (let i = 0; i < sentences.length; i++) {
@@ -559,15 +564,15 @@ const nextSentence = useCallback(() => {
         <div className={cx.panel}>
           <div className="text-center mb-6">
             <div className="text-4xl mb-3">✍️</div>
-            <h2 className={cx.h2}>Luyện viết IELTS</h2>
-            <p className={cx.desc}>Chọn một thư mục câu hỏi để bắt đầu luyện viết.</p>
+            <h2 className={cx.h2}>Ngân hàng câu hỏi</h2>
+            <p className={cx.desc}>Chọn một thư mục để luyện IELTS Speaking, trắc nghiệm hoặc tự luận.</p>
           </div>
           {catLoading ? (
             <div className={cx.empty}>Đang tải danh mục...</div>
           ) : categories.length === 0 ? (
             <div className={cx.empty}>
               <p>Chưa có thư mục câu hỏi nào.</p>
-              <p className="mt-2 text-xs text-muted">Vào <strong>Khu quản trị → Bộ từ vựng</strong>, chọn thư mục con, rồi thêm câu hỏi Speaking.</p>
+              <p className="mt-2 text-xs text-muted">Vào <strong>Khu quản trị → Bộ từ vựng</strong>, chọn thư mục con, rồi thêm câu hỏi.</p>
             </div>
           ) : (
             <div className="grid gap-2">
@@ -606,6 +611,9 @@ const nextSentence = useCallback(() => {
   }
 
   if (loading) return <div className={cx.panel}><div className={cx.empty}>Đang tải câu hỏi...</div></div>;
+
+  const subjectQuestions = questions.filter((question): question is Question & SubjectQuestion => question.questionType === "multiple_choice" || question.questionType === "essay");
+  if (subjectQuestions.length > 0 && search.get("mode") !== "ielts") return <SubjectQuestionPractice category={category} questions={subjectQuestions} speakingCount={questions.filter((question) => question.questionType === "speaking").length} />;
 
   if (exercises.length === 0) return (
     <div className="max-w-3xl mx-auto">

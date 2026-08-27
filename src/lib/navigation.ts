@@ -8,7 +8,7 @@ export const LEARNING_TABS = [
   { href: "/smart-review", label: "Ôn tập thông minh" },
   { href: "/mixed-practice", label: "Kiểm tra tổng hợp" },
   { href: "/print-sets", label: "Phiếu học PDF" },
-  { href: "/writing", label: "Luyện viết" },
+  { href: "/writing", label: "Ngân hàng câu hỏi" },
   { href: "/dictionary", label: "Tra cứu từ vựng" },
   { href: "/review", label: "Ôn từ sai" },
   { href: "/leaderboard", label: "Bảng xếp hạng" },

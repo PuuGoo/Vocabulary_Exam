@@ -9,6 +9,10 @@ export async function GET(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "question_type" varchar(16) DEFAULT 'speaking' NOT NULL;`);
+  await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "options" text DEFAULT '[]' NOT NULL;`);
+  await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "correct_option" varchar(1);`);
+
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
   if (!category) return NextResponse.json({ error: "Thiếu tham số category." }, { status: 400 });
@@ -20,10 +24,16 @@ export async function GET(request: NextRequest) {
       phonetic: categoryQuestions.phonetic,
       question: categoryQuestions.question,
       answer: categoryQuestions.answer,
+      questionType: categoryQuestions.questionType,
+      options: categoryQuestions.options,
+      correctOption: categoryQuestions.correctOption,
     })
     .from(categoryQuestions)
     .where(eq(categoryQuestions.category, category))
     .orderBy(sql`${categoryQuestions.order} asc, ${categoryQuestions.id} asc`);
 
-  return NextResponse.json({ questions });
+  return NextResponse.json({ questions: questions.map((question) => ({
+    ...question,
+    options: (() => { try { return JSON.parse(question.options); } catch { return []; } })(),
+  })) });
 }

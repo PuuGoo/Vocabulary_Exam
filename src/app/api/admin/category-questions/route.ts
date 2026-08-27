@@ -12,7 +12,14 @@ const createSchema = z.object({
   answer: z.string().trim().max(16384).default(""),
   phonetic: z.string().trim().max(4096).nullable().optional(),
   vnMeaning: z.string().trim().max(4096).nullable().optional(),
+  questionType: z.enum(["speaking", "multiple_choice", "essay"]).default("speaking"),
+  options: z.array(z.string().trim().min(1).max(4096)).max(4).default([]),
+  correctOption: z.enum(["A", "B", "C", "D"]).nullable().optional(),
   order: z.number().int().nonnegative().default(0),
+}).superRefine((data, ctx) => {
+  if (data.questionType === "multiple_choice" && (data.options.length !== 4 || !data.correctOption)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Câu trắc nghiệm cần đủ 4 lựa chọn và đáp án đúng." });
+  }
 });
 const updateSchema = z.object({
   id: z.number().int().positive(),
@@ -20,6 +27,9 @@ const updateSchema = z.object({
   answer: z.string().trim().max(16384).optional(),
   phonetic: z.string().trim().max(4096).nullable().optional(),
   vnMeaning: z.string().trim().max(4096).nullable().optional(),
+  questionType: z.enum(["speaking", "multiple_choice", "essay"]).optional(),
+  options: z.array(z.string().trim().min(1).max(4096)).max(4).optional(),
+  correctOption: z.enum(["A", "B", "C", "D"]).nullable().optional(),
   order: z.number().int().nonnegative().optional(),
 });
 const deleteSchema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) });
@@ -38,12 +48,18 @@ async function ensureTable() {
       "answer" text DEFAULT '' NOT NULL,
       "phonetic" text,
       "vn_meaning" text,
+      "question_type" varchar(16) DEFAULT 'speaking' NOT NULL,
+      "options" text DEFAULT '[]' NOT NULL,
+      "correct_option" varchar(1),
       "order" integer DEFAULT 0 NOT NULL,
       "created_by" integer,
       "created_at" timestamp DEFAULT now() NOT NULL,
       "updated_at" timestamp DEFAULT now() NOT NULL
     );
   `);
+  await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "question_type" varchar(16) DEFAULT 'speaking' NOT NULL;`);
+  await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "options" text DEFAULT '[]' NOT NULL;`);
+  await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "correct_option" varchar(1);`);
   try {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "category_questions_category_idx" ON "category_questions" USING btree ("category");`);
   } catch { /* index may already exist */ }
@@ -82,7 +98,7 @@ export async function POST(request: NextRequest) {
   const nextOrder = (maxRow?.maxOrder ?? -1) + 1;
   const [question] = await db
     .insert(categoryQuestions)
-    .values({ ...parsed.data, order: nextOrder, createdBy: session.userId })
+    .values({ ...parsed.data, options: JSON.stringify(parsed.data.options), order: nextOrder, createdBy: session.userId })
     .returning();
   return NextResponse.json({ question }, { status: 201 });
 }
@@ -93,11 +109,12 @@ export async function PATCH(request: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu cập nhật không hợp lệ." }, { status: 400 });
-  const { id, ...update } = parsed.data;
-  if (Object.keys(update).length === 0) return NextResponse.json({ error: "Không có dữ liệu cập nhật." }, { status: 400 });
+  const { id, options, ...update } = parsed.data;
+  const storedUpdate = { ...update, ...(options ? { options: JSON.stringify(options) } : {}) };
+  if (Object.keys(storedUpdate).length === 0) return NextResponse.json({ error: "Không có dữ liệu cập nhật." }, { status: 400 });
   const [question] = await db
     .update(categoryQuestions)
-    .set({ ...update, updatedAt: new Date() })
+    .set({ ...storedUpdate, updatedAt: new Date() })
     .where(eq(categoryQuestions.id, id))
     .returning();
   if (!question) return NextResponse.json({ error: "Không tìm thấy câu hỏi." }, { status: 404 });
