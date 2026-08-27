@@ -121,9 +121,9 @@ function sentenceDifficulty(sentence: string): "easy" | "medium" | "hard" {
 }
 
 const DIFFICULTY_META = {
-  easy: { label: "D?", cls: "bg-emerald-100 text-emerald-700 border-emerald-300" },
-  medium: { label: "Trung b�nh", cls: "bg-amber-100 text-amber-700 border-amber-300" },
-  hard: { label: "Kh�", cls: "bg-rose-100 text-rose-700 border-rose-300" },
+  easy: { label: "Dễ", cls: "bg-emerald-100 text-emerald-700 border-emerald-300" },
+  medium: { label: "Trung bình", cls: "bg-amber-100 text-amber-700 border-amber-300" },
+  hard: { label: "Khó", cls: "bg-rose-100 text-rose-700 border-rose-300" },
 };
 
 export default function WritingPage() {
@@ -583,12 +583,12 @@ const nextSentence = useCallback(() => {
                   className="flex min-h-[72px] flex-col gap-1.5 rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
                 >
                   <div className="flex items-center gap-3 w-full">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFECFF] text-lg" aria-hidden="true">??</span>
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFECFF] text-sm font-extrabold text-[#6550DB]" aria-hidden="true">Q</span>
                     <span className="min-w-0 flex-1">
                       <b className="block truncate text-sm text-ink">{cat.name}</b>
-                      <span className="mt-0.5 block text-xs text-muted">{cat.count} c�u h?i � {Math.max(1, Math.round(cat.count * 4))} c�u vi?t</span>
+                      <span className="mt-0.5 block text-xs text-muted">{cat.count} câu hỏi trong thư mục</span>
                     </span>
-                    <span className="text-lg text-muted" aria-hidden="true">�</span>
+                    <span className="text-lg text-muted" aria-hidden="true">›</span>
                   </div>
                   {(cat.progress && cat.progress > 0) ? (
                     <div className="flex items-center gap-2 pl-[52px]">
@@ -667,39 +667,39 @@ const nextSentence = useCallback(() => {
       <div className="max-w-3xl mx-auto">
         <div className={cx.panel}>
           <div className="text-center py-4">
-            <div className="text-5xl mb-3" aria-hidden="true">??</div>
-            <h2 className="text-2xl font-serif font-bold text-ink">Ho�n th�nh b�i luy?n vi?t!</h2>
-            <p className="text-muted mt-1">B?n d� vi?t xong <b className="text-ink">{totalCount} c�u</b> trong <b className="text-ink">{fmtTime(elapsed)}</b>.</p>
+            <div className="text-5xl mb-3 text-emerald-600" aria-hidden="true">✓</div>
+            <h2 className="text-2xl font-serif font-bold text-ink">Hoàn thành bài luyện viết!</h2>
+            <p className="text-muted mt-1">Bạn đã viết xong <b className="text-ink">{totalCount} câu</b> trong <b className="text-ink">{fmtTime(elapsed)}</b>.</p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 my-5">
             <div className="rounded-2xl border-2 border-gold bg-goldpale/40 p-4 text-center">
               <div className="text-3xl font-bold text-golddark">{avg}%</div>
-              <div className="text-xs text-muted mt-1">?i?m TB</div>
+              <div className="text-xs text-muted mt-1">Điểm trung bình</div>
             </div>
             <div className="rounded-2xl border border-line bg-white p-4 text-center">
               <div className="text-2xl font-bold text-[#6550DB]">{bestScore}%</div>
-              <div className="text-xs text-muted mt-1">Cao nh?t</div>
+              <div className="text-xs text-muted mt-1">Cao nhất</div>
             </div>
             <div className="rounded-2xl border border-line bg-white p-4 text-center">
               <div className="text-2xl font-bold text-emerald-600">{perfectCount}</div>
-              <div className="text-xs text-muted mt-1">Ho�n h?o (100%)</div>
+              <div className="text-xs text-muted mt-1">Hoàn hảo (100%)</div>
             </div>
             <div className="rounded-2xl border border-line bg-white p-4 text-center">
               <div className="text-2xl font-bold text-ink">{totalAtt}</div>
-              <div className="text-xs text-muted mt-1">L?n ki?m tra</div>
+              <div className="text-xs text-muted mt-1">Lần kiểm tra</div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-line bg-[#FBFAFE] p-4 mb-4">
-            <h3 className="text-sm font-bold text-ink mb-3">Ph�n t�ch theo d? kh�</h3>
+            <h3 className="text-sm font-bold text-ink mb-3">Phân tích theo độ khó</h3>
             <div className="space-y-2">
               {difficultyStats.map(({ d, count, avg: avgD }) => {
                 const meta = DIFFICULTY_META[d];
                 return (
                   <div key={d} className="flex items-center gap-3">
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-bold shrink-0 w-24 justify-center ${meta.cls}`}>
-                      <span aria-hidden="true">{d === "easy" ? "?" : d === "medium" ? "??" : "???"}</span>
+                      <span aria-hidden="true">{d === "easy" ? "1" : d === "medium" ? "2" : "3"}</span>
                       {meta.label}
                     </span>
                     <div className="flex-1 h-2 rounded-full bg-white border border-line overflow-hidden">
@@ -709,7 +709,7 @@ const nextSentence = useCallback(() => {
                       />
                     </div>
                     <span className="text-xs font-mono font-bold text-muted shrink-0 w-20 text-right">
-                      {avgD !== null ? `${avgD}%` : "�"} � {count} c�u
+                      {avgD !== null ? `${avgD}%` : "—"} · {count} câu
                     </span>
                   </div>
                 );
@@ -720,22 +720,22 @@ const nextSentence = useCallback(() => {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 text-center">
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5">
               <div className="text-lg font-bold text-emerald-700">{goodCount}</div>
-              <div className="text-[0.7rem] text-emerald-700">Kh� (=70%)</div>
+              <div className="text-[0.7rem] text-emerald-700">Khá (≥70%)</div>
             </div>
             <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5">
               <div className="text-lg font-bold text-rose-700">{retryNeeded}</div>
-              <div className="text-[0.7rem] text-rose-700">C?n �n (&lt;70%)</div>
+              <div className="text-[0.7rem] text-rose-700">Cần ôn (&lt;70%)</div>
             </div>
             <div className="rounded-lg border border-line bg-white p-2.5">
               <div className="text-lg font-bold text-ink">{fmtTime(avgTimePerSentence)}</div>
-              <div className="text-[0.7rem] text-muted">Trung b�nh/c�u</div>
+              <div className="text-[0.7rem] text-muted">Trung bình/câu</div>
             </div>
           </div>
 
           <div className="mt-6 flex flex-wrap justify-center gap-3">
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>L�m l?i t? d?u</button>
-            {retryNeeded > 0 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startRetry}>�n {retryNeeded} c�u sai</button>}
-            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>? Ch?n thu m?c kh�c</button>
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={restartAll}>Làm lại từ đầu</button>
+            {retryNeeded > 0 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={startRetry}>Ôn {retryNeeded} câu sai</button>}
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/writing")}>← Chọn thư mục khác</button>
           </div>
         </div>
       </div>
@@ -822,14 +822,14 @@ const nextSentence = useCallback(() => {
                   const meta = DIFFICULTY_META[d];
                   return (
                     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-bold ${meta.cls}`}>
-                      <span aria-hidden="true">{d === "easy" ? "?" : d === "medium" ? "??" : "???"}</span>
-                      �? kh�: {meta.label}
+                      <span aria-hidden="true">{d === "easy" ? "1" : d === "medium" ? "2" : "3"}</span>
+                      Độ khó: {meta.label}
                     </span>
                   );
                 })()}
                 {current?.fullQuestion && (
                   <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2 py-0.5 text-[0.7rem] font-bold text-muted">
-                    C�u {current.sentenceIndex + 1}/{splitSentences(current.fullAnswer).length}
+                    Câu {current.sentenceIndex + 1}/{splitSentences(current.fullAnswer).length}
                   </span>
                 )}
               </div>
@@ -842,11 +842,11 @@ const nextSentence = useCallback(() => {
         )}
 
         <div className="mb-4">
-          <label className={`cx.label mb-0`}>Nh?p c�u ti?ng Anh c?a b?n</label>
+          <label className={`${cx.label} mb-0`}>Nhập câu tiếng Anh của bạn</label>
             </div>
             {showHint && current && (
               <div className={`mb-3 rounded-lg border border-dashed border-[#7865EE] bg-[#F5F2FF] px-3 py-2`}>
-                <div className={`text-[0.7rem] font-bold text-[#6550DB] mb-1`}>G?i � (ch? ch? c�i d?u):</div>
+                <div className="mb-1 text-[0.7rem] font-bold text-[#6550DB]">Gợi ý (chữ cái đầu):</div>
                 <div className={`font-mono text-sm text-ink leading-relaxed`}>{generateHint(current.targetSentence)}</div>
               </div>
             )}
@@ -855,9 +855,9 @@ const nextSentence = useCallback(() => {
                 type={`button`}
                 onClick={() => setShowHint(!showHint)}
                 className={`text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md hover:bg-[#F0EDFF] transition`}
-                title={`Hi?n g?i �: ch? ch? c�i d?u c?a m?i t?`}
+                title="Hiện gợi ý chữ cái đầu của mỗi từ"
               >
-                {showHint ? '?n g?i �' : '?? G?i �'}
+                {showHint ? "Ẩn gợi ý" : "Gợi ý"}
               </button>
 <textarea
             ref={(el) => {
