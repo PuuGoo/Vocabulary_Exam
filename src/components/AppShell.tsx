@@ -17,7 +17,7 @@ const primaryNav: NavItem[] = [
   { href: "/dashboard", label: "Tổng quan", icon: "⌂" },
   { href: "/study", label: "Học tập của tôi", icon: "▤" },
   { href: "/mixed-practice", label: "Phòng luyện tập", icon: "◎" },
-  { href: "/writing", label: "Ngân hàng câu hỏi", icon: "?" },
+  { href: "/writing", label: "Ngân hàng câu hỏi", icon: "Q" },
   { href: "/assignments", label: "Bài thi thử", icon: "◇" },
   { href: "/vocabulary-vault", label: "Kho từ vựng", icon: "Aa" },
   { href: "/admin", label: "Khu quản trị", icon: "⚙", admin: true },
