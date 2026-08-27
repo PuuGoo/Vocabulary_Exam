@@ -46,6 +46,7 @@ type CategorySummary = { id: number; name: string; count: number };
 type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileType: string; fileSize: number; createdAt: string };
 type VisibleCategoryDocument = CategoryDocument & { displayTitle: string; displayFileName: string; aggregateOrder: number | null };
 type DocumentSort = "newest" | "oldest" | "name" | "size";
+type QuestionType = "speaking" | "multiple_choice" | "essay";
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
 
@@ -130,10 +131,16 @@ export default function AdminSetsPage() {
   const [editAnswerText, setEditAnswerText] = useState("");
   const [editPhonetic, setEditPhonetic] = useState("");
   const [editVnMeaning, setEditVnMeaning] = useState("");
+  const [editQuestionType, setEditQuestionType] = useState<QuestionType>("speaking");
+  const [editOptions, setEditOptions] = useState(["", "", "", ""]);
+  const [editCorrectOption, setEditCorrectOption] = useState("A");
   const [newQuestionText, setNewQuestionText] = useState("");
   const [newAnswerText, setNewAnswerText] = useState("");
   const [newPhonetic, setNewPhonetic] = useState("");
   const [newVnMeaning, setNewVnMeaning] = useState("");
+  const [newQuestionType, setNewQuestionType] = useState<QuestionType>("speaking");
+  const [newOptions, setNewOptions] = useState(["", "", "", ""]);
+  const [newCorrectOption, setNewCorrectOption] = useState("A");
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [collapsedQuestions, setCollapsedQuestions] = useState<Set<number>>(new Set());
 
@@ -393,31 +400,34 @@ export default function AdminSetsPage() {
 
   async function addCategoryQuestion() {
     if (!newQuestionText.trim() || savingQuestion) return;
+    if (newQuestionType === "multiple_choice" && newOptions.some((option) => !option.trim())) return toast("Hãy nhập đủ 4 lựa chọn A, B, C và D.");
     setSavingQuestion(true);
     try {
       const res = await fetch("/api/admin/category-questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category: selectedCategory, question: newQuestionText.trim(), answer: newAnswerText.trim(), phonetic: newPhonetic.trim() || null, vnMeaning: newVnMeaning.trim() || null }),
+        body: JSON.stringify({ category: selectedCategory, question: newQuestionText.trim(), answer: newAnswerText.trim(), phonetic: newPhonetic.trim() || null, vnMeaning: newVnMeaning.trim() || null, questionType: newQuestionType, options: newQuestionType === "multiple_choice" ? newOptions.map((option) => option.trim()) : [], correctOption: newQuestionType === "multiple_choice" ? newCorrectOption : null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể thêm câu hỏi.");
       await refreshCategoryQuestions();
       setNewQuestionText("");
       setNewAnswerText("");
-      toast("Đã Thêm câu hỏi Speaking.");
+      setNewOptions(["", "", "", ""]);
+      toast("Đã thêm câu hỏi.");
     } catch { toast("Không thể kết nối."); }
     finally { setSavingQuestion(false); }
   }
 
   async function saveQuestionEdit(id: number) {
     if (!editQuestionText.trim() || savingQuestion) return;
+    if (editQuestionType === "multiple_choice" && editOptions.some((option) => !option.trim())) return toast("Hãy nhập đủ 4 lựa chọn A, B, C và D.");
     setSavingQuestion(true);
     try {
       const res = await fetch("/api/admin/category-questions", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, question: editQuestionText.trim(), answer: editAnswerText.trim(), phonetic: editPhonetic.trim() || null, vnMeaning: editVnMeaning.trim() || null }),
+        body: JSON.stringify({ id, question: editQuestionText.trim(), answer: editAnswerText.trim(), phonetic: editPhonetic.trim() || null, vnMeaning: editVnMeaning.trim() || null, questionType: editQuestionType, options: editQuestionType === "multiple_choice" ? editOptions.map((option) => option.trim()) : [], correctOption: editQuestionType === "multiple_choice" ? editCorrectOption : null }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể lưu câu hỏi.");
@@ -1161,31 +1171,43 @@ export default function AdminSetsPage() {
       {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && (
         <section className="mb-5 rounded-[14px] border border-line bg-white p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-            <div><h3 className="text-sm font-bold text-ink">Câu hỏi IELTS Speaking</h3><p className="mt-1 text-xs text-muted">Đặt câu hỏi và ghi câu trả lời mẫu. Học sinh sẽ luyện nói và xem gợi ý trả lời.</p></div>
+            <div><h3 className="text-sm font-bold text-ink">Ngân hàng câu hỏi</h3><p className="mt-1 text-xs text-muted">Hỗ trợ IELTS Speaking, trắc nghiệm A–D và tự luận có đáp án mẫu.</p></div>
             <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span>
           </div>
           <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-3">
             <div className="mb-3">
+              <label className={cx.label}>Dạng câu hỏi</label>
+              <select className={`${cx.input} !mb-0`} value={newQuestionType} onChange={(event) => setNewQuestionType(event.target.value as QuestionType)}>
+                <option value="speaking">IELTS Speaking</option>
+                <option value="multiple_choice">Trắc nghiệm A–D</option>
+                <option value="essay">Tự luận</option>
+              </select>
+            </div>
+            <div className="mb-3">
               <label className={cx.label}>Câu hỏi (hỗ trợ Markdown)</label>
               <textarea className={`${cx.input} !mb-0 min-h-[80px]`} placeholder="Describe a time when you..." value={newQuestionText} onChange={(event) => setNewQuestionText(event.target.value)} />
             </div>
+            {newQuestionType === "multiple_choice" && <div className="mb-3 grid gap-2 sm:grid-cols-2">
+              {newOptions.map((option, optionIndex) => <label key={optionIndex}><span className={cx.label}>Lựa chọn {String.fromCharCode(65 + optionIndex)}</span><input className={`${cx.input} !mb-0`} value={option} onChange={(event) => setNewOptions((current) => current.map((item, index) => index === optionIndex ? event.target.value : item))} /></label>)}
+              <label className="sm:col-span-2"><span className={cx.label}>Đáp án đúng</span><select className={`${cx.input} !mb-0`} value={newCorrectOption} onChange={(event) => setNewCorrectOption(event.target.value)}>{["A", "B", "C", "D"].map((letter) => <option key={letter}>{letter}</option>)}</select></label>
+            </div>}
             <div className="mb-3">
-                          <div className="mb-3">
+                          {newQuestionType === "speaking" && <><div className="mb-3">
               <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
               <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="/wɜːd/" value={newPhonetic} onChange={(event) => setNewPhonetic(event.target.value)} />
             </div>
             <div className="mb-3">
               <label className={cx.label}>Nghĩa tiếng Việt (không bắt buộc)</label>
               <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Một trải nghiệm mà tôi nhớ đến là..." value={newVnMeaning} onChange={(event) => setNewVnMeaning(event.target.value)} />
-            </div><label className={cx.label}>Câu trả lời mẫu — gợi ý cho học sinh (hỗ trợ Markdown)</label>
+            </div></>}<label className={cx.label}>{newQuestionType === "multiple_choice" ? "Giải thích đáp án (không bắt buộc)" : "Đáp án mẫu — gợi ý cho học sinh (hỗ trợ Markdown)"}</label>
               <textarea className={`${cx.input} !mb-0 min-h-[120px]`} placeholder="One experience that comes to mind is..." value={newAnswerText} onChange={(event) => setNewAnswerText(event.target.value)} />
             </div>
             <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={savingQuestion || !newQuestionText.trim()} onClick={addCategoryQuestion}>
-              {savingQuestion ? "Đang thêm..." : "+ Thêm câu hỏi Speaking"}
+              {savingQuestion ? "Đang thêm..." : "+ Thêm câu hỏi"}
             </button>
           </div>
           {questionsLoading ? <p className="text-xs text-muted">Đang tải câu hỏi...</p> : categoryQuestions.length === 0 ? (
-            <p className="text-sm text-muted">Thư mục này chưa có câu hỏi nào. Hãy thêm câu hỏi IELTS Speaking ở phía trên.</p>
+            <p className="text-sm text-muted">Thư mục này chưa có câu hỏi nào. Hãy thêm câu hỏi ở phía trên.</p>
           ) : (
             <div className="space-y-3">
               {categoryQuestions.map((q, index) => {
@@ -1197,6 +1219,7 @@ export default function AdminSetsPage() {
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-xs font-bold text-[#6550DB]">{index + 1}</span>
                         <span className="text-xs font-bold text-muted">Câu hỏi #{q.id}</span>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-bold text-[#6550DB]">{q.questionType === "multiple_choice" ? "Trắc nghiệm" : q.questionType === "essay" ? "Tự luận" : "Speaking"}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={index === 0} onClick={() => moveQuestionOrder(q.id, -1)} aria-label="Lên trước">↑</button>
@@ -1208,7 +1231,9 @@ export default function AdminSetsPage() {
                     </div>
                     {isEditing ? (
                       <div className="space-y-2">
+                        <select className={`${cx.input} !mb-0`} value={editQuestionType} onChange={(event) => setEditQuestionType(event.target.value as QuestionType)}><option value="speaking">IELTS Speaking</option><option value="multiple_choice">Trắc nghiệm A–D</option><option value="essay">Tự luận</option></select>
                         <textarea className={`${cx.input} !mb-0 min-h-[80px]`} value={editQuestionText} onChange={(event) => setEditQuestionText(event.target.value)} />
+                        {editQuestionType === "multiple_choice" && <div className="grid gap-2 sm:grid-cols-2">{editOptions.map((option, optionIndex) => <input key={optionIndex} aria-label={`Lựa chọn ${String.fromCharCode(65 + optionIndex)}`} placeholder={`${String.fromCharCode(65 + optionIndex)}.`} className={`${cx.input} !mb-0`} value={option} onChange={(event) => setEditOptions((current) => current.map((item, index) => index === optionIndex ? event.target.value : item))} />)}<select className={`${cx.input} !mb-0 sm:col-span-2`} value={editCorrectOption} onChange={(event) => setEditCorrectOption(event.target.value)}>{["A", "B", "C", "D"].map((letter) => <option key={letter} value={letter}>Đáp án đúng: {letter}</option>)}</select></div>}
                         <textarea className={`${cx.input} !mb-0 min-h-[100px]`} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
                         <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Phiên âm IPA" value={editPhonetic} onChange={(event) => setEditPhonetic(event.target.value)} />
                         <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Nghĩa tiếng Việt" value={editVnMeaning} onChange={(event) => setEditVnMeaning(event.target.value)} />
@@ -1220,6 +1245,7 @@ export default function AdminSetsPage() {
                     ) : (
                       <div>
                         <div className="prose prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap">{q.question}</div>
+                        {q.questionType === "multiple_choice" && !isCollapsed && <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{(() => { try { return JSON.parse(q.options || "[]"); } catch { return []; } })().map((option: string, optionIndex: number) => <div key={optionIndex} className={`rounded-lg border px-3 py-2 text-sm ${q.correctOption === String.fromCharCode(65 + optionIndex) ? "border-green-300 bg-green-50" : "border-line bg-white"}`}><b>{String.fromCharCode(65 + optionIndex)}.</b> {option}</div>)}</div>}
                         {q.answer && !isCollapsed && (
                           <div className="mt-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2">
                             <div className="mb-1 text-[0.7rem] font-bold uppercase tracking-wider text-golddark">Gợi ý trả lời mẫu</div>
@@ -1227,7 +1253,7 @@ export default function AdminSetsPage() {
                           </div>
                         )}
                         <div className="mt-2 flex gap-2">
-                          <button className="text-xs font-bold text-[#6550DB] hover:underline" onClick={() => { setEditingQuestionId(q.id); setEditQuestionText(q.question); setEditAnswerText(q.answer || ""); setEditPhonetic(q.phonetic || ""); setEditVnMeaning(q.vnMeaning || ""); }}>Sửa</button>
+                          <button className="text-xs font-bold text-[#6550DB] hover:underline" onClick={() => { setEditingQuestionId(q.id); setEditQuestionText(q.question); setEditAnswerText(q.answer || ""); setEditPhonetic(q.phonetic || ""); setEditVnMeaning(q.vnMeaning || ""); setEditQuestionType(q.questionType || "speaking"); try { const parsed = JSON.parse(q.options || "[]"); setEditOptions(parsed.length === 4 ? parsed : ["", "", "", ""]); } catch { setEditOptions(["", "", "", ""]); } setEditCorrectOption(q.correctOption || "A"); }}>Sửa</button>
                           <a href={`/writing?category=${encodeURIComponent(selectedCategory)}`} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-green-700 hover:underline ml-2">Luyện viết</a>
                           <button className="text-xs font-bold text-bad hover:underline" onClick={() => deleteCategoryQuestion(q.id)}>Xóa</button>
                         </div>
