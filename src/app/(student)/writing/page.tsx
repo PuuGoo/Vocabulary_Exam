@@ -38,6 +38,7 @@ type CategoryOpt = {
 };
 
 const DRAFT_KEY_PREFIX = "lexora-writing-draft-";
+const SPELL_CHECK_KEY = "lexora-vietnamese-spell-check";
 
 function stripPunct(s: string) {
   return s.replace(/[.,!?;:()""''\[\]{}«»]/g, "");
@@ -163,6 +164,7 @@ function WritingInner() {
   const [retryMode, setRetryMode] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [spellCheckEnabled, setSpellCheckEnabled] = useState(false);
 
   const resultRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -177,6 +179,15 @@ function WritingInner() {
   scoresRef.current = scores;
   attemptsRef.current = attempts;
   submittedRef.current = submitted;
+
+  useEffect(() => {
+    try { setSpellCheckEnabled(localStorage.getItem(SPELL_CHECK_KEY) === "on"); } catch { /* unavailable */ }
+  }, []);
+
+  function changeSpellCheck(enabled: boolean) {
+    setSpellCheckEnabled(enabled);
+    try { localStorage.setItem(SPELL_CHECK_KEY, enabled ? "on" : "off"); } catch { /* unavailable */ }
+  }
 
   const exercises = useMemo<SentenceExercise[]>(() => {
     const result: SentenceExercise[] = [];
@@ -613,7 +624,7 @@ const nextSentence = useCallback(() => {
   if (loading) return <div className={cx.panel}><div className={cx.empty}>Đang tải câu hỏi...</div></div>;
 
   const subjectQuestions = questions.filter((question): question is Question & SubjectQuestion => question.questionType === "multiple_choice" || question.questionType === "essay");
-  if (subjectQuestions.length > 0 && search.get("mode") !== "ielts") return <SubjectQuestionPractice category={category} questions={subjectQuestions} speakingCount={questions.filter((question) => question.questionType === "speaking").length} />;
+  if (subjectQuestions.length > 0 && search.get("mode") !== "ielts") return <SubjectQuestionPractice category={category} questions={subjectQuestions} speakingCount={questions.filter((question) => question.questionType === "speaking").length} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={changeSpellCheck} />;
 
   if (exercises.length === 0) return (
     <div className="max-w-3xl mx-auto">
@@ -754,6 +765,7 @@ const nextSentence = useCallback(() => {
             <span className="hidden sm:inline-block rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB] max-w-[200px] truncate" title={category}>{category}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <SpellCheckToggle enabled={spellCheckEnabled} onChange={changeSpellCheck} />
             <span className="text-xs text-muted font-mono">⏱ {fmtTime(elapsed)}</span>
             <button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3 !py-1.5 text-xs`} onClick={() => router.push("/writing")}>Đổi thư mục</button>
             <span className="text-xs font-bold text-muted">{completedCount}/{totalCount}</span>
@@ -876,6 +888,8 @@ const nextSentence = useCallback(() => {
             placeholder="Gõ câu tiếng Anh tương ứng với nghĩa tiếng Việt..."
             value={userAnswer}
             onChange={(e) => setUserAnswer(e.target.value)}
+            spellCheck={spellCheckEnabled}
+            lang="vi"
             disabled={submitted}
             onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !submitted && userAnswer.trim()) { e.preventDefault(); handleSubmit(); } }}
           />
@@ -984,4 +998,8 @@ const nextSentence = useCallback(() => {
       </div>
     </div>
   );
+}
+
+function SpellCheckToggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
+  return <button type="button" role="switch" aria-checked={enabled} onClick={() => onChange(!enabled)} className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 text-xs font-bold transition ${enabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`} title={enabled ? "Tắt gạch chân kiểm tra chính tả" : "Bật kiểm tra chính tả"}><span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-gray-300"}`} />Chính tả: {enabled ? "Bật" : "Tắt"}</button>;
 }

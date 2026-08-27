@@ -16,7 +16,7 @@ export type SubjectQuestion = {
 type Mode = "overview" | "multiple_choice" | "essay" | "final";
 const LETTERS = ["A", "B", "C", "D"] as const;
 
-export default function SubjectQuestionPractice({ category, questions, speakingCount = 0 }: { category: string; questions: SubjectQuestion[]; speakingCount?: number }) {
+export default function SubjectQuestionPractice({ category, questions, speakingCount = 0, spellCheckEnabled, onSpellCheckChange }: { category: string; questions: SubjectQuestion[]; speakingCount?: number; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("overview");
   const multipleChoice = useMemo(() => questions.filter((question) => question.questionType === "multiple_choice"), [questions]);
@@ -25,7 +25,7 @@ export default function SubjectQuestionPractice({ category, questions, speakingC
 
   if (mode === "multiple_choice") return <MultipleChoiceQuiz title="Luyện trắc nghiệm" questions={multipleChoice} onBack={() => setMode("overview")} />;
   if (mode === "final") return <MultipleChoiceQuiz title={`Bài tổng hợp · ${finalQuestions.length} câu trắc nghiệm cuối`} questions={finalQuestions} onBack={() => setMode("overview")} />;
-  if (mode === "essay") return <EssayPractice questions={essays} onBack={() => setMode("overview")} />;
+  if (mode === "essay") return <EssayPractice questions={essays} onBack={() => setMode("overview")} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={onSpellCheckChange} />;
 
   return <div className="mx-auto max-w-4xl space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -72,15 +72,15 @@ function MultipleChoiceQuiz({ title, questions, onBack }: { title: string; quest
   </div>;
 }
 
-function EssayPractice({ questions, onBack }: { questions: SubjectQuestion[]; onBack: () => void }) {
+function EssayPractice({ questions, onBack, spellCheckEnabled, onSpellCheckChange }: { questions: SubjectQuestion[]; onBack: () => void; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void }) {
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
   const current = questions[index];
   return <div className="mx-auto max-w-3xl space-y-4">
-    <div className="flex items-center justify-between gap-3"><div><h1 className="text-xl font-extrabold text-ink">Luyện tự luận</h1><p className="mt-1 text-xs text-muted">Câu {index + 1}/{questions.length}</p></div><button className={`${cx.btn} ${cx.btnGhost}`} onClick={onBack}>← Chọn dạng khác</button></div>
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-extrabold text-ink">Luyện tự luận</h1><p className="mt-1 text-xs text-muted">Câu {index + 1}/{questions.length}</p></div><div className="flex items-center gap-2"><button type="button" role="switch" aria-checked={spellCheckEnabled} onClick={() => onSpellCheckChange(!spellCheckEnabled)} className={`min-h-10 rounded-lg border px-3 text-xs font-bold ${spellCheckEnabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`}>Chính tả: {spellCheckEnabled ? "Bật" : "Tắt"}</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={onBack}>← Chọn dạng khác</button></div></div>
     <div className="h-2 overflow-hidden rounded-full bg-[#EFECFF]"><div className="h-full rounded-full bg-[#7865EE] transition-all" style={{ width: `${(index + 1) / questions.length * 100}%` }} /></div>
-    <article className={cx.panel}><span className="text-xs font-bold uppercase tracking-wider text-[#6550DB]">Câu tự luận {index + 1}</span><h2 className="mt-3 text-lg font-bold leading-7 text-ink whitespace-pre-wrap">{current.question}</h2><label className="mt-5 block"><span className={cx.label}>Bài làm của bạn</span><textarea className={`${cx.input} !mb-0 min-h-48`} placeholder="Nhập câu trả lời..." value={answers[current.id] || ""} onChange={(event) => setAnswers((value) => ({ ...value, [current.id]: event.target.value }))} /></label>
+    <article className={cx.panel}><span className="text-xs font-bold uppercase tracking-wider text-[#6550DB]">Câu tự luận {index + 1}</span><h2 className="mt-3 text-lg font-bold leading-7 text-ink whitespace-pre-wrap">{current.question}</h2><label className="mt-5 block"><span className={cx.label}>Bài làm của bạn</span><textarea className={`${cx.input} !mb-0 min-h-48`} placeholder="Nhập câu trả lời..." value={answers[current.id] || ""} onChange={(event) => setAnswers((value) => ({ ...value, [current.id]: event.target.value }))} spellCheck={spellCheckEnabled} lang="vi" /></label>
       {!revealed[current.id] ? <button disabled={!answers[current.id]?.trim()} className={`${cx.btn} ${cx.btnGold} mt-4 w-full`} onClick={() => setRevealed((value) => ({ ...value, [current.id]: true }))}>Hoàn thành và xem đáp án mẫu</button> : <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4"><b className="text-xs uppercase tracking-wider text-green-800">Đáp án mẫu</b><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-green-950">{current.answer || "Chưa có đáp án mẫu."}</p></div>}
     </article>
     <div className="flex gap-2"><button disabled={index === 0} className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={() => setIndex((value) => value - 1)}>← Câu trước</button>{index < questions.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={() => setIndex((value) => value + 1)}>Câu tiếp →</button> : <button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={onBack}>Hoàn thành</button>}</div>
