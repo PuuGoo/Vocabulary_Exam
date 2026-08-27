@@ -49,6 +49,7 @@ type DocumentSort = "newest" | "oldest" | "name" | "size";
 type QuestionType = "speaking" | "multiple_choice" | "essay";
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
+const SPELL_CHECK_KEY = "lexora-vietnamese-spell-check";
 
 function normalizeSearch(value: string) {
   return value
@@ -143,6 +144,16 @@ export default function AdminSetsPage() {
   const [newCorrectOption, setNewCorrectOption] = useState("A");
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [collapsedQuestions, setCollapsedQuestions] = useState<Set<number>>(new Set());
+  const [spellCheckEnabled, setSpellCheckEnabled] = useState(false);
+
+  useEffect(() => {
+    try { setSpellCheckEnabled(localStorage.getItem(SPELL_CHECK_KEY) === "on"); } catch { /* unavailable */ }
+  }, []);
+
+  function changeSpellCheck(enabled: boolean) {
+    setSpellCheckEnabled(enabled);
+    try { localStorage.setItem(SPELL_CHECK_KEY, enabled ? "on" : "off"); } catch { /* unavailable */ }
+  }
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -1172,7 +1183,7 @@ export default function AdminSetsPage() {
         <section className="mb-5 rounded-[14px] border border-line bg-white p-4">
           <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
             <div><h3 className="text-sm font-bold text-ink">Ngân hàng câu hỏi</h3><p className="mt-1 text-xs text-muted">Hỗ trợ IELTS Speaking, trắc nghiệm A–D và tự luận có đáp án mẫu.</p></div>
-            <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span>
+            <div className="flex items-center gap-2"><button type="button" role="switch" aria-checked={spellCheckEnabled} onClick={() => changeSpellCheck(!spellCheckEnabled)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-bold ${spellCheckEnabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`}>Chính tả: {spellCheckEnabled ? "Bật" : "Tắt"}</button><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span></div>
           </div>
           <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-3">
             <div className="mb-3">
@@ -1185,22 +1196,22 @@ export default function AdminSetsPage() {
             </div>
             <div className="mb-3">
               <label className={cx.label}>Câu hỏi (hỗ trợ Markdown)</label>
-              <textarea className={`${cx.input} !mb-0 min-h-[80px]`} placeholder="Describe a time when you..." value={newQuestionText} onChange={(event) => setNewQuestionText(event.target.value)} />
+              <textarea className={`${cx.input} !mb-0 min-h-[80px]`} placeholder="Describe a time when you..." value={newQuestionText} onChange={(event) => setNewQuestionText(event.target.value)} spellCheck={spellCheckEnabled} lang="vi" />
             </div>
             {newQuestionType === "multiple_choice" && <div className="mb-3 grid gap-2 sm:grid-cols-2">
-              {newOptions.map((option, optionIndex) => <label key={optionIndex}><span className={cx.label}>Lựa chọn {String.fromCharCode(65 + optionIndex)}</span><input className={`${cx.input} !mb-0`} value={option} onChange={(event) => setNewOptions((current) => current.map((item, index) => index === optionIndex ? event.target.value : item))} /></label>)}
+              {newOptions.map((option, optionIndex) => <label key={optionIndex}><span className={cx.label}>Lựa chọn {String.fromCharCode(65 + optionIndex)}</span><input className={`${cx.input} !mb-0`} value={option} onChange={(event) => setNewOptions((current) => current.map((item, index) => index === optionIndex ? event.target.value : item))} spellCheck={spellCheckEnabled} lang="vi" /></label>)}
               <label className="sm:col-span-2"><span className={cx.label}>Đáp án đúng</span><select className={`${cx.input} !mb-0`} value={newCorrectOption} onChange={(event) => setNewCorrectOption(event.target.value)}>{["A", "B", "C", "D"].map((letter) => <option key={letter}>{letter}</option>)}</select></label>
             </div>}
             <div className="mb-3">
                           {newQuestionType === "speaking" && <><div className="mb-3">
               <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
-              <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="/wɜːd/" value={newPhonetic} onChange={(event) => setNewPhonetic(event.target.value)} />
+              <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="/wɜːd/" value={newPhonetic} onChange={(event) => setNewPhonetic(event.target.value)} spellCheck={false} />
             </div>
             <div className="mb-3">
               <label className={cx.label}>Nghĩa tiếng Việt (không bắt buộc)</label>
-              <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Một trải nghiệm mà tôi nhớ đến là..." value={newVnMeaning} onChange={(event) => setNewVnMeaning(event.target.value)} />
+              <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Một trải nghiệm mà tôi nhớ đến là..." value={newVnMeaning} onChange={(event) => setNewVnMeaning(event.target.value)} spellCheck={spellCheckEnabled} lang="vi" />
             </div></>}<label className={cx.label}>{newQuestionType === "multiple_choice" ? "Giải thích đáp án (không bắt buộc)" : "Đáp án mẫu — gợi ý cho học sinh (hỗ trợ Markdown)"}</label>
-              <textarea className={`${cx.input} !mb-0 min-h-[120px]`} placeholder="One experience that comes to mind is..." value={newAnswerText} onChange={(event) => setNewAnswerText(event.target.value)} />
+              <textarea className={`${cx.input} !mb-0 min-h-[120px]`} placeholder="One experience that comes to mind is..." value={newAnswerText} onChange={(event) => setNewAnswerText(event.target.value)} spellCheck={spellCheckEnabled} lang="vi" />
             </div>
             <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={savingQuestion || !newQuestionText.trim()} onClick={addCategoryQuestion}>
               {savingQuestion ? "Đang thêm..." : "+ Thêm câu hỏi"}
@@ -1232,11 +1243,11 @@ export default function AdminSetsPage() {
                     {isEditing ? (
                       <div className="space-y-2">
                         <select className={`${cx.input} !mb-0`} value={editQuestionType} onChange={(event) => setEditQuestionType(event.target.value as QuestionType)}><option value="speaking">IELTS Speaking</option><option value="multiple_choice">Trắc nghiệm A–D</option><option value="essay">Tự luận</option></select>
-                        <textarea className={`${cx.input} !mb-0 min-h-[80px]`} value={editQuestionText} onChange={(event) => setEditQuestionText(event.target.value)} />
-                        {editQuestionType === "multiple_choice" && <div className="grid gap-2 sm:grid-cols-2">{editOptions.map((option, optionIndex) => <input key={optionIndex} aria-label={`Lựa chọn ${String.fromCharCode(65 + optionIndex)}`} placeholder={`${String.fromCharCode(65 + optionIndex)}.`} className={`${cx.input} !mb-0`} value={option} onChange={(event) => setEditOptions((current) => current.map((item, index) => index === optionIndex ? event.target.value : item))} />)}<select className={`${cx.input} !mb-0 sm:col-span-2`} value={editCorrectOption} onChange={(event) => setEditCorrectOption(event.target.value)}>{["A", "B", "C", "D"].map((letter) => <option key={letter} value={letter}>Đáp án đúng: {letter}</option>)}</select></div>}
-                        <textarea className={`${cx.input} !mb-0 min-h-[100px]`} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} />
-                        <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Phiên âm IPA" value={editPhonetic} onChange={(event) => setEditPhonetic(event.target.value)} />
-                        <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Nghĩa tiếng Việt" value={editVnMeaning} onChange={(event) => setEditVnMeaning(event.target.value)} />
+                        <textarea className={`${cx.input} !mb-0 min-h-[80px]`} value={editQuestionText} onChange={(event) => setEditQuestionText(event.target.value)} spellCheck={spellCheckEnabled} lang="vi" />
+                        {editQuestionType === "multiple_choice" && <div className="grid gap-2 sm:grid-cols-2">{editOptions.map((option, optionIndex) => <input key={optionIndex} aria-label={`Lựa chọn ${String.fromCharCode(65 + optionIndex)}`} placeholder={`${String.fromCharCode(65 + optionIndex)}.`} className={`${cx.input} !mb-0`} value={option} onChange={(event) => setEditOptions((current) => current.map((item, index) => index === optionIndex ? event.target.value : item))} spellCheck={spellCheckEnabled} lang="vi" />)}<select className={`${cx.input} !mb-0 sm:col-span-2`} value={editCorrectOption} onChange={(event) => setEditCorrectOption(event.target.value)}>{["A", "B", "C", "D"].map((letter) => <option key={letter} value={letter}>Đáp án đúng: {letter}</option>)}</select></div>}
+                        <textarea className={`${cx.input} !mb-0 min-h-[100px]`} value={editAnswerText} onChange={(event) => setEditAnswerText(event.target.value)} spellCheck={spellCheckEnabled} lang="vi" />
+                        <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Phiên âm IPA" value={editPhonetic} onChange={(event) => setEditPhonetic(event.target.value)} spellCheck={false} />
+                        <textarea className={`${cx.input} !mb-0 min-h-[60px]`} placeholder="Nghĩa tiếng Việt" value={editVnMeaning} onChange={(event) => setEditVnMeaning(event.target.value)} spellCheck={spellCheckEnabled} lang="vi" />
                         <div className="flex gap-2">
                           <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} disabled={savingQuestion || !editQuestionText.trim()} onClick={() => saveQuestionEdit(q.id)}>{savingQuestion ? "Đang lưu..." : "Lưu"}</button>
                           <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setEditingQuestionId(null); }}>Hủy</button>
