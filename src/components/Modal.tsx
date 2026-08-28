@@ -12,12 +12,16 @@ export default function Modal({
   children,
   wide = false,
   closeOnBackdrop = true,
+  fillViewport = false,
+  bodyClassName = "overflow-y-auto p-5",
 }: {
   title: string;
   onClose: () => void;
   children: React.ReactNode;
   wide?: boolean;
   closeOnBackdrop?: boolean;
+  fillViewport?: boolean;
+  bodyClassName?: string;
 }) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -96,7 +100,7 @@ export default function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`lexora-modal-panel bg-white text-ink rounded-[10px] w-full shadow-lg flex max-h-[92vh] flex-col ${wide ? "max-w-6xl" : "max-w-2xl"}`}
+        className={`lexora-modal-panel bg-white text-ink rounded-[10px] w-full shadow-lg flex max-h-[calc(100dvh-2rem)] flex-col ${fillViewport ? "h-[calc(100dvh-2rem)]" : ""} ${wide ? "max-w-6xl" : "max-w-2xl"}`}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
           <h3 id={titleId} className="font-serif text-[1.05rem]">{title}</h3>
@@ -104,7 +108,7 @@ export default function Modal({
             ×
           </button>
         </div>
-        <div className="overflow-y-auto p-5">{children}</div>
+        <div className={`min-h-0 flex-1 ${bodyClassName}`}>{children}</div>
       </div>
     </div>
   ), document.body);
