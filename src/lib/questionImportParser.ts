@@ -3,7 +3,7 @@ export type ImportStatus = "ready" | "needs_review" | "error";
 export type ImportIssueCode =
   | "MISSING_QUESTION" | "MISSING_OPTIONS" | "EMPTY_OPTION" | "INVALID_CORRECT_ANSWER"
   | "CONFLICTING_ANSWERS" | "MISSING_CORRECT_ANSWER" | "POSSIBLE_DUPLICATE"
-  | "POSSIBLE_MERGED_QUESTIONS" | "UNKNOWN_TYPE";
+  | "POSSIBLE_MERGED_QUESTIONS" | "DUPLICATE_OPTION_MARKER" | "DUPLICATE_STABLE_ID" | "UNKNOWN_TYPE";
 
 export type ParsedOption = { id: string; text: string; isCorrect: boolean };
 export type ParsedQuestion = {
@@ -45,9 +45,12 @@ const ANSWER_RE = /^(?:đáp\s*án|đ[áa]|da|answer|correct(?:\s+answer|\s+opti
 const EXPLANATION_RE = /^(?:giải\s*thích|explanation|solution|hướng\s*dẫn|gợi\s*ý)\s*[:=\-]?\s*(.*)$/iu;
 const QUESTION_RE = /^(?:(?:câu|question|q)\s*)?(\d+)\s*[\.)\]:\-]\s*(.*)$/iu;
 const EXPLICIT_QUESTION_RE = /^(?:câu|question|q)\s*(\d+)\s*(?:[\.)\]:\-]\s*|\s+)(.*)$/iu;
-const LETTER_OPTION_RE = /^(\*?)\s*([a-h])\s*[\.)\]:\-]\s*(?:\[([xX ])\]\s*)?(.*)$/iu;
-const NUMBER_OPTION_RE = /^(\*?)\s*([1-8])\s*[\.)\]:\-]\s*(?:\[([xX ])\]\s*)?(.*)$/u;
-const FINAL_ANSWER_RE = /^\s*(\d+)\s*[-.:]\s*([A-H](?:\s*[,;/+]\s*[A-H])*)\s*$/iu;
+const LETTER_OPTION_RE = /^(\*?)\s*([a-z])\s*[\.)\]:\/\-]\s*(?:\[([xX ])\]\s*)?(.*)$/iu;
+const BARE_LETTER_OPTION_RE = /^(\*?)\s*([a-z])\s+(?:\[([xX ])\]\s*)?(.+)$/iu;
+const NUMBER_OPTION_RE = /^(\*?)\s*(\d{1,2})\s*[\.)\]:\/\-]\s*(?:\[([xX ])\]\s*)?(.*)$/u;
+const CIRCLED_OPTION_RE = /^(\*?)\s*([Ⓐ-Ⓩⓐ-ⓩ①-⑳])\s*(?:[\.)\]:\/\-]\s*)?(?:\[([xX ])\]\s*)?(.*)$/u;
+const FINAL_ANSWER_RE = /^\s*(\d+)\s*[-.:]\s*([A-Z](?:\s*[,;/+]\s*[A-Z])*)\s*$/iu;
+const ESSAY_START_RE = /^(?:(?:hãy|please)\s+)?(?:describe|discuss|explain|analyse|analyze|present|trình\s+bày|phân\s+tích|nêu|giải\s+thích|so\s+sánh|chứng\s+minh)\b/iu;
 
 export function normalizeQuestionImportText(raw: string) {
   return raw
@@ -67,11 +70,20 @@ export function normalizeQuestionIdentity(value: string) {
 }
 
 function answerIds(value: string, options: ParsedOption[]) {
-  const tokens = value.toUpperCase().match(/[A-H]|\d+/g) || [];
+  const validIds = new Set(options.map((option) => option.id));
+  const tokens = value.toUpperCase().match(/[A-Z]|\d+/g) || [];
   return [...new Set(tokens.map((token) => {
     if (/^\d+$/.test(token)) return options[Number(token) - 1]?.id || "";
-    return token;
+    return validIds.has(token) ? token : "";
   }).filter(Boolean))];
+}
+
+function circledOptionId(marker: string) {
+  const code = marker.codePointAt(0) || 0;
+  if (code >= 0x24b6 && code <= 0x24cf) return String.fromCharCode(65 + code - 0x24b6);
+  if (code >= 0x24d0 && code <= 0x24e9) return String.fromCharCode(65 + code - 0x24d0);
+  if (code >= 0x2460 && code <= 0x2473) return String.fromCharCode(65 + code - 0x2460);
+  return "";
 }
 
 function validate(question: ParsedQuestion) {
@@ -84,6 +96,7 @@ function validate(question: ParsedQuestion) {
     if (!question.options.some((option) => option.isCorrect)) issues.push("MISSING_CORRECT_ANSWER");
   }
   if ((question.question.match(/\?+/g) || []).length >= 3) issues.push("POSSIBLE_MERGED_QUESTIONS");
+  if (/\b(?:câu|question|q)?\s*\d+\s*[.)\]:-]\s*[^\n]{2,}\?\s+[A-Z]\s*[.)\]:\/-]\s*/iu.test(question.question)) issues.push("POSSIBLE_MERGED_QUESTIONS");
   return issues;
 }
 
@@ -97,7 +110,7 @@ function similarity(left: string, right: string) {
 
 export function revalidateParsedQuestion(question: ParsedQuestion): ParsedQuestion {
   const structuralIssues = validate(question);
-  const preserved = question.issues.filter((issue) => issue === "POSSIBLE_DUPLICATE" || issue === "CONFLICTING_ANSWERS" || issue === "INVALID_CORRECT_ANSWER");
+  const preserved = question.issues.filter((issue) => issue === "POSSIBLE_DUPLICATE" || issue === "CONFLICTING_ANSWERS" || issue === "INVALID_CORRECT_ANSWER" || issue === "DUPLICATE_OPTION_MARKER" || issue === "DUPLICATE_STABLE_ID" || issue === "POSSIBLE_MERGED_QUESTIONS");
   const issues = [...new Set([...structuralIssues, ...preserved])];
   const severe = issues.includes("MISSING_QUESTION") || issues.includes("MISSING_OPTIONS") || issues.includes("EMPTY_OPTION");
   const confidence = Math.max(0.05, Math.min(1, 1 - issues.length * 0.14 - (question.sourceNumber ? 0 : 0.05) - (question.type === "unknown" ? 0.2 : 0)));
@@ -129,11 +142,11 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
     if (!current) return;
     current.sourceEnd = Math.max(current.sourceStart, end);
     current.raw = lines.slice(current.sourceStart, current.sourceEnd + 1).join("\n");
-    if (current.options.length >= 2) {
+    if (current.options.length >= 1) {
       const trueFalse = current.options.length === 2 && current.options.every((option) => /^(true|false|đúng|sai)$/iu.test(option.text));
       current.type = trueFalse ? "true_false" : "multiple_choice";
     } else if (current.answer) current.type = current.type === "speaking" ? "speaking" : "essay";
-    else if (current.type === "unknown" && /\?\s*$/.test(current.question)) current.type = speakingPart ? "speaking" : "essay";
+    else if (current.type === "unknown" && (/\?\s*$/.test(current.question) || ESSAY_START_RE.test(current.question))) current.type = speakingPart ? "speaking" : "essay";
     const listed = current.sourceNumber ? finalAnswers.get(current.sourceNumber) : undefined;
     if (listed) {
       const ids = answerIds(listed, current.options);
@@ -148,30 +161,36 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
     if (/^(?:page|trang)\s+\d+(?:\s+(?:of|\/|trên)\s*\d+)?$|^-{3,}$|^_{3,}$/iu.test(line)) continue;
     const part = line.match(/^part\s*([123])\b/iu); if (part) { finish(index - 1); speakingPart = `part_${part[1]}` as ParsedQuestion["speakingPart"]; continue; }
     const topicMatch = line.match(/^topic\s*[:\-]\s*(.+)$/iu); if (topicMatch) { topic = topicMatch[1].trim(); continue; }
-    if (/^(?:answer\s*key|đáp\s*án)(?:\s*[:\-])?$/iu.test(line)) { if (current && /^[A-H](?:\s*[,;/+]\s*[A-H])*$/iu.test(lines[index + 1] || "")) target = "answer"; continue; }
+    const nextNonEmpty = lines.slice(index + 1).find((candidate) => candidate.trim()) || "";
+    if (/^answer\s*key(?:\s*[:\-])?$/iu.test(line) || (/^đáp\s*án(?:\s*[:\-])?$/iu.test(line) && FINAL_ANSWER_RE.test(nextNonEmpty))) { continue; }
     if (FINAL_ANSWER_RE.test(line)) continue;
     const explicit = line.match(EXPLICIT_QUESTION_RE);
     const customQuestionMatch = customQuestion ? line.match(customQuestion) : null;
     const generic = line.match(QUESTION_RE);
     if (generic && !generic[2] && !current) { pendingNumber = generic[1]; continue; }
     if (pendingNumber && !current) { current = create(index, pendingNumber, line); pendingNumber = null; continue; }
-    const numericCouldBeOption = !!current && !!generic && !explicit && Number(generic[1]) <= 8 && ((current.options.length === 0 && /\?$/.test(current.question)) || (current.options.length > 0 && Number(generic[1]) === current.options.length + 1 && !current.options.some((option) => option.isCorrect)));
+    const numericCouldBeOption = !!current && !!generic && !explicit && !speakingPart && Number(generic[1]) <= 26 && !/\?\s*$/.test(generic[2] || "") && ((current.options.length === 0 && /\?$/.test(current.question)) || (current.options.length > 0 && Number(generic[1]) === current.options.length + 1 && !current.options.some((option) => option.isCorrect)));
     if (explicit || customQuestionMatch || (generic && !numericCouldBeOption && generic[2])) {
       const match = explicit || customQuestionMatch || generic!; const groups = match.groups || {}; const customText = customQuestionMatch ? (groups.text || match.at(-1) || "") : match[2] || ""; const customNumber = customQuestionMatch ? (groups.number || null) : match[1] || null;
       finish(index - 1); current = create(index, customNumber, customText); continue;
     }
     if (current && /\?$/.test(line) && (current.options.length >= 2 || !!current.answer)) { finish(index - 1); current = create(index, null, line); continue; }
-    if (!current && (/\?$/.test(line) || /^(?:describe|discuss|explain|trình bày|phân tích|nêu)\b/iu.test(line))) current = create(index, null, line);
+    if (!current && (/\?$/.test(line) || ESSAY_START_RE.test(line))) current = create(index, null, line);
     if (!current) continue;
     const builtInLetterOption = line.match(LETTER_OPTION_RE);
     const customOptionMatch = !builtInLetterOption && customOption ? line.match(customOption) : null;
     const letterOption = builtInLetterOption;
-    const numberOption = !letterOption ? line.match(NUMBER_OPTION_RE) : null;
-    const optionMatch = letterOption || numberOption || customOptionMatch;
+    const circledOption = !letterOption ? line.match(CIRCLED_OPTION_RE) : null;
+    const bareLetterOption = !letterOption && !circledOption && current.options.length === 0
+      ? line.match(BARE_LETTER_OPTION_RE) : !letterOption && !circledOption && line.match(BARE_LETTER_OPTION_RE)?.[2]?.toUpperCase() === String.fromCharCode(65 + current.options.length)
+        ? line.match(BARE_LETTER_OPTION_RE) : null;
+    const numberOption = !letterOption && !circledOption && !bareLetterOption ? line.match(NUMBER_OPTION_RE) : null;
+    const optionMatch = letterOption || circledOption || bareLetterOption || numberOption || customOptionMatch;
     if (optionMatch) {
-      const groups = optionMatch.groups || {}; const rawId = customOptionMatch ? (groups.id || optionMatch[1]) : optionMatch[2]; const id = /^[A-H]$/iu.test(String(rawId)) ? String(rawId).toUpperCase() : String.fromCharCode(64 + Number(rawId));
+      const groups = optionMatch.groups || {}; const rawId = customOptionMatch ? (groups.id || optionMatch[1]) : optionMatch[2]; const id = circledOption ? circledOptionId(String(rawId)) : /^[A-Z]$/iu.test(String(rawId)) ? String(rawId).toUpperCase() : String.fromCharCode(64 + Number(rawId));
       const inlineCorrect = customOptionMatch ? /^(?:x|true|1|yes)$/iu.test(groups.correct || "") : optionMatch[1] === "*" || String(optionMatch[3] || "").toLowerCase() === "x";
       const optionText = customOptionMatch ? (groups.text || optionMatch[2] || optionMatch.at(-1) || "") : optionMatch[4] || "";
+      if (current.options.some((option) => option.id === id)) current.issues.push("DUPLICATE_OPTION_MARKER");
       current.options.push({ id, text: String(optionText).trim(), isCorrect: inlineCorrect }); currentOption = current.options.length - 1; target = "option"; continue;
     }
     const answer = line.match(ANSWER_RE) || (customAnswer ? line.match(customAnswer) : null);
@@ -221,4 +240,10 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
 export function summarizeParsedQuestions(items: ParsedQuestion[]) {
   const count = (predicate: (item: ParsedQuestion) => boolean) => items.filter(predicate).length;
   return { total: items.length, ready: count((item) => item.status === "ready"), review: count((item) => item.status === "needs_review"), errors: count((item) => item.status === "error"), duplicates: count((item) => item.issues.includes("POSSIBLE_DUPLICATE")), byType: { multipleChoice: count((item) => item.type === "multiple_choice"), trueFalse: count((item) => item.type === "true_false"), essay: count((item) => item.type === "essay"), speaking: count((item) => item.type === "speaking"), unknown: count((item) => item.type === "unknown") } };
+}
+
+export function partitionImportCandidates(items: ParsedQuestion[], readyOnly: boolean) {
+  const candidates = items.filter((item) => item.status !== "error" && (!readyOnly || item.status === "ready"));
+  const candidateIds = new Set(candidates.map((item) => item.clientId));
+  return { candidates, remaining: readyOnly ? items.filter((item) => !candidateIds.has(item.clientId)) : [] };
 }
