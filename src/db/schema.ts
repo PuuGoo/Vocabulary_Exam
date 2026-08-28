@@ -69,6 +69,9 @@ export const vocabCategories = pgTable(
   {
     id: serial("id").primaryKey(),
     name: varchar("name", { length: 128 }).notNull(),
+    shuffleQuestions: boolean("shuffle_questions").notNull().default(false),
+    shuffleOptions: boolean("shuffle_options").notNull().default(false),
+    shuffleMode: varchar("shuffle_mode", { length: 16 }).notNull().default("random"),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

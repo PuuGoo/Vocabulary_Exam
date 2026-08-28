@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { categoryQuestions } from "@/db/schema";
+import { categoryQuestions, vocabCategories } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { ensureQuestionImportSchema, parseJsonArray } from "@/lib/questionImportDb";
+import { ensureQuestionShuffleSchema } from "@/lib/questionShuffleDb";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -14,12 +15,13 @@ export async function GET(request: NextRequest) {
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "options" text DEFAULT '[]' NOT NULL;`);
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "correct_option" varchar(1);`);
   await ensureQuestionImportSchema();
+  await ensureQuestionShuffleSchema();
 
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
   if (!category) return NextResponse.json({ error: "Thiếu tham số category." }, { status: 400 });
 
-  const questions = await db
+  const [questions, [categorySettings]] = await Promise.all([db
     .select({
       id: categoryQuestions.id,
       vnMeaning: categoryQuestions.vnMeaning,
@@ -38,9 +40,9 @@ export async function GET(request: NextRequest) {
     })
     .from(categoryQuestions)
     .where(eq(categoryQuestions.category, category))
-    .orderBy(sql`${categoryQuestions.order} asc, ${categoryQuestions.id} asc`);
+    .orderBy(sql`${categoryQuestions.order} asc, ${categoryQuestions.id} asc`), db.select({ shuffleQuestions: vocabCategories.shuffleQuestions, shuffleOptions: vocabCategories.shuffleOptions, shuffleMode: vocabCategories.shuffleMode }).from(vocabCategories).where(eq(vocabCategories.name, category)).limit(1)]);
 
-  return NextResponse.json({ questions: questions.map((question) => ({
+  return NextResponse.json({ shuffleSettings: { shuffleQuestions: categorySettings?.shuffleQuestions ?? false, shuffleOptions: categorySettings?.shuffleOptions ?? false, shuffleMode: categorySettings?.shuffleMode === "balanced" ? "balanced" : "random" }, questions: questions.map((question) => ({
     ...question,
     options: (() => { try { return JSON.parse(question.options); } catch { return []; } })(),
     correctOptions: parseJsonArray(question.correctOptions).length ? parseJsonArray(question.correctOptions) : question.correctOption ? [question.correctOption] : [],

@@ -10,6 +10,7 @@ import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "
 import { SUPPORTED_DOCUMENT_ACCEPT, documentKind, isSupportedDocument } from "@/lib/categoryDocumentFile";
 import QuestionImportExportTools from "@/components/QuestionImportExportTools";
 import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
+import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLetter, planPermanentOptionShuffle, type PermanentShufflePlan, type QuestionShuffleMode, type QuestionShuffleSettings, type ShuffleQuestion } from "@/lib/questionShuffle";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -49,6 +50,8 @@ type CategoryDocument = { id: number; category: string; title: string; fileName:
 type VisibleCategoryDocument = CategoryDocument & { displayTitle: string; displayFileName: string; aggregateOrder: number | null };
 type DocumentSort = "newest" | "oldest" | "name" | "size";
 type QuestionType = "speaking" | "multiple_choice" | "essay";
+type AdminShuffleQuestion = ShuffleQuestion & { questionText: string };
+type OptionShufflePreview = { mode: QuestionShuffleMode; questions: AdminShuffleQuestion[]; plans: PermanentShufflePlan[] };
 const ALL_CATEGORIES = "__all__";
 const UNCATEGORIZED = "__uncategorized__";
 const SPELL_CHECK_KEY = "lexora-vietnamese-spell-check";
@@ -61,6 +64,11 @@ function normalizeSearch(value: string) {
     .replace(/Đ/g, "D")
     .toLowerCase()
     .trim();
+}
+
+function toShuffleQuestion(question: any): AdminShuffleQuestion {
+  const parse = (value: unknown) => { if (Array.isArray(value)) return value.map(String); try { const parsed = JSON.parse(String(value || "[]")); return Array.isArray(parsed) ? parsed.map(String) : []; } catch { return []; } };
+  return { id: Number(question.id), questionText: String(question.question || ""), options: parse(question.options), correctOption: question.correctOption || null, correctOptions: parse(question.correctOptions) };
 }
 
 export default function AdminSetsPage() {
@@ -154,6 +162,9 @@ export default function AdminSetsPage() {
   const [questionBulkTarget, setQuestionBulkTarget] = useState("");
   const [questionBulkDifficulty, setQuestionBulkDifficulty] = useState("");
   const [questionBulkTags, setQuestionBulkTags] = useState("");
+  const [questionShuffleSettings, setQuestionShuffleSettings] = useState<QuestionShuffleSettings>(DEFAULT_QUESTION_SHUFFLE_SETTINGS);
+  const [savingQuestionShuffle, setSavingQuestionShuffle] = useState(false);
+  const [optionShufflePreview, setOptionShufflePreview] = useState<OptionShufflePreview | null>(null);
   const [spellCheckEnabled, setSpellCheckEnabled] = useState(false);
 
   useEffect(() => {
@@ -176,6 +187,9 @@ export default function AdminSetsPage() {
   const QUESTION_PAGE_SIZE = 50;
   const questionPageCount = Math.max(1, Math.ceil(filteredCategoryQuestions.length / QUESTION_PAGE_SIZE));
   const pagedCategoryQuestions = filteredCategoryQuestions.slice(questionPage * QUESTION_PAGE_SIZE, (questionPage + 1) * QUESTION_PAGE_SIZE);
+  const shuffleQuestions = useMemo(() => categoryQuestions.filter((question) => ["multiple_choice", "true_false"].includes(question.questionType)).map(toShuffleQuestion).filter((question) => question.options.length >= 2), [categoryQuestions]);
+  const answerDistribution = useMemo(() => correctAnswerDistribution(shuffleQuestions), [shuffleQuestions]);
+  const previewAnswerDistribution = useMemo(() => optionShufflePreview ? correctAnswerDistribution(optionShufflePreview.questions, optionShufflePreview.plans) : {}, [optionShufflePreview]);
   useEffect(() => { if (questionPage >= questionPageCount) setQuestionPage(questionPageCount - 1); }, [questionPage, questionPageCount]);
 
   async function runQuestionBulk(action: "delete" | "duplicate" | "move" | "copy") {
@@ -195,6 +209,55 @@ export default function AdminSetsPage() {
     const XLSX = await import("xlsx");
     const rows = selected.map((question, index) => { const options = (() => { try { return JSON.parse(question.options || "[]"); } catch { return []; } })(); const correct = (() => { try { return JSON.parse(question.correctOptions || "[]"); } catch { return question.correctOption ? [question.correctOption] : []; } })(); const row: Record<string, unknown> = { id: question.id, question_number: index + 1, type: question.questionType, question: safeSpreadsheetCell(question.question), correct_answer: correct.join(","), answer: safeSpreadsheetCell(question.answer), explanation: safeSpreadsheetCell(question.explanation), difficulty: question.difficulty || "", tags: safeSpreadsheetCell((() => { try { return JSON.parse(question.tags || "[]").join(", "); } catch { return ""; } })()) }; options.forEach((option: string, optionIndex: number) => { row[`option_${String.fromCharCode(97 + optionIndex)}`] = safeSpreadsheetCell(option); }); return row; });
     const sheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, "Questions"); XLSX.writeFile(workbook, `${selectedCategory.replace(/[\\/:*?"<>|]/g, "-")}-selected-questions.xlsx`);
+  }
+
+  async function saveQuestionShuffleSettings() {
+    if (savingQuestionShuffle) return;
+    setSavingQuestionShuffle(true);
+    try {
+      const response = await fetch("/api/admin/category-questions/shuffle", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "settings", category: selectedCategory, ...questionShuffleSettings }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return toast(data.error || "Không thể lưu cài đặt xáo trộn.");
+      setQuestionShuffleSettings(data.settings || questionShuffleSettings);
+      toast("Đã lưu cài đặt xáo trộn khi làm bài.");
+    } catch {
+      toast("Không thể kết nối để lưu cài đặt xáo trộn.");
+    } finally {
+      setSavingQuestionShuffle(false);
+    }
+  }
+
+  function previewOptionShuffle(mode: QuestionShuffleMode, selectedOnly = false) {
+    const selectedSet = new Set(selectedQuestionIds);
+    const questions = selectedOnly ? shuffleQuestions.filter((question) => selectedSet.has(question.id)) : shuffleQuestions;
+    if (!questions.length) return toast("Không có câu trắc nghiệm hợp lệ để xáo trộn.");
+    setOptionShufflePreview({ mode, questions, plans: planPermanentOptionShuffle(questions, mode) });
+  }
+
+  async function applyOptionShuffle() {
+    if (!optionShufflePreview || savingQuestionShuffle) return;
+    setSavingQuestionShuffle(true);
+    try {
+      const response = await fetch("/api/admin/category-questions/shuffle", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "apply_options", category: selectedCategory, items: optionShufflePreview.plans.map((plan) => ({ id: plan.id, optionOrder: plan.optionOrder })) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return toast(data.error || "Không thể xáo trộn lựa chọn.");
+      toast(`Đã xáo trộn lựa chọn của ${data.affected} câu hỏi và giữ nguyên đáp án đúng.`);
+      setOptionShufflePreview(null);
+      setSelectedQuestionIds([]);
+      await refreshCategoryQuestions();
+    } catch {
+      toast("Không thể kết nối để xáo trộn lựa chọn.");
+    } finally {
+      setSavingQuestionShuffle(false);
+    }
   }
 
   const categories = useMemo(() => {
@@ -440,14 +503,15 @@ export default function AdminSetsPage() {
   }
 
   async function refreshCategoryQuestions() {
-    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) { setCategoryQuestions([]); return; }
+    if (selectedCategory === ALL_CATEGORIES || selectedCategory === UNCATEGORIZED) { setCategoryQuestions([]); setQuestionShuffleSettings(DEFAULT_QUESTION_SHUFFLE_SETTINGS); return; }
     setQuestionsLoading(true);
     try {
       const res = await fetch(`/api/admin/category-questions?category=${encodeURIComponent(selectedCategory)}`);
-      if (!res.ok) { setCategoryQuestions([]); return; }
+      if (!res.ok) { setCategoryQuestions([]); setQuestionShuffleSettings(DEFAULT_QUESTION_SHUFFLE_SETTINGS); return; }
       const data = await res.json();
       setCategoryQuestions(data.questions || []);
-    } catch { setCategoryQuestions([]); }
+      setQuestionShuffleSettings(data.shuffleSettings || DEFAULT_QUESTION_SHUFFLE_SETTINGS);
+    } catch { setCategoryQuestions([]); setQuestionShuffleSettings(DEFAULT_QUESTION_SHUFFLE_SETTINGS); }
     finally { setQuestionsLoading(false); }
   }
 
@@ -1228,8 +1292,25 @@ export default function AdminSetsPage() {
             <div className="flex items-center gap-2"><button type="button" role="switch" aria-checked={spellCheckEnabled} onClick={() => changeSpellCheck(!spellCheckEnabled)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-bold ${spellCheckEnabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`}>Chính tả: {spellCheckEnabled ? "Bật" : "Tắt"}</button><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span></div>
           </div>
           <div className="mb-4 rounded-xl border border-[#DDD8FF] bg-[#F8F7FF] p-3"><div className="mb-2"><b className="text-xs text-ink">Smart Bulk Import / Export</b><p className="mt-0.5 text-[0.7rem] text-muted">Paste thông minh, Excel, PDF, lịch sử batch và Undo Import.</p></div><QuestionImportExportTools category={selectedCategory} questions={categoryQuestions} onChanged={refreshCategoryQuestions} /></div>
+          <div className="mb-4 rounded-xl border border-[#D8E7E0] bg-[#F7FCF9] p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><b className="text-xs text-ink">Xáo trộn khi làm bài</b><p className="mt-0.5 text-[0.7rem] text-muted">Thứ tự được tạo một lần cho từng lượt làm và giữ nguyên khi tải lại trang.</p></div>
+              <button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-9 !px-3`} disabled={savingQuestionShuffle} onClick={() => void saveQuestionShuffleSettings()}>{savingQuestionShuffle ? "Đang lưu…" : "Lưu cài đặt"}</button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+              <label className="flex cursor-pointer items-center gap-2 font-semibold"><input type="checkbox" checked={questionShuffleSettings.shuffleQuestions} onChange={(event) => setQuestionShuffleSettings((current) => ({ ...current, shuffleQuestions: event.target.checked }))} /> Đảo thứ tự câu hỏi</label>
+              <label className="flex cursor-pointer items-center gap-2 font-semibold"><input type="checkbox" checked={questionShuffleSettings.shuffleOptions} onChange={(event) => setQuestionShuffleSettings((current) => ({ ...current, shuffleOptions: event.target.checked }))} /> Đảo thứ tự đáp án</label>
+              <label className="flex items-center gap-2 font-semibold">Chế độ <select className={`${cx.input} !mb-0 !min-h-8 !w-auto !py-1`} disabled={!questionShuffleSettings.shuffleOptions} value={questionShuffleSettings.shuffleMode} onChange={(event) => setQuestionShuffleSettings((current) => ({ ...current, shuffleMode: event.target.value as QuestionShuffleMode }))}><option value="random">Ngẫu nhiên</option><option value="balanced">Cân bằng vị trí đáp án đúng</option></select></label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#D8E7E0] pt-3">
+              <span className="mr-1 text-[0.7rem] font-bold text-muted">Phân bố đáp án hiện tại:</span>
+              {Object.entries(answerDistribution).map(([label, count]) => <span key={label} className="rounded-full border border-[#CFE0D7] bg-white px-2.5 py-1 text-xs font-bold text-ink">{label}: {count}</span>)}
+              {!shuffleQuestions.length && <span className="text-xs text-muted">Chưa có MCQ hợp lệ.</span>}
+              <div className="ml-auto flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} disabled={!shuffleQuestions.length} onClick={() => previewOptionShuffle("random")}>Preview xáo trộn</button><button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} disabled={!shuffleQuestions.length} onClick={() => previewOptionShuffle("balanced")}>Preview cân bằng đáp án</button></div>
+            </div>
+          </div>
           <div className="mb-4 grid gap-2 rounded-xl border border-line bg-white p-3 sm:grid-cols-3"><label><span className={cx.label}>Tìm nhanh</span><input className={`${cx.input} !mb-0`} type="search" placeholder="Câu hỏi, đáp án, tag…" value={questionQuery} onChange={(event) => { setQuestionQuery(event.target.value); setQuestionPage(0); }} /></label><label><span className={cx.label}>Loại</span><select className={`${cx.input} !mb-0`} value={questionTypeFilter} onChange={(event) => { setQuestionTypeFilter(event.target.value); setQuestionPage(0); }}><option value="all">Tất cả</option><option value="multiple_choice">Trắc nghiệm</option><option value="essay">Tự luận</option><option value="speaking">IELTS Speaking</option></select></label><label><span className={cx.label}>Độ khó</span><select className={`${cx.input} !mb-0`} value={questionDifficultyFilter} onChange={(event) => { setQuestionDifficultyFilter(event.target.value); setQuestionPage(0); }}><option value="all">Tất cả</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option><option value="unset">Chưa đặt</option></select></label></div>
-          {selectedQuestionIds.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#CFC7FF] bg-[#F5F2FF] p-3"><b className="mr-auto text-xs">Đã chọn {selectedQuestionIds.length} câu</b><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkDifficulty} onChange={(event) => setQuestionBulkDifficulty(event.target.value)}><option value="">Độ khó…</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option></select><input className={`${cx.input} !mb-0 !min-h-9 !w-36`} placeholder="tag1, tag2" value={questionBulkTags} onChange={(event) => setQuestionBulkTags(event.target.value)} /><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void updateQuestionBulkMetadata()}>Đổi metadata</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void exportSelectedQuestions()}>Export</button><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkTarget} onChange={(event) => setQuestionBulkTarget(event.target.value)}><option value="">Thư mục đích…</option>{categoryOptions.filter((item) => item.name !== selectedCategory).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("move")}>Move</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("copy")}>Copy</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("duplicate")}>Duplicate</button><button className={`${cx.btn} ${cx.btnDanger} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("delete")}>Delete</button></div>}
+          {selectedQuestionIds.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#CFC7FF] bg-[#F5F2FF] p-3"><b className="mr-auto text-xs">Đã chọn {selectedQuestionIds.length} câu</b><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => previewOptionShuffle("random", true)}>Xáo trộn đáp án</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => previewOptionShuffle("balanced", true)}>Cân bằng vị trí đúng</button><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkDifficulty} onChange={(event) => setQuestionBulkDifficulty(event.target.value)}><option value="">Độ khó…</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option></select><input className={`${cx.input} !mb-0 !min-h-9 !w-36`} placeholder="tag1, tag2" value={questionBulkTags} onChange={(event) => setQuestionBulkTags(event.target.value)} /><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void updateQuestionBulkMetadata()}>Đổi metadata</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void exportSelectedQuestions()}>Export</button><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkTarget} onChange={(event) => setQuestionBulkTarget(event.target.value)}><option value="">Thư mục đích…</option>{categoryOptions.filter((item) => item.name !== selectedCategory).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("move")}>Move</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("copy")}>Copy</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("duplicate")}>Duplicate</button><button className={`${cx.btn} ${cx.btnDanger} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("delete")}>Delete</button></div>}
           <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-3">
             <div className="mb-3">
               <label className={cx.label}>Dạng câu hỏi</label>
@@ -1391,6 +1472,26 @@ export default function AdminSetsPage() {
           </div>
         )}
       </section>
+
+      {optionShufflePreview && (
+        <Modal title={optionShufflePreview.mode === "balanced" ? "Preview cân bằng vị trí đáp án đúng" : "Preview xáo trộn lựa chọn"} onClose={() => { if (!savingQuestionShuffle) setOptionShufflePreview(null); }} wide>
+          <div className="grid gap-4">
+            <div className="grid gap-3 rounded-xl border border-line bg-[#FBFAFE] p-3 sm:grid-cols-2">
+              <div><b className="text-xs text-ink">Phân bố hiện tại</b><div className="mt-2 flex flex-wrap gap-2">{Object.entries(correctAnswerDistribution(optionShufflePreview.questions)).map(([label, count]) => <span key={label} className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-bold">{label}: {count}</span>)}</div></div>
+              <div><b className="text-xs text-ink">Sau khi áp dụng</b><div className="mt-2 flex flex-wrap gap-2">{Object.entries(previewAnswerDistribution).map(([label, count]) => <span key={label} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800">{label}: {count}</span>)}</div></div>
+            </div>
+            <p className="text-xs text-muted">Preview dùng đúng permutation sẽ được gửi lên máy chủ. Nội dung câu hỏi/lựa chọn không đổi; đáp án đúng được remap theo stable option ID. Dưới đây là tối đa 5 câu mẫu.</p>
+            <div className="max-h-[52dvh] space-y-3 overflow-y-auto pr-1">
+              {optionShufflePreview.plans.slice(0, 5).map((plan) => {
+                const question = optionShufflePreview.questions.find((item) => item.id === plan.id);
+                if (!question) return null;
+                return <article key={plan.id} className="rounded-xl border border-line p-3"><b className="block truncate text-xs text-ink">{question.questionText}</b><div className="mt-2 grid gap-3 md:grid-cols-2"><div><span className="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Trước</span><div className="mt-1 space-y-1">{question.options.map((option, index) => <div key={`${plan.id}-before-${index}`} className={`truncate rounded-md px-2 py-1 text-xs ${plan.beforeCorrectPositions.includes(index) ? "bg-amber-50 font-bold text-amber-800" : "bg-[#F7F7FA]"}`}>{optionLetter(index)}. {option}{plan.beforeCorrectPositions.includes(index) ? " ✓" : ""}</div>)}</div></div><div><span className="text-[0.68rem] font-bold uppercase tracking-wide text-muted">Sau</span><div className="mt-1 space-y-1">{plan.optionOrder.map((originalIndex, displayedIndex) => { const option = question.options[originalIndex]; return <div key={`${plan.id}-after-${originalIndex}`} className={`truncate rounded-md px-2 py-1 text-xs ${plan.afterCorrectPositions.includes(displayedIndex) ? "bg-emerald-50 font-bold text-emerald-800" : "bg-[#F7F7FA]"}`}>{optionLetter(displayedIndex)}. {option}{plan.afterCorrectPositions.includes(displayedIndex) ? " ✓" : ""}</div>; })}</div></div></div></article>;
+              })}
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3"><span className="text-xs font-semibold text-muted">Sẽ thay đổi thứ tự lựa chọn của {optionShufflePreview.plans.length} câu. Thao tác không sửa nội dung.</span><div className="flex gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} disabled={savingQuestionShuffle} onClick={() => setOptionShufflePreview(null)}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={savingQuestionShuffle} onClick={() => void applyOptionShuffle()}>{savingQuestionShuffle ? "Đang áp dụng…" : "Áp dụng xáo trộn"}</button></div></div>
+          </div>
+        </Modal>
+      )}
 
       {viewingDocument && (
         <Modal title={viewingDocument.title} onClose={() => setViewingDocument(null)} wide>

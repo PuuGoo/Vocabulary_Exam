@@ -7,6 +7,7 @@ import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { Suspense } from "react";
 import SubjectQuestionPractice, { type SubjectQuestion } from "@/components/SubjectQuestionPractice";
+import { DEFAULT_QUESTION_SHUFFLE_SETTINGS, type QuestionShuffleSettings } from "@/lib/questionShuffle";
 
 type Question = {
   id: number;
@@ -145,6 +146,7 @@ function WritingInner() {
   const [categories, setCategories] = useState<CategoryOpt[]>([]);
   const [catLoading, setCatLoading] = useState(true);
   const [questions, setQuestions] = useState<Question[]>([]);
+  const [shuffleSettings, setShuffleSettings] = useState<QuestionShuffleSettings>(DEFAULT_QUESTION_SHUFFLE_SETTINGS);
   const [loading, setLoading] = useState(true);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -280,11 +282,13 @@ function WritingInner() {
       setShowHint(false);
     setRetryMode(false);
     setElapsed(0);
+    setShuffleSettings(DEFAULT_QUESTION_SHUFFLE_SETTINGS);
     fetch(`/api/category-questions?category=${encodeURIComponent(category)}`)
       .then(async (res) => {
         if (!res.ok) throw new Error();
         const data = await res.json();
         setQuestions(data.questions || []);
+        setShuffleSettings(data.shuffleSettings || DEFAULT_QUESTION_SHUFFLE_SETTINGS);
         // Try server progress first so users keep state across devices
         let serverDraft: { scores: Record<number, number>; attempts: Record<number, number>; currentIndex: number; elapsed: number; savedAt?: number } | null = null;
         try {
@@ -626,7 +630,7 @@ const nextSentence = useCallback(() => {
   if (loading) return <div className={cx.panel}><div className={cx.empty}>Đang tải câu hỏi...</div></div>;
 
   const subjectQuestions = questions.filter((question): question is Question & SubjectQuestion => question.questionType === "multiple_choice" || question.questionType === "essay");
-  if (subjectQuestions.length > 0 && search.get("mode") !== "ielts") return <SubjectQuestionPractice category={category} questions={subjectQuestions} speakingCount={questions.filter((question) => question.questionType === "speaking").length} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={changeSpellCheck} />;
+  if (subjectQuestions.length > 0 && search.get("mode") !== "ielts") return <SubjectQuestionPractice category={category} questions={subjectQuestions} shuffleSettings={shuffleSettings} speakingCount={questions.filter((question) => question.questionType === "speaking").length} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={changeSpellCheck} />;
 
   if (exercises.length === 0) return (
     <div className="max-w-3xl mx-auto">
