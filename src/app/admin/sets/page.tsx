@@ -9,6 +9,7 @@ import DocumentPreview from "@/components/DocumentPreview";
 import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "@/lib/documentDisplay";
 import { SUPPORTED_DOCUMENT_ACCEPT, documentKind, isSupportedDocument } from "@/lib/categoryDocumentFile";
 import QuestionImportExportTools from "@/components/QuestionImportExportTools";
+import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -191,8 +192,8 @@ export default function AdminSetsPage() {
 
   async function exportSelectedQuestions() {
     const selected = categoryQuestions.filter((question) => selectedQuestionIds.includes(question.id)); if (!selected.length) return;
-    const XLSX = await import("xlsx"); const safe = (value: unknown) => { const text = String(value ?? ""); return /^[=+\-@]/.test(text) ? `'${text}` : text; };
-    const rows = selected.map((question, index) => { const options = (() => { try { return JSON.parse(question.options || "[]"); } catch { return []; } })(); const correct = (() => { try { return JSON.parse(question.correctOptions || "[]"); } catch { return question.correctOption ? [question.correctOption] : []; } })(); const row: Record<string, unknown> = { id: question.id, question_number: index + 1, type: question.questionType, question: safe(question.question), correct_answer: correct.join(","), answer: safe(question.answer), explanation: safe(question.explanation), difficulty: question.difficulty || "", tags: (() => { try { return JSON.parse(question.tags || "[]").join(", "); } catch { return ""; } })() }; options.forEach((option: string, optionIndex: number) => { row[`option_${String.fromCharCode(97 + optionIndex)}`] = safe(option); }); return row; });
+    const XLSX = await import("xlsx");
+    const rows = selected.map((question, index) => { const options = (() => { try { return JSON.parse(question.options || "[]"); } catch { return []; } })(); const correct = (() => { try { return JSON.parse(question.correctOptions || "[]"); } catch { return question.correctOption ? [question.correctOption] : []; } })(); const row: Record<string, unknown> = { id: question.id, question_number: index + 1, type: question.questionType, question: safeSpreadsheetCell(question.question), correct_answer: correct.join(","), answer: safeSpreadsheetCell(question.answer), explanation: safeSpreadsheetCell(question.explanation), difficulty: question.difficulty || "", tags: safeSpreadsheetCell((() => { try { return JSON.parse(question.tags || "[]").join(", "); } catch { return ""; } })()) }; options.forEach((option: string, optionIndex: number) => { row[`option_${String.fromCharCode(97 + optionIndex)}`] = safeSpreadsheetCell(option); }); return row; });
     const sheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, "Questions"); XLSX.writeFile(workbook, `${selectedCategory.replace(/[\\/:*?"<>|]/g, "-")}-selected-questions.xlsx`);
   }
 

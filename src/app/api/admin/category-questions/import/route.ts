@@ -10,8 +10,8 @@ import { normalizeQuestionIdentity } from "@/lib/questionImportParser";
 const itemSchema = z.object({
   question: z.string().trim().min(1).max(4096),
   questionType: z.enum(["multiple_choice", "true_false", "essay", "speaking"]),
-  options: z.array(z.string().trim().min(1).max(4096)).max(8).default([]),
-  correctOptions: z.array(z.string().regex(/^[A-H]$/)).max(8).default([]),
+  options: z.array(z.string().trim().min(1).max(4096)).max(26).default([]),
+  correctOptions: z.array(z.string().regex(/^[A-Z]$/)).max(26).default([]),
   answer: z.string().trim().max(16384).default(""), explanation: z.string().trim().max(16384).default(""),
   difficulty: z.enum(["easy", "medium", "hard"]).nullable().default(null),
   tags: z.array(z.string().trim().min(1).max(64)).max(30).default([]),
@@ -19,7 +19,7 @@ const itemSchema = z.object({
   status: z.enum(["ready", "needs_review"]).default("ready"), duplicateAction: z.enum(["skip", "import"]).default("skip"),
 }).superRefine((item, ctx) => {
   if (["multiple_choice", "true_false"].includes(item.questionType) && item.options.length < 2) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "MISSING_OPTIONS" });
-  if (item.correctOptions.some((id) => !item.options["ABCDEFGH".indexOf(id)])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "INVALID_CORRECT_ANSWER" });
+  if (item.correctOptions.some((id) => !item.options[id.charCodeAt(0) - 65])) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "INVALID_CORRECT_ANSWER" });
 });
 const schema = z.object({ category: z.string().trim().min(1).max(128), sourceType: z.enum(["clipboard", "xlsx", "other"]), items: z.array(itemSchema).min(1).max(5000) });
 
