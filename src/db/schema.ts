@@ -497,6 +497,37 @@ export type WordBookmark = typeof wordBookmarks.$inferSelect;
 export type StudySession = typeof studySessions.$inferSelect;
 export type LearningGoal = typeof learningGoals.$inferSelect;
 
+export const questionImportBatches = pgTable(
+  "question_import_batches",
+  {
+    id: serial("id").primaryKey(),
+    category: varchar("category", { length: 128 }).notNull(),
+    sourceType: varchar("source_type", { length: 24 }).notNull(),
+    totalItems: integer("total_items").notNull(),
+    successItems: integer("success_items").notNull().default(0),
+    reviewItems: integer("review_items").notNull().default(0),
+    failedItems: integer("failed_items").notNull().default(0),
+    status: varchar("status", { length: 24 }).notNull().default("completed"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    undoneAt: timestamp("undone_at"),
+  },
+  (table) => ({ categoryIdx: index("question_import_batches_category_idx").on(table.category) }),
+);
+
+export const questionParsingProfiles = pgTable(
+  "question_parsing_profiles",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    config: text("config").notNull().default("{}"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({ ownerNameIdx: uniqueIndex("question_parsing_profiles_owner_name_idx").on(table.createdBy, table.name) }),
+);
+
 export const categoryQuestions = pgTable(
   "category_questions",
   {
@@ -509,6 +540,13 @@ export const categoryQuestions = pgTable(
     questionType: varchar("question_type", { length: 16 }).notNull().default("speaking"),
     options: text("options").notNull().default("[]"),
     correctOption: varchar("correct_option", { length: 1 }),
+    correctOptions: text("correct_options").notNull().default("[]"),
+    explanation: text("explanation").notNull().default(""),
+    difficulty: varchar("difficulty", { length: 16 }),
+    tags: text("tags").notNull().default("[]"),
+    speakingPart: varchar("speaking_part", { length: 16 }),
+    topic: varchar("topic", { length: 256 }),
+    importBatchId: integer("import_batch_id").references(() => questionImportBatches.id, { onDelete: "set null" }),
     order: integer("order").notNull().default(0),
     createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -519,3 +557,4 @@ export const categoryQuestions = pgTable(
   })
 );
 export type DailyActivity = typeof dailyActivities.$inferSelect;
+export type QuestionImportBatch = typeof questionImportBatches.$inferSelect;

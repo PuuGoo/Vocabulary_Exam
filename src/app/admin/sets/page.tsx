@@ -8,6 +8,7 @@ import Modal from "@/components/Modal";
 import DocumentPreview from "@/components/DocumentPreview";
 import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "@/lib/documentDisplay";
 import { SUPPORTED_DOCUMENT_ACCEPT, documentKind, isSupportedDocument } from "@/lib/categoryDocumentFile";
+import QuestionImportExportTools from "@/components/QuestionImportExportTools";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -144,6 +145,14 @@ export default function AdminSetsPage() {
   const [newCorrectOption, setNewCorrectOption] = useState("A");
   const [savingQuestion, setSavingQuestion] = useState(false);
   const [collapsedQuestions, setCollapsedQuestions] = useState<Set<number>>(new Set());
+  const [questionQuery, setQuestionQuery] = useState("");
+  const [questionTypeFilter, setQuestionTypeFilter] = useState("all");
+  const [questionDifficultyFilter, setQuestionDifficultyFilter] = useState("all");
+  const [questionPage, setQuestionPage] = useState(0);
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState<number[]>([]);
+  const [questionBulkTarget, setQuestionBulkTarget] = useState("");
+  const [questionBulkDifficulty, setQuestionBulkDifficulty] = useState("");
+  const [questionBulkTags, setQuestionBulkTags] = useState("");
   const [spellCheckEnabled, setSpellCheckEnabled] = useState(false);
 
   useEffect(() => {
@@ -153,6 +162,38 @@ export default function AdminSetsPage() {
   function changeSpellCheck(enabled: boolean) {
     setSpellCheckEnabled(enabled);
     try { localStorage.setItem(SPELL_CHECK_KEY, enabled ? "on" : "off"); } catch { /* unavailable */ }
+  }
+
+  const filteredCategoryQuestions = useMemo(() => {
+    const query = normalizeSearch(questionQuery);
+    return categoryQuestions.filter((question) => {
+      const options = (() => { try { return JSON.parse(question.options || "[]").join(" "); } catch { return ""; } })();
+      const tags = (() => { try { return JSON.parse(question.tags || "[]").join(" "); } catch { return ""; } })();
+      return (!query || normalizeSearch(`${question.question} ${question.answer || ""} ${options} ${tags}`).includes(query)) && (questionTypeFilter === "all" || question.questionType === questionTypeFilter) && (questionDifficultyFilter === "all" || (question.difficulty || "unset") === questionDifficultyFilter);
+    });
+  }, [categoryQuestions, questionDifficultyFilter, questionQuery, questionTypeFilter]);
+  const QUESTION_PAGE_SIZE = 50;
+  const questionPageCount = Math.max(1, Math.ceil(filteredCategoryQuestions.length / QUESTION_PAGE_SIZE));
+  const pagedCategoryQuestions = filteredCategoryQuestions.slice(questionPage * QUESTION_PAGE_SIZE, (questionPage + 1) * QUESTION_PAGE_SIZE);
+  useEffect(() => { if (questionPage >= questionPageCount) setQuestionPage(questionPageCount - 1); }, [questionPage, questionPageCount]);
+
+  async function runQuestionBulk(action: "delete" | "duplicate" | "move" | "copy") {
+    if (!selectedQuestionIds.length) return;
+    if (action === "delete" && !confirm(`Xóa ${selectedQuestionIds.length} câu hỏi đã chọn?`)) return;
+    if ((action === "move" || action === "copy") && !questionBulkTarget) return toast("Hãy chọn thư mục đích.");
+    try { const response = await fetch("/api/admin/category-questions/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ids: selectedQuestionIds, ...(questionBulkTarget ? { category: questionBulkTarget } : {}) }) }); const data = await response.json(); if (!response.ok) return toast(data.error || "Không thể thực hiện bulk action."); toast(`Đã xử lý ${data.affected} câu hỏi.`); setSelectedQuestionIds([]); await refreshCategoryQuestions(); } catch { toast("Không thể kết nối để xử lý câu hỏi."); }
+  }
+
+  async function updateQuestionBulkMetadata() {
+    if (!selectedQuestionIds.length || (!questionBulkDifficulty && !questionBulkTags.trim())) return toast("Hãy chọn độ khó hoặc nhập tag.");
+    try { const response = await fetch("/api/admin/category-questions/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "metadata", ids: selectedQuestionIds, ...(questionBulkDifficulty ? { difficulty: questionBulkDifficulty } : {}), ...(questionBulkTags.trim() ? { tags: questionBulkTags.split(",").map((tag) => tag.trim()).filter(Boolean) } : {}) }) }); const data = await response.json(); if (!response.ok) return toast(data.error || "Không thể cập nhật metadata."); toast(`Đã cập nhật ${data.affected} câu hỏi.`); setSelectedQuestionIds([]); await refreshCategoryQuestions(); } catch { toast("Không thể kết nối để cập nhật metadata."); }
+  }
+
+  async function exportSelectedQuestions() {
+    const selected = categoryQuestions.filter((question) => selectedQuestionIds.includes(question.id)); if (!selected.length) return;
+    const XLSX = await import("xlsx"); const safe = (value: unknown) => { const text = String(value ?? ""); return /^[=+\-@]/.test(text) ? `'${text}` : text; };
+    const rows = selected.map((question, index) => { const options = (() => { try { return JSON.parse(question.options || "[]"); } catch { return []; } })(); const correct = (() => { try { return JSON.parse(question.correctOptions || "[]"); } catch { return question.correctOption ? [question.correctOption] : []; } })(); const row: Record<string, unknown> = { id: question.id, question_number: index + 1, type: question.questionType, question: safe(question.question), correct_answer: correct.join(","), answer: safe(question.answer), explanation: safe(question.explanation), difficulty: question.difficulty || "", tags: (() => { try { return JSON.parse(question.tags || "[]").join(", "); } catch { return ""; } })() }; options.forEach((option: string, optionIndex: number) => { row[`option_${String.fromCharCode(97 + optionIndex)}`] = safe(option); }); return row; });
+    const sheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, sheet, "Questions"); XLSX.writeFile(workbook, `${selectedCategory.replace(/[\\/:*?"<>|]/g, "-")}-selected-questions.xlsx`);
   }
 
   const categories = useMemo(() => {
@@ -1185,6 +1226,9 @@ export default function AdminSetsPage() {
             <div><h3 className="text-sm font-bold text-ink">Ngân hàng câu hỏi</h3><p className="mt-1 text-xs text-muted">Hỗ trợ IELTS Speaking, trắc nghiệm A–D và tự luận có đáp án mẫu.</p></div>
             <div className="flex items-center gap-2"><button type="button" role="switch" aria-checked={spellCheckEnabled} onClick={() => changeSpellCheck(!spellCheckEnabled)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-bold ${spellCheckEnabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`}>Chính tả: {spellCheckEnabled ? "Bật" : "Tắt"}</button><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span></div>
           </div>
+          <div className="mb-4 rounded-xl border border-[#DDD8FF] bg-[#F8F7FF] p-3"><div className="mb-2"><b className="text-xs text-ink">Smart Bulk Import / Export</b><p className="mt-0.5 text-[0.7rem] text-muted">Paste thông minh, Excel, PDF, lịch sử batch và Undo Import.</p></div><QuestionImportExportTools category={selectedCategory} questions={categoryQuestions} onChanged={refreshCategoryQuestions} /></div>
+          <div className="mb-4 grid gap-2 rounded-xl border border-line bg-white p-3 sm:grid-cols-3"><label><span className={cx.label}>Tìm nhanh</span><input className={`${cx.input} !mb-0`} type="search" placeholder="Câu hỏi, đáp án, tag…" value={questionQuery} onChange={(event) => { setQuestionQuery(event.target.value); setQuestionPage(0); }} /></label><label><span className={cx.label}>Loại</span><select className={`${cx.input} !mb-0`} value={questionTypeFilter} onChange={(event) => { setQuestionTypeFilter(event.target.value); setQuestionPage(0); }}><option value="all">Tất cả</option><option value="multiple_choice">Trắc nghiệm</option><option value="essay">Tự luận</option><option value="speaking">IELTS Speaking</option></select></label><label><span className={cx.label}>Độ khó</span><select className={`${cx.input} !mb-0`} value={questionDifficultyFilter} onChange={(event) => { setQuestionDifficultyFilter(event.target.value); setQuestionPage(0); }}><option value="all">Tất cả</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option><option value="unset">Chưa đặt</option></select></label></div>
+          {selectedQuestionIds.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#CFC7FF] bg-[#F5F2FF] p-3"><b className="mr-auto text-xs">Đã chọn {selectedQuestionIds.length} câu</b><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkDifficulty} onChange={(event) => setQuestionBulkDifficulty(event.target.value)}><option value="">Độ khó…</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option></select><input className={`${cx.input} !mb-0 !min-h-9 !w-36`} placeholder="tag1, tag2" value={questionBulkTags} onChange={(event) => setQuestionBulkTags(event.target.value)} /><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void updateQuestionBulkMetadata()}>Đổi metadata</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void exportSelectedQuestions()}>Export</button><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkTarget} onChange={(event) => setQuestionBulkTarget(event.target.value)}><option value="">Thư mục đích…</option>{categoryOptions.filter((item) => item.name !== selectedCategory).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("move")}>Move</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("copy")}>Copy</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("duplicate")}>Duplicate</button><button className={`${cx.btn} ${cx.btnDanger} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("delete")}>Delete</button></div>}
           <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-3">
             <div className="mb-3">
               <label className={cx.label}>Dạng câu hỏi</label>
@@ -1219,18 +1263,24 @@ export default function AdminSetsPage() {
           </div>
           {questionsLoading ? <p className="text-xs text-muted">Đang tải câu hỏi...</p> : categoryQuestions.length === 0 ? (
             <p className="text-sm text-muted">Thư mục này chưa có câu hỏi nào. Hãy thêm câu hỏi ở phía trên.</p>
+          ) : filteredCategoryQuestions.length === 0 ? (
+            <p className="text-sm text-muted">Không có câu hỏi phù hợp với bộ lọc.</p>
           ) : (
             <div className="space-y-3">
-              {categoryQuestions.map((q, index) => {
+              {pagedCategoryQuestions.map((q) => {
+                const index = categoryQuestions.indexOf(q);
                 const isEditing = editingQuestionId === q.id;
                 const isCollapsed = collapsedQuestions.has(q.id);
                 return (
                   <article key={q.id} className={`rounded-xl border ${isEditing ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line bg-[#FBFAFE]"} p-3`}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
+                        <input type="checkbox" checked={selectedQuestionIds.includes(q.id)} aria-label={`Chọn câu hỏi ${index + 1}`} onChange={(event) => setSelectedQuestionIds((current) => event.target.checked ? [...current, q.id] : current.filter((id) => id !== q.id))} />
                         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-xs font-bold text-[#6550DB]">{index + 1}</span>
                         <span className="text-xs font-bold text-muted">Câu hỏi #{q.id}</span>
                         <span className="rounded-full bg-white px-2 py-0.5 text-[0.65rem] font-bold text-[#6550DB]">{q.questionType === "multiple_choice" ? "Trắc nghiệm" : q.questionType === "essay" ? "Tự luận" : "Speaking"}</span>
+                        {q.difficulty && <span className="rounded-full bg-[#FFF6D9] px-2 py-0.5 text-[0.65rem] font-bold text-[#8A6814]">{q.difficulty === "easy" ? "Dễ" : q.difficulty === "medium" ? "Trung bình" : "Khó"}</span>}
+                        {q.speakingPart && <span className="rounded-full bg-[#E7F7F2] px-2 py-0.5 text-[0.65rem] font-bold text-[#277A4B]">{String(q.speakingPart).replace("part_", "Part ")}{q.topic ? ` · ${q.topic}` : ""}</span>}
                       </div>
                       <div className="flex items-center gap-1">
                         <button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={index === 0} onClick={() => moveQuestionOrder(q.id, -1)} aria-label="Lên trước">↑</button>
@@ -1256,7 +1306,9 @@ export default function AdminSetsPage() {
                     ) : (
                       <div>
                         <div className="prose prose-sm max-w-none text-sm leading-relaxed whitespace-pre-wrap">{q.question}</div>
-                        {q.questionType === "multiple_choice" && !isCollapsed && <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{(() => { try { return JSON.parse(q.options || "[]"); } catch { return []; } })().map((option: string, optionIndex: number) => <div key={optionIndex} className={`rounded-lg border px-3 py-2 text-sm ${q.correctOption === String.fromCharCode(65 + optionIndex) ? "border-green-300 bg-green-50" : "border-line bg-white"}`}><b>{String.fromCharCode(65 + optionIndex)}.</b> {option}</div>)}</div>}
+                        {q.questionType === "multiple_choice" && !isCollapsed && <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{(() => { try { const options = JSON.parse(q.options || "[]"); const correct = JSON.parse(q.correctOptions || "[]"); return options.map((option: string, optionIndex: number) => <div key={optionIndex} className={`rounded-lg border px-3 py-2 text-sm ${(correct.length ? correct : [q.correctOption]).includes(String.fromCharCode(65 + optionIndex)) ? "border-green-300 bg-green-50" : "border-line bg-white"}`}><b>{String.fromCharCode(65 + optionIndex)}.</b> {option}</div>); } catch { return null; } })()}</div>}
+                        {!isCollapsed && (() => { try { const tags = JSON.parse(q.tags || "[]"); return tags.length ? <div className="mt-2 flex flex-wrap gap-1">{tags.map((tag: string) => <span key={tag} className="rounded-full bg-[#F1EFF8] px-2 py-0.5 text-[0.65rem] text-muted">#{tag}</span>)}</div> : null; } catch { return null; } })()}
+                        {!isCollapsed && q.explanation && <div className="mt-2 line-clamp-2 rounded-lg bg-white px-3 py-2 text-xs text-muted"><b>Giải thích:</b> {q.explanation}</div>}
                         {q.answer && !isCollapsed && (
                           <div className="mt-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2">
                             <div className="mb-1 text-[0.7rem] font-bold uppercase tracking-wider text-golddark">Gợi ý trả lời mẫu</div>
@@ -1273,6 +1325,7 @@ export default function AdminSetsPage() {
                   </article>
                 );
               })}
+              <div className="flex items-center justify-between gap-3 pt-2"><span className="text-xs text-muted">Hiển thị {questionPage * QUESTION_PAGE_SIZE + 1}–{Math.min((questionPage + 1) * QUESTION_PAGE_SIZE, filteredCategoryQuestions.length)} / {filteredCategoryQuestions.length}</span><div className="flex gap-2"><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} disabled={questionPage === 0} onClick={() => setQuestionPage((page) => page - 1)}>Trước</button><span className="flex items-center text-xs font-bold">{questionPage + 1}/{questionPageCount}</span><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} disabled={questionPage >= questionPageCount - 1} onClick={() => setQuestionPage((page) => page + 1)}>Sau</button></div></div>
             </div>
           )}
         </section>

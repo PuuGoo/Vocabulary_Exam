@@ -10,11 +10,12 @@ export type SubjectQuestion = {
   answer: string;
   questionType: "multiple_choice" | "essay";
   options: string[];
-  correctOption: "A" | "B" | "C" | "D" | null;
+  correctOption: string | null;
+  correctOptions: string[];
+  explanation: string;
 };
 
 type Mode = "overview" | "multiple_choice" | "essay" | "final";
-const LETTERS = ["A", "B", "C", "D"] as const;
 
 export default function SubjectQuestionPractice({ category, questions, speakingCount = 0, spellCheckEnabled, onSpellCheckChange }: { category: string; questions: SubjectQuestion[]; speakingCount?: number; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void }) {
   const router = useRouter();
@@ -50,9 +51,9 @@ function ModeCard({ title, count, detail, action, disabled, featured, onClick }:
 }
 
 function MultipleChoiceQuiz({ title, questions, onBack }: { title: string; questions: SubjectQuestion[]; onBack: () => void }) {
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, string[]>>({});
   const [submitted, setSubmitted] = useState(false);
-  const score = questions.filter((question) => answers[question.id] === question.correctOption).length;
+  const score = questions.filter((question) => { const expected = question.correctOptions?.length ? question.correctOptions : question.correctOption ? [question.correctOption] : []; const selected = answers[question.id] || []; return expected.length === selected.length && expected.every((value) => selected.includes(value)); }).length;
   function restart() { setAnswers({}); setSubmitted(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   return <div className="mx-auto max-w-3xl space-y-4">
@@ -60,13 +61,15 @@ function MultipleChoiceQuiz({ title, questions, onBack }: { title: string; quest
     {submitted && <div className={`rounded-2xl border p-5 text-center ${score === questions.length ? "border-green-300 bg-green-50" : "border-[#CFC7FF] bg-[#F5F2FF]"}`}><p className="text-sm font-bold text-muted">Kết quả</p><p className="mt-1 text-4xl font-extrabold text-[#6550DB]">{score}/{questions.length}</p><p className="mt-1 text-sm text-muted">{Math.round(score / Math.max(1, questions.length) * 100)}% câu trả lời đúng</p></div>}
     {questions.map((question, questionIndex) => <article key={question.id} className="rounded-2xl border border-line bg-white p-5">
       <div className="mb-4 flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-xs font-extrabold text-[#6550DB]">{questionIndex + 1}</span><h2 className="pt-1 text-sm font-bold leading-6 text-ink whitespace-pre-wrap">{question.question}</h2></div>
-      <div className="grid gap-2">{LETTERS.map((letter, optionIndex) => {
-        const selected = answers[question.id] === letter;
-        const correct = submitted && question.correctOption === letter;
+      <div className="grid gap-2">{question.options.map((option, optionIndex) => {
+        const letter = String.fromCharCode(65 + optionIndex); const selectedAnswers = answers[question.id] || [];
+        const selected = selectedAnswers.includes(letter);
+        const correctAnswers = question.correctOptions?.length ? question.correctOptions : question.correctOption ? [question.correctOption] : [];
+        const correct = submitted && correctAnswers.includes(letter);
         const wrong = submitted && selected && !correct;
-        return <button key={letter} disabled={submitted} onClick={() => setAnswers((current) => ({ ...current, [question.id]: letter }))} className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${correct ? "border-green-400 bg-green-50 text-green-800" : wrong ? "border-red-400 bg-red-50 text-red-800" : selected ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line hover:border-[#BDB3FF] hover:bg-[#FBFAFE]"}`}><b className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white">{letter}</b><span>{question.options[optionIndex]}</span></button>;
+        return <button key={letter} disabled={submitted} onClick={() => setAnswers((current) => ({ ...current, [question.id]: selected ? selectedAnswers.filter((value) => value !== letter) : [...selectedAnswers, letter] }))} className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${correct ? "border-green-400 bg-green-50 text-green-800" : wrong ? "border-red-400 bg-red-50 text-red-800" : selected ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line hover:border-[#BDB3FF] hover:bg-[#FBFAFE]"}`}><b className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white">{letter}</b><span>{option}</span></button>;
       })}</div>
-      {submitted && question.answer && <div className="mt-3 rounded-xl border border-dashed border-gold bg-goldpale/30 p-3 text-sm leading-6"><b className="block text-xs uppercase text-golddark">Giải thích đáp án</b>{question.answer}</div>}
+      {submitted && (question.explanation || question.answer) && <div className="mt-3 rounded-xl border border-dashed border-gold bg-goldpale/30 p-3 text-sm leading-6"><b className="block text-xs uppercase text-golddark">Giải thích đáp án</b>{question.explanation || question.answer}</div>}
     </article>)}
     <div className="sticky bottom-3 flex gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-lg backdrop-blur">{submitted ? <><button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={onBack}>Hoàn thành</button></> : <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={Object.keys(answers).length !== questions.length} onClick={() => { setSubmitted(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{Object.keys(answers).length === questions.length ? "Nộp bài và xem điểm" : `Còn ${questions.length - Object.keys(answers).length} câu chưa chọn`}</button>}</div>
   </div>;

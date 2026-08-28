@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { categoryQuestions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { ensureQuestionImportSchema } from "@/lib/questionImportDb";
 
 const listSchema = z.object({ category: z.string().trim().min(1).max(128) });
 const createSchema = z.object({
@@ -12,13 +13,19 @@ const createSchema = z.object({
   answer: z.string().trim().max(16384).default(""),
   phonetic: z.string().trim().max(4096).nullable().optional(),
   vnMeaning: z.string().trim().max(4096).nullable().optional(),
-  questionType: z.enum(["speaking", "multiple_choice", "essay"]).default("speaking"),
-  options: z.array(z.string().trim().min(1).max(4096)).max(4).default([]),
+  questionType: z.enum(["speaking", "multiple_choice", "true_false", "essay"]).default("speaking"),
+  options: z.array(z.string().trim().min(1).max(4096)).max(8).default([]),
   correctOption: z.enum(["A", "B", "C", "D"]).nullable().optional(),
+  correctOptions: z.array(z.string().regex(/^[A-H]$/)).max(8).default([]),
+  explanation: z.string().trim().max(16384).default(""),
+  difficulty: z.enum(["easy", "medium", "hard"]).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).max(30).default([]),
+  speakingPart: z.enum(["part_1", "part_2", "part_3"]).nullable().optional(),
+  topic: z.string().trim().max(256).nullable().optional(),
   order: z.number().int().nonnegative().default(0),
 }).superRefine((data, ctx) => {
-  if (data.questionType === "multiple_choice" && (data.options.length !== 4 || !data.correctOption)) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Câu trắc nghiệm cần đủ 4 lựa chọn và đáp án đúng." });
+  if (["multiple_choice", "true_false"].includes(data.questionType) && data.options.length < 2) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Câu trắc nghiệm cần ít nhất 2 lựa chọn." });
   }
 });
 const updateSchema = z.object({
@@ -27,9 +34,15 @@ const updateSchema = z.object({
   answer: z.string().trim().max(16384).optional(),
   phonetic: z.string().trim().max(4096).nullable().optional(),
   vnMeaning: z.string().trim().max(4096).nullable().optional(),
-  questionType: z.enum(["speaking", "multiple_choice", "essay"]).optional(),
-  options: z.array(z.string().trim().min(1).max(4096)).max(4).optional(),
+  questionType: z.enum(["speaking", "multiple_choice", "true_false", "essay"]).optional(),
+  options: z.array(z.string().trim().min(1).max(4096)).max(8).optional(),
   correctOption: z.enum(["A", "B", "C", "D"]).nullable().optional(),
+  correctOptions: z.array(z.string().regex(/^[A-H]$/)).max(8).optional(),
+  explanation: z.string().trim().max(16384).optional(),
+  difficulty: z.enum(["easy", "medium", "hard"]).nullable().optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).max(30).optional(),
+  speakingPart: z.enum(["part_1", "part_2", "part_3"]).nullable().optional(),
+  topic: z.string().trim().max(256).nullable().optional(),
   order: z.number().int().nonnegative().optional(),
 });
 const deleteSchema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) });
@@ -60,6 +73,7 @@ async function ensureTable() {
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "question_type" varchar(16) DEFAULT 'speaking' NOT NULL;`);
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "options" text DEFAULT '[]' NOT NULL;`);
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "correct_option" varchar(1);`);
+  await ensureQuestionImportSchema();
   try {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "category_questions_category_idx" ON "category_questions" USING btree ("category");`);
   } catch { /* index may already exist */ }
@@ -98,7 +112,7 @@ export async function POST(request: NextRequest) {
   const nextOrder = (maxRow?.maxOrder ?? -1) + 1;
   const [question] = await db
     .insert(categoryQuestions)
-    .values({ ...parsed.data, options: JSON.stringify(parsed.data.options), order: nextOrder, createdBy: session.userId })
+    .values({ ...parsed.data, options: JSON.stringify(parsed.data.options), correctOptions: JSON.stringify(parsed.data.correctOptions.length ? parsed.data.correctOptions : parsed.data.correctOption ? [parsed.data.correctOption] : []), tags: JSON.stringify(parsed.data.tags), order: nextOrder, createdBy: session.userId })
     .returning();
   return NextResponse.json({ question }, { status: 201 });
 }
@@ -109,8 +123,8 @@ export async function PATCH(request: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu cập nhật không hợp lệ." }, { status: 400 });
-  const { id, options, ...update } = parsed.data;
-  const storedUpdate = { ...update, ...(options ? { options: JSON.stringify(options) } : {}) };
+  const { id, options, correctOptions, tags, ...update } = parsed.data;
+  const storedUpdate = { ...update, ...(options ? { options: JSON.stringify(options) } : {}), ...(correctOptions ? { correctOptions: JSON.stringify(correctOptions), correctOption: correctOptions[0] || update.correctOption || null } : {}), ...(tags ? { tags: JSON.stringify(tags) } : {}) };
   if (Object.keys(storedUpdate).length === 0) return NextResponse.json({ error: "Không có dữ liệu cập nhật." }, { status: 400 });
   const [question] = await db
     .update(categoryQuestions)
