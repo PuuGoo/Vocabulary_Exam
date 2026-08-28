@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryQuestions } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { ensureQuestionImportSchema, parseJsonArray } from "@/lib/questionImportDb";
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -12,6 +13,7 @@ export async function GET(request: NextRequest) {
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "question_type" varchar(16) DEFAULT 'speaking' NOT NULL;`);
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "options" text DEFAULT '[]' NOT NULL;`);
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "correct_option" varchar(1);`);
+  await ensureQuestionImportSchema();
 
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
@@ -27,6 +29,12 @@ export async function GET(request: NextRequest) {
       questionType: categoryQuestions.questionType,
       options: categoryQuestions.options,
       correctOption: categoryQuestions.correctOption,
+      correctOptions: categoryQuestions.correctOptions,
+      explanation: categoryQuestions.explanation,
+      difficulty: categoryQuestions.difficulty,
+      tags: categoryQuestions.tags,
+      speakingPart: categoryQuestions.speakingPart,
+      topic: categoryQuestions.topic,
     })
     .from(categoryQuestions)
     .where(eq(categoryQuestions.category, category))
@@ -35,5 +43,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ questions: questions.map((question) => ({
     ...question,
     options: (() => { try { return JSON.parse(question.options); } catch { return []; } })(),
+    correctOptions: parseJsonArray(question.correctOptions).length ? parseJsonArray(question.correctOptions) : question.correctOption ? [question.correctOption] : [],
+    tags: parseJsonArray(question.tags),
   })) });
 }

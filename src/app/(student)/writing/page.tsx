@@ -16,7 +16,9 @@ type Question = {
   answer: string;
   questionType: "speaking" | "multiple_choice" | "essay";
   options: string[];
-  correctOption: "A" | "B" | "C" | "D" | null;
+  correctOption: string | null;
+  correctOptions: string[];
+  explanation: string;
 };
 
 type SentenceExercise = {
