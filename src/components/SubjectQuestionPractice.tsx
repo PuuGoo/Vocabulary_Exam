@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
+import { createQuestionAttempt, DEFAULT_QUESTION_SHUFFLE_SETTINGS, gradeStableOptions, isQuestionAttemptValid, optionLetter, resolveQuestionAttempt, type QuestionAttempt, type QuestionShuffleSettings } from "@/lib/questionShuffle";
 
 export type SubjectQuestion = {
   id: number;
@@ -17,15 +18,15 @@ export type SubjectQuestion = {
 
 type Mode = "overview" | "multiple_choice" | "essay" | "final";
 
-export default function SubjectQuestionPractice({ category, questions, speakingCount = 0, spellCheckEnabled, onSpellCheckChange }: { category: string; questions: SubjectQuestion[]; speakingCount?: number; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void }) {
+export default function SubjectQuestionPractice({ category, questions, shuffleSettings = DEFAULT_QUESTION_SHUFFLE_SETTINGS, speakingCount = 0, spellCheckEnabled, onSpellCheckChange }: { category: string; questions: SubjectQuestion[]; shuffleSettings?: QuestionShuffleSettings; speakingCount?: number; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("overview");
   const multipleChoice = useMemo(() => questions.filter((question) => question.questionType === "multiple_choice"), [questions]);
   const essays = useMemo(() => questions.filter((question) => question.questionType === "essay"), [questions]);
   const finalQuestions = useMemo(() => multipleChoice.slice(-10), [multipleChoice]);
 
-  if (mode === "multiple_choice") return <MultipleChoiceQuiz title="Luyện trắc nghiệm" questions={multipleChoice} onBack={() => setMode("overview")} />;
-  if (mode === "final") return <MultipleChoiceQuiz title={`Bài tổng hợp · ${finalQuestions.length} câu trắc nghiệm cuối`} questions={finalQuestions} onBack={() => setMode("overview")} />;
+  if (mode === "multiple_choice") return <MultipleChoiceQuiz category={category} attemptKind="all" title="Luyện trắc nghiệm" questions={multipleChoice} shuffleSettings={shuffleSettings} onBack={() => setMode("overview")} />;
+  if (mode === "final") return <MultipleChoiceQuiz category={category} attemptKind="final" title={`Bài tổng hợp · ${finalQuestions.length} câu trắc nghiệm cuối`} questions={finalQuestions} shuffleSettings={shuffleSettings} onBack={() => setMode("overview")} />;
   if (mode === "essay") return <EssayPractice questions={essays} onBack={() => setMode("overview")} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={onSpellCheckChange} />;
 
   return <div className="mx-auto max-w-4xl space-y-5">
@@ -50,28 +51,38 @@ function ModeCard({ title, count, detail, action, disabled, featured, onClick }:
   </article>;
 }
 
-function MultipleChoiceQuiz({ title, questions, onBack }: { title: string; questions: SubjectQuestion[]; onBack: () => void }) {
+function attemptStorageKey(category: string, kind: "all" | "final") { return `lexora-subject-quiz-attempt-v1:${category}:${kind}`; }
+function loadAttempt(key: string, questions: SubjectQuestion[], settings: QuestionShuffleSettings) {
+  try { const value = JSON.parse(localStorage.getItem(key) || "null"); if (isQuestionAttemptValid(value, questions, settings)) return value; } catch { /* localStorage is optional */ }
+  return createQuestionAttempt(questions, settings);
+}
+
+function MultipleChoiceQuiz({ category, attemptKind, title, questions, shuffleSettings, onBack }: { category: string; attemptKind: "all" | "final"; title: string; questions: SubjectQuestion[]; shuffleSettings: QuestionShuffleSettings; onBack: () => void }) {
+  const storageKey = attemptStorageKey(category, attemptKind);
+  const [attempt, setAttempt] = useState<QuestionAttempt>(() => loadAttempt(storageKey, questions, shuffleSettings));
   const [answers, setAnswers] = useState<Record<number, string[]>>({});
   const [submitted, setSubmitted] = useState(false);
-  const score = questions.filter((question) => { const expected = question.correctOptions?.length ? question.correctOptions : question.correctOption ? [question.correctOption] : []; const selected = answers[question.id] || []; return expected.length === selected.length && expected.every((value) => selected.includes(value)); }).length;
-  function restart() { setAnswers({}); setSubmitted(false); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  useEffect(() => { if (!isQuestionAttemptValid(attempt, questions, shuffleSettings)) setAttempt(createQuestionAttempt(questions, shuffleSettings)); }, [attempt, questions, shuffleSettings]);
+  useEffect(() => { try { localStorage.setItem(storageKey, JSON.stringify(attempt)); } catch { /* localStorage is optional */ } }, [attempt, storageKey]);
+  const displayQuestions = useMemo(() => resolveQuestionAttempt(questions, attempt), [attempt, questions]);
+  const score = displayQuestions.filter((question) => gradeStableOptions(question.correctOptionIds, answers[question.id] || [])).length;
+  function restart() { const next = createQuestionAttempt(questions, shuffleSettings); setAttempt(next); setAnswers({}); setSubmitted(false); try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* localStorage is optional */ } window.scrollTo({ top: 0, behavior: "smooth" }); }
 
   return <div className="mx-auto max-w-3xl space-y-4">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-extrabold text-ink">{title}</h1><p className="mt-1 text-xs text-muted">Đã chọn {Object.keys(answers).length}/{questions.length} câu</p></div><button className={`${cx.btn} ${cx.btnGhost}`} onClick={onBack}>← Chọn dạng khác</button></div>
-    {submitted && <div className={`rounded-2xl border p-5 text-center ${score === questions.length ? "border-green-300 bg-green-50" : "border-[#CFC7FF] bg-[#F5F2FF]"}`}><p className="text-sm font-bold text-muted">Kết quả</p><p className="mt-1 text-4xl font-extrabold text-[#6550DB]">{score}/{questions.length}</p><p className="mt-1 text-sm text-muted">{Math.round(score / Math.max(1, questions.length) * 100)}% câu trả lời đúng</p></div>}
-    {questions.map((question, questionIndex) => <article key={question.id} className="rounded-2xl border border-line bg-white p-5">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-xl font-extrabold text-ink">{title}</h1><p className="mt-1 text-xs text-muted">Đã chọn {Object.keys(answers).length}/{displayQuestions.length} câu · {shuffleSettings.shuffleQuestions ? "đã đảo câu hỏi" : "thứ tự gốc"} · {shuffleSettings.shuffleOptions ? shuffleSettings.shuffleMode === "balanced" ? "đáp án cân bằng" : "đã đảo đáp án" : "đáp án gốc"}</p></div><button className={`${cx.btn} ${cx.btnGhost}`} onClick={onBack}>← Chọn dạng khác</button></div>
+    {submitted && <div className={`rounded-2xl border p-5 text-center ${score === displayQuestions.length ? "border-green-300 bg-green-50" : "border-[#CFC7FF] bg-[#F5F2FF]"}`}><p className="text-sm font-bold text-muted">Kết quả</p><p className="mt-1 text-4xl font-extrabold text-[#6550DB]">{score}/{displayQuestions.length}</p><p className="mt-1 text-sm text-muted">{Math.round(score / Math.max(1, displayQuestions.length) * 100)}% câu trả lời đúng</p></div>}
+    {displayQuestions.map((question, questionIndex) => <article key={question.id} className="rounded-2xl border border-line bg-white p-5">
       <div className="mb-4 flex items-start gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#EFECFF] text-xs font-extrabold text-[#6550DB]">{questionIndex + 1}</span><h2 className="pt-1 text-sm font-bold leading-6 text-ink whitespace-pre-wrap">{question.question}</h2></div>
-      <div className="grid gap-2">{question.options.map((option, optionIndex) => {
-        const letter = String.fromCharCode(65 + optionIndex); const selectedAnswers = answers[question.id] || [];
-        const selected = selectedAnswers.includes(letter);
-        const correctAnswers = question.correctOptions?.length ? question.correctOptions : question.correctOption ? [question.correctOption] : [];
-        const correct = submitted && correctAnswers.includes(letter);
+      <div className="grid gap-2">{question.displayOptions.map((option, optionIndex) => {
+        const letter = optionLetter(optionIndex); const selectedAnswers = answers[question.id] || [];
+        const selected = selectedAnswers.includes(option.id);
+        const correct = submitted && question.correctOptionIds.includes(option.id);
         const wrong = submitted && selected && !correct;
-        return <button key={letter} disabled={submitted} onClick={() => setAnswers((current) => ({ ...current, [question.id]: selected ? selectedAnswers.filter((value) => value !== letter) : [...selectedAnswers, letter] }))} className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${correct ? "border-green-400 bg-green-50 text-green-800" : wrong ? "border-red-400 bg-red-50 text-red-800" : selected ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line hover:border-[#BDB3FF] hover:bg-[#FBFAFE]"}`}><b className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white">{letter}</b><span>{option}</span></button>;
+        return <button key={option.id} disabled={submitted} onClick={() => setAnswers((current) => ({ ...current, [question.id]: selected ? selectedAnswers.filter((value) => value !== option.id) : [...selectedAnswers, option.id] }))} className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 py-2 text-left text-sm transition ${correct ? "border-green-400 bg-green-50 text-green-800" : wrong ? "border-red-400 bg-red-50 text-red-800" : selected ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line hover:border-[#BDB3FF] hover:bg-[#FBFAFE]"}`}><b className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white">{letter}</b><span>{option.text}</span></button>;
       })}</div>
       {submitted && (question.explanation || question.answer) && <div className="mt-3 rounded-xl border border-dashed border-gold bg-goldpale/30 p-3 text-sm leading-6"><b className="block text-xs uppercase text-golddark">Giải thích đáp án</b>{question.explanation || question.answer}</div>}
     </article>)}
-    <div className="sticky bottom-3 flex gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-lg backdrop-blur">{submitted ? <><button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={onBack}>Hoàn thành</button></> : <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={Object.keys(answers).length !== questions.length} onClick={() => { setSubmitted(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{Object.keys(answers).length === questions.length ? "Nộp bài và xem điểm" : `Còn ${questions.length - Object.keys(answers).length} câu chưa chọn`}</button>}</div>
+    <div className="sticky bottom-3 flex gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-lg backdrop-blur">{submitted ? <><button className={`${cx.btn} ${cx.btnGold} flex-1`} onClick={restart}>Làm lượt mới</button><button className={`${cx.btn} ${cx.btnGhost} flex-1`} onClick={onBack}>Hoàn thành</button></> : <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={Object.keys(answers).length !== displayQuestions.length} onClick={() => { setSubmitted(true); window.scrollTo({ top: 0, behavior: "smooth" }); }}>{Object.keys(answers).length === displayQuestions.length ? "Nộp bài và xem điểm" : `Còn ${displayQuestions.length - Object.keys(answers).length} câu chưa chọn`}</button>}</div>
   </div>;
 }
 

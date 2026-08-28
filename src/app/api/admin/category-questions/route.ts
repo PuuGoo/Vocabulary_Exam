@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { categoryQuestions } from "@/db/schema";
+import { categoryQuestions, vocabCategories } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { ensureQuestionImportSchema } from "@/lib/questionImportDb";
+import { ensureQuestionShuffleSchema } from "@/lib/questionShuffleDb";
 
 const listSchema = z.object({ category: z.string().trim().min(1).max(128) });
 const createSchema = z.object({
@@ -74,6 +75,7 @@ async function ensureTable() {
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "options" text DEFAULT '[]' NOT NULL;`);
   await db.execute(sql`ALTER TABLE "category_questions" ADD COLUMN IF NOT EXISTS "correct_option" varchar(1);`);
   await ensureQuestionImportSchema();
+  await ensureQuestionShuffleSchema();
   try {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "category_questions_category_idx" ON "category_questions" USING btree ("category");`);
   } catch { /* index may already exist */ }
@@ -89,12 +91,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const parsed = listSchema.safeParse({ category: searchParams.get("category") });
   if (!parsed.success) return NextResponse.json({ error: "Thiếu tham số category." }, { status: 400 });
-  const questions = await db
+  const [questions, [categorySettings]] = await Promise.all([db
     .select()
     .from(categoryQuestions)
     .where(eq(categoryQuestions.category, parsed.data.category))
-    .orderBy(asc(categoryQuestions.order), asc(categoryQuestions.id));
-  return NextResponse.json({ questions });
+    .orderBy(asc(categoryQuestions.order), asc(categoryQuestions.id)), db.select({ shuffleQuestions: vocabCategories.shuffleQuestions, shuffleOptions: vocabCategories.shuffleOptions, shuffleMode: vocabCategories.shuffleMode }).from(vocabCategories).where(eq(vocabCategories.name, parsed.data.category)).limit(1)]);
+  return NextResponse.json({ questions, shuffleSettings: { shuffleQuestions: categorySettings?.shuffleQuestions ?? false, shuffleOptions: categorySettings?.shuffleOptions ?? false, shuffleMode: categorySettings?.shuffleMode === "balanced" ? "balanced" : "random" } });
 }
 
 export async function POST(request: NextRequest) {
