@@ -65,6 +65,7 @@ export function parseQuestionSpreadsheetRows(
       speakingPart: (["part_1", "part_2", "part_3"].includes(speakingPartValue) ? speakingPartValue : "") as ParsedQuestion["speakingPart"],
       topic: String(row.topic || "").trim(),
       confidence: 0,
+      structurallyValid: false,
       status: "needs_review",
       issues: [],
     };

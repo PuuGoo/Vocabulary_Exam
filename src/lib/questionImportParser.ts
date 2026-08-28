@@ -22,8 +22,11 @@ export type ParsedQuestion = {
   speakingPart: "part_1" | "part_2" | "part_3" | "";
   topic: string;
   confidence: number;
+  structurallyValid: boolean;
   status: ImportStatus;
   issues: ImportIssueCode[];
+  detectedAnswer?: string;
+  answerKeyAnswer?: string;
   duplicateOf?: { id?: number; question: string; similarity: number };
 };
 
@@ -113,8 +116,10 @@ export function revalidateParsedQuestion(question: ParsedQuestion): ParsedQuesti
   const preserved = question.issues.filter((issue) => issue === "POSSIBLE_DUPLICATE" || issue === "CONFLICTING_ANSWERS" || issue === "INVALID_CORRECT_ANSWER" || issue === "DUPLICATE_OPTION_MARKER" || issue === "DUPLICATE_STABLE_ID" || issue === "POSSIBLE_MERGED_QUESTIONS");
   const issues = [...new Set([...structuralIssues, ...preserved])];
   const severe = issues.includes("MISSING_QUESTION") || issues.includes("MISSING_OPTIONS") || issues.includes("EMPTY_OPTION");
-  const confidence = Math.max(0.05, Math.min(1, 1 - issues.length * 0.14 - (question.sourceNumber ? 0 : 0.05) - (question.type === "unknown" ? 0.2 : 0)));
-  return { ...question, issues, confidence, status: severe ? "error" : issues.length || confidence < 0.75 ? "needs_review" : "ready" };
+  const structurallyValid = !severe && question.type !== "unknown";
+  const parseIssues = issues.filter((issue) => issue === "POSSIBLE_MERGED_QUESTIONS" || issue === "DUPLICATE_OPTION_MARKER" || issue === "UNKNOWN_TYPE");
+  const confidence = Math.max(0.05, Math.min(1, 1 - parseIssues.length * 0.14 - (question.sourceNumber ? 0 : 0.05) - (question.type === "unknown" ? 0.2 : 0)));
+  return { ...question, issues, confidence, structurallyValid, status: severe ? "error" : structurallyValid && issues.length === 0 ? "ready" : "needs_review" };
 }
 
 export function parseQuestionImport(rawInput: string, config: ParseQuestionOptions = {}) {
@@ -136,7 +141,7 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
   const customExplanation = customRegex(config.profile?.explanationPattern);
 
   function create(lineIndex: number, number: string | null, text: string) {
-    return { clientId: `q-${lineIndex}-${results.length}`, sourceNumber: number, sourceStart: lineIndex, sourceEnd: lineIndex, raw: "", question: text.trim(), type: config.profile?.defaultType || (speakingPart ? "speaking" : "unknown"), options: [], answer: "", explanation: "", difficulty: "", tags: [], speakingPart, topic, confidence: 0, status: "needs_review", issues: [] } satisfies ParsedQuestion;
+    return { clientId: `q-${lineIndex}-${results.length}`, sourceNumber: number, sourceStart: lineIndex, sourceEnd: lineIndex, raw: "", question: text.trim(), type: config.profile?.defaultType || (speakingPart ? "speaking" : "unknown"), options: [], answer: "", explanation: "", difficulty: "", tags: [], speakingPart, topic, confidence: 0, structurallyValid: false, status: "needs_review", issues: [] } satisfies ParsedQuestion;
   }
   function finish(end: number) {
     if (!current) return;
@@ -152,6 +157,7 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
       const ids = answerIds(listed, current.options);
       if (!ids.length && current.options.length) current.issues.push("INVALID_CORRECT_ANSWER");
       current.options = current.options.map((option) => ({ ...option, isCorrect: ids.includes(option.id) }));
+      if (ids.length) current.detectedAnswer = ids.join(",");
     }
     results.push(revalidateParsedQuestion(current)); current = null; currentOption = -1; target = "question";
   }
@@ -162,6 +168,10 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
     const part = line.match(/^part\s*([123])\b/iu); if (part) { finish(index - 1); speakingPart = `part_${part[1]}` as ParsedQuestion["speakingPart"]; continue; }
     const topicMatch = line.match(/^topic\s*[:\-]\s*(.+)$/iu); if (topicMatch) { topic = topicMatch[1].trim(); continue; }
     const nextNonEmpty = lines.slice(index + 1).find((candidate) => candidate.trim()) || "";
+    const outlineHeading = line.match(/^([A-Z]|[IVXLCDM]+)[.)]\s+\S+/u); const expectedOptionId = current ? String.fromCharCode(65 + current.options.length) : "";
+    const sectionHeading = /^(?:chương|phần|bài)\s+(?:\d+|[ivxlcdm]+)\b|^\d+\.\d+(?:\.\d+)*\s+/iu.test(line)
+      || (!!outlineHeading && (!current || (current.options.length >= 2 && !!nextNonEmpty.match(QUESTION_RE) && outlineHeading[1] !== expectedOptionId)));
+    if (sectionHeading) { finish(index - 1); continue; }
     if (/^answer\s*key(?:\s*[:\-])?$/iu.test(line) || (/^đáp\s*án(?:\s*[:\-])?$/iu.test(line) && FINAL_ANSWER_RE.test(nextNonEmpty))) { continue; }
     if (FINAL_ANSWER_RE.test(line)) continue;
     const explicit = line.match(EXPLICIT_QUESTION_RE);
@@ -202,6 +212,7 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
         if (inlineIds.length && ids.length && inlineIds.some((id) => !ids.includes(id))) current.issues.push("CONFLICTING_ANSWERS");
         if (!ids.length) current.issues.push("INVALID_CORRECT_ANSWER");
         current.options = current.options.map((option) => ({ ...option, isCorrect: ids.includes(option.id) || option.isCorrect }));
+        if (ids.length) current.detectedAnswer = ids.join(",");
       } else if (!current.options.length) current.answer = value;
       target = "answer"; continue;
     }
@@ -239,11 +250,42 @@ export function parseQuestionImport(rawInput: string, config: ParseQuestionOptio
 
 export function summarizeParsedQuestions(items: ParsedQuestion[]) {
   const count = (predicate: (item: ParsedQuestion) => boolean) => items.filter(predicate).length;
-  return { total: items.length, ready: count((item) => item.status === "ready"), review: count((item) => item.status === "needs_review"), errors: count((item) => item.status === "error"), duplicates: count((item) => item.issues.includes("POSSIBLE_DUPLICATE")), byType: { multipleChoice: count((item) => item.type === "multiple_choice"), trueFalse: count((item) => item.type === "true_false"), essay: count((item) => item.type === "essay"), speaking: count((item) => item.type === "speaking"), unknown: count((item) => item.type === "unknown") } };
+  return { total: items.length, ready: count((item) => item.status === "ready"), review: count((item) => item.status === "needs_review"), errors: count((item) => item.status === "error"), structurallyValid: count((item) => item.structurallyValid), duplicates: count((item) => !!item.duplicateOf), reasons: { missingCorrectAnswer: count((item) => item.issues.includes("MISSING_CORRECT_ANSWER")), conflictingAnswers: count((item) => item.issues.includes("CONFLICTING_ANSWERS")), invalidAnswers: count((item) => item.issues.includes("INVALID_CORRECT_ANSWER")), invalidOptions: count((item) => item.issues.includes("MISSING_OPTIONS") || item.issues.includes("EMPTY_OPTION") || item.issues.includes("DUPLICATE_OPTION_MARKER")), ambiguousStructure: count((item) => item.issues.includes("POSSIBLE_MERGED_QUESTIONS") || item.issues.includes("UNKNOWN_TYPE")) }, byType: { multipleChoice: count((item) => item.type === "multiple_choice"), trueFalse: count((item) => item.type === "true_false"), essay: count((item) => item.type === "essay"), speaking: count((item) => item.type === "speaking"), unknown: count((item) => item.type === "unknown") } };
 }
 
 export function partitionImportCandidates(items: ParsedQuestion[], readyOnly: boolean) {
   const candidates = items.filter((item) => item.status !== "error" && (!readyOnly || item.status === "ready"));
   const candidateIds = new Set(candidates.map((item) => item.clientId));
   return { candidates, remaining: readyOnly ? items.filter((item) => !candidateIds.has(item.clientId)) : [] };
+}
+
+export type AnswerKeyEntry = { questionNumber: string | null; answers: string[] };
+
+export function parseAnswerKeyInput(raw: string): AnswerKeyEntry[] {
+  const normalized = normalizeQuestionImportText(raw).toUpperCase();
+  const numbered = [...normalized.matchAll(/(?:^|\s)(\d+)\s*(?:[-.:)]\s*)?([A-Z](?:\s*[,;/+]\s*[A-Z])*)(?=\s|$)/gu)];
+  if (numbered.length) return numbered.map((match) => ({ questionNumber: match[1], answers: [...new Set(match[2].match(/[A-Z]/g) || [])] }));
+  return (normalized.match(/[A-Z]/g) || []).map((answer) => ({ questionNumber: null, answers: [answer] }));
+}
+
+export function applyAnswerKey(items: ParsedQuestion[], rawKey: string) {
+  const entries = parseAnswerKeyInput(rawKey); const explicit = entries.some((entry) => entry.questionNumber !== null);
+  let applied = 0; let conflicts = 0; let invalid = 0; let unmatched = 0;
+  const entryByNumber = new Map(entries.filter((entry) => entry.questionNumber).map((entry) => [entry.questionNumber!, entry]));
+  const next = items.map((item, index) => {
+    const entry = explicit ? (item.sourceNumber ? entryByNumber.get(item.sourceNumber) : undefined) : entries[index];
+    if (!entry) return item;
+    const validIds = new Set(item.options.map((option) => option.id));
+    if (!entry.answers.length || entry.answers.some((id) => !validIds.has(id))) { invalid += 1; return revalidateParsedQuestion({ ...item, issues: [...item.issues, "INVALID_CORRECT_ANSWER"] }); }
+    const answer = entry.answers.join(","); const existing = item.options.filter((option) => option.isCorrect).map((option) => option.id).join(",");
+    if (existing && existing !== answer) {
+      conflicts += 1;
+      return revalidateParsedQuestion({ ...item, detectedAnswer: item.detectedAnswer || existing, answerKeyAnswer: answer, issues: [...item.issues, "CONFLICTING_ANSWERS"] });
+    }
+    applied += 1;
+    return revalidateParsedQuestion({ ...item, answerKeyAnswer: answer, options: item.options.map((option) => ({ ...option, isCorrect: entry.answers.includes(option.id) })), issues: item.issues.filter((issue) => issue !== "INVALID_CORRECT_ANSWER" && issue !== "CONFLICTING_ANSWERS") });
+  });
+  if (explicit) for (const entry of entries) if (!items.some((item) => item.sourceNumber === entry.questionNumber)) unmatched += 1;
+  else unmatched = Math.max(0, entries.length - items.length);
+  return { items: next, applied, conflicts, invalid, unmatched };
 }

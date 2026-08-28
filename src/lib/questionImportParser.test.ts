@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeQuestionIdentity, normalizeQuestionImportText, parseQuestionImport, partitionImportCandidates, revalidateParsedQuestion, summarizeParsedQuestions } from "./questionImportParser";
+import { applyAnswerKey, normalizeQuestionIdentity, normalizeQuestionImportText, parseAnswerKeyInput, parseQuestionImport, partitionImportCandidates, revalidateParsedQuestion, summarizeParsedQuestions } from "./questionImportParser";
 
 const mc = (markers = ["A.", "B.", "C.", "D."]) => `Câu 1. Tính toàn vẹn đảm bảo điều gì?\n${markers[0]} Chỉ người có quyền được sửa\n${markers[1]} Mọi người được sửa\n${markers[2]} Luôn trực tuyến\n${markers[3]} Chỉ sao lưu\nĐáp án: A`;
 test("parses standard A/B/C/D", () => { const [q] = parseQuestionImport(mc()); assert.equal(q.type, "multiple_choice"); assert.equal(q.options.length, 4); assert.equal(q.options[0].isCorrect, true); });
@@ -51,7 +51,7 @@ test("supports A through Z options", () => {
 });
 test("standard Vietnamese sample yields two ready questions", () => {
   const items = parseQuestionImport("1. Tính bí mật đảm bảo điều gì?\nA. Chỉ người được phép mới truy cập thông tin\nB. Mọi người có thể sửa dữ liệu\nC. Hệ thống luôn hoạt động\nD. Dữ liệu luôn được sao lưu\nĐáp án: A\n\n2. Tính toàn vẹn đảm bảo điều gì?\nA. Dữ liệu không bị sửa đổi trái phép\nB. Dữ liệu luôn công khai\nC. Mọi người đều được truy cập\nD. Không cần xác thực\nĐáp án: A");
-  assert.deepEqual(summarizeParsedQuestions(items), { total: 2, ready: 2, review: 0, errors: 0, duplicates: 0, byType: { multipleChoice: 2, trueFalse: 0, essay: 0, speaking: 0, unknown: 0 } });
+  assert.deepEqual(summarizeParsedQuestions(items), { total: 2, ready: 2, review: 0, errors: 0, structurallyValid: 2, duplicates: 0, reasons: { missingCorrectAnswer: 0, conflictingAnswers: 0, invalidAnswers: 0, invalidOptions: 0, ambiguousStructure: 0 }, byType: { multipleChoice: 2, trueFalse: 0, essay: 0, speaking: 0, unknown: 0 } });
 });
 test("missing answers never guesses a likely answer", () => {
   const items = parseQuestionImport("33. Tính toàn vẹn đảm bảo điều gì?\nA. Chỉ người có thẩm quyền sửa\nB. Mọi người xem\nC. Luôn trực tuyến\nD. Sao lưu\n34. Tính sẵn dùng đảm bảo điều gì?\nA. Người hợp pháp truy nhập khi cần\nB. Chỉ admin\nC. Không thay đổi\nD. Công khai");
@@ -178,4 +178,46 @@ test("source ranges isolate the selected question block", () => {
   const raw = Array.from({ length: 100 }, (_, index) => `${index + 1}. Question ${index + 1}?\nA. Yes\nB. No\nAnswer: A`).join("\n");
   const item = parseQuestionImport(raw)[46]; const lines = normalizeQuestionImportText(raw).split("\n"); const highlighted = lines.slice(item.sourceStart, item.sourceEnd + 1).join("\n");
   assert.match(highlighted, /^47\. Question 47\?/u); assert.doesNotMatch(highlighted, /Question (?:46|48)\?/u);
+});
+
+test("section heading plus 69 MCQs produces 69 review items, not a phantom question", () => {
+  const raw = `A. Khái quát về an toàn thông tin\n\n${Array.from({ length: 69 }, (_, index) => `${index + 1}. Câu hỏi an toàn thông tin số ${index + 1}?\nA. Lựa chọn một\nB. Lựa chọn hai\nC. Lựa chọn ba\nD. Lựa chọn bốn`).join("\n\n")}`;
+  const items = parseQuestionImport(raw); const summary = summarizeParsedQuestions(items);
+  assert.equal(items.length, 69); assert.equal(summary.byType.multipleChoice, 69); assert.equal(summary.ready, 0); assert.equal(summary.review, 69); assert.equal(summary.errors, 0); assert.equal(summary.structurallyValid, 69); assert.equal(summary.reasons.missingCorrectAnswer, 69);
+  assert.ok(items.every((item) => !item.options.some((option) => option.isCorrect) && !item.question.includes("Khái quát")));
+});
+test("MCQ can be structurally valid without being ready", () => {
+  const [item] = parseQuestionImport("1. Chọn đáp án?\nA. Một\nB. Hai");
+  assert.equal(item.structurallyValid, true); assert.equal(item.status, "needs_review"); assert.ok(item.issues.includes("MISSING_CORRECT_ANSWER")); assert.equal(item.confidence, 1);
+});
+test("selecting and removing a correct option recalculates status deterministically", () => {
+  const [item] = parseQuestionImport("1. Chọn đáp án?\nA. Một\nB. Hai");
+  const selected = revalidateParsedQuestion({ ...item, options: item.options.map((option) => ({ ...option, isCorrect: option.id === "A" })) });
+  const removed = revalidateParsedQuestion({ ...selected, options: selected.options.map((option) => ({ ...option, isCorrect: false })) });
+  assert.equal(selected.status, "ready"); assert.equal(removed.status, "needs_review"); assert.ok(removed.issues.includes("MISSING_CORRECT_ANSWER"));
+});
+test("answer key parser supports numbered and sequential formats", () => {
+  assert.deepEqual(parseAnswerKeyInput("1-A 2. B 3C 4-D"), [{ questionNumber: "1", answers: ["A"] }, { questionNumber: "2", answers: ["B"] }, { questionNumber: "3", answers: ["C"] }, { questionNumber: "4", answers: ["D"] }]);
+  assert.deepEqual(parseAnswerKeyInput("A B C D"), [{ questionNumber: null, answers: ["A"] }, { questionNumber: null, answers: ["B"] }, { questionNumber: null, answers: ["C"] }, { questionNumber: null, answers: ["D"] }]);
+});
+test("partial answer key maps by source question number", () => {
+  const items = parseQuestionImport("1. One?\nA. a\nB. b\n2. Two?\nA. a\nB. b\n3. Three?\nA. a\nB. b\n4. Four?\nA. a\nB. b\n5. Five?\nA. a\nB. b");
+  const result = applyAnswerKey(items, "1-A\n2-B\n5-B"); const summary = summarizeParsedQuestions(result.items);
+  assert.equal(result.applied, 3); assert.equal(summary.ready, 3); assert.equal(summary.review, 2); assert.equal(result.items[4].options[1].isCorrect, true);
+});
+test("complete answer key moves all 69 structurally-valid MCQs to READY", () => {
+  const raw = `A. Khái quát về an toàn thông tin\n${Array.from({ length: 69 }, (_, index) => `${index + 1}. Câu ${index + 1}?\nA. Một\nB. Hai\nC. Ba\nD. Bốn`).join("\n")}`;
+  const before = parseQuestionImport(raw); const key = before.map((item) => `${item.sourceNumber}-A`).join("\n"); const after = applyAnswerKey(before, key); const summary = summarizeParsedQuestions(after.items);
+  assert.equal(after.applied, 69); assert.equal(summary.ready, 69); assert.equal(summary.review, 0); assert.equal(summary.reasons.missingCorrectAnswer, 0); assert.ok(after.items.every((item) => item.options[0].isCorrect));
+});
+test("conflicting pasted answer key never overwrites an inline answer silently", () => {
+  const items = parseQuestionImport("1. One?\nA. a\nB. b\nĐáp án: A"); const result = applyAnswerKey(items, "1-B"); const [item] = result.items;
+  assert.equal(result.conflicts, 1); assert.equal(item.status, "needs_review"); assert.ok(item.issues.includes("CONFLICTING_ANSWERS")); assert.equal(item.detectedAnswer, "A"); assert.equal(item.answerKeyAnswer, "B"); assert.equal(item.options[0].isCorrect, true); assert.equal(item.options[1].isCorrect, false);
+});
+test("common section headings are ignored contextually", () => {
+  const headings = ["A. Khái quát", "I. Tổng quan", "II. Nội dung", "CHƯƠNG 1", "PHẦN I", "BÀI 1", "1.1 Khái niệm"];
+  for (const heading of headings) {
+    const items = parseQuestionImport(`${heading}\n1. Nội dung?\nA. Một\nB. Hai\nAnswer: A`);
+    assert.equal(items.length, 1, heading); assert.equal(items[0].options.length, 2, heading);
+  }
 });
