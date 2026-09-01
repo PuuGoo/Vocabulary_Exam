@@ -1,8 +1,10 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Modal from "@/components/Modal";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
+import SetPicker from "@/components/SetPicker";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { ASSIGNMENT_MODE_LABELS, AssignmentMode, AssignmentStatus, assignmentHref, modesForSetType } from "@/lib/assignments";
@@ -29,8 +31,8 @@ function toLocalInput(value: string | null) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 16);
 }
-
 export default function AdminAssignmentsPage() {
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
   const [rows, setRows] = useState<AssignmentRow[] | null>(null);
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [sets, setSets] = useState<SetRow[]>([]);
@@ -45,6 +47,7 @@ export default function AdminAssignmentsPage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkClassIds, setBulkClassIds] = useState<number[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState<{ assignment: AssignmentRow; students: StudentProgress[] } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -84,13 +87,13 @@ export default function AdminAssignmentsPage() {
     });
   }, [rows, query, classFilter, progressFilter]);
 
-  function openCreate() { setEditing(null); setDuplicating(null); setBulkMode(false); setBulkClassIds([]); setForm(emptyForm); setFormOpen(true); }
+  function openCreate() { setEditing(null); setDuplicating(null); setBulkMode(false); setBulkClassIds([]); setForm(emptyForm); setStep(1); setFormOpen(true); }
   function openEdit(row: AssignmentRow) {
     setEditing(row);
     setDuplicating(null);
     setBulkMode(false);
     setBulkClassIds([]);
-    setForm({ classId: String(row.classId), setId: String(row.setId), title: row.title, instructions: row.instructions, mode: row.mode, minScore: String(row.minScore), dueAt: toLocalInput(row.dueAt), timeLimitMinutes: String(row.timeLimitMinutes || 15) });
+    setForm({ classId: String(row.classId), setId: String(row.setId), title: row.title, instructions: row.instructions, mode: row.mode, minScore: String(row.minScore), dueAt: toLocalInput(row.dueAt), timeLimitMinutes: String(row.timeLimitMinutes || 15) }); setStep(1);
     setFormOpen(true);
   }
   function openDuplicate(row: AssignmentRow) {
@@ -136,7 +139,7 @@ export default function AdminAssignmentsPage() {
 
   async function toggleArchive(row: AssignmentRow) {
     const action = row.archived ? "khôi phục" : "lưu trữ";
-    if (!confirm(`${action[0].toUpperCase()}${action.slice(1)} bài “${row.title}”?`)) return;
+    if (!await confirmAction({ title: `${action[0].toUpperCase()}${action.slice(1)} bài tập?`, description: `Bài “${row.title}” sẽ được ${action}.`, confirmLabel: `${action[0].toUpperCase()}${action.slice(1)}`, tone: "warning" })) return;
     const response = await fetch(`/api/admin/assignments/${row.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ archived: !row.archived }) });
     if (!response.ok) return toast(`Không thể ${action} bài tập.`);
     toast(row.archived ? "Đã khôi phục bài tập." : "Đã lưu trữ; học sinh sẽ không còn thấy bài này."); await load();
@@ -173,7 +176,7 @@ export default function AdminAssignmentsPage() {
   }
 
   async function removeExtension(student: StudentProgress) {
-    if (!detail || !confirm(`Bỏ hạn riêng của ${student.displayName}?`)) return;
+    if (!detail || !await confirmAction({ title: "Bỏ hạn nộp riêng?", description: `${student.displayName} sẽ dùng lại hạn nộp chung của bài tập.`, confirmLabel: "Bỏ hạn riêng", tone: "warning" })) return;
     const response = await fetch(`/api/admin/assignments/${detail.assignment.id}/extensions?userId=${student.userId}`, { method: "DELETE" });
     if (!response.ok) return toast("Không thể bỏ gia hạn.");
     toast("Đã đưa học sinh về hạn nộp chung."); await openDetail(detail.assignment);
@@ -181,7 +184,7 @@ export default function AdminAssignmentsPage() {
 
   async function toggleExcused(student: StudentProgress) {
     if (!detail) return;
-    if (!student.excused && !confirm(`Miễn làm bài này cho ${student.displayName}?`)) return;
+    if (!student.excused && !await confirmAction({ title: "Miễn làm bài?", description: `${student.displayName} sẽ không còn bị tính là chưa hoàn thành bài này.`, confirmLabel: "Miễn làm", tone: "warning" })) return;
     const response = await fetch(`/api/admin/assignments/${detail.assignment.id}/exemptions${student.excused ? `?userId=${student.userId}` : ""}`, {
       method: student.excused ? "DELETE" : "POST",
       ...(student.excused ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: student.userId }) }),
@@ -226,6 +229,7 @@ export default function AdminAssignmentsPage() {
 
   return (
     <div className={cx.panel}>
+      {confirmDialog}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><h2 className={cx.h2}>Giao bài theo lớp</h2><p className={cx.desc + " !mb-0"}>Chọn bộ từ và chế độ; hệ thống tự ghi nhận khi học sinh đạt điểm yêu cầu.</p></div>
         <button className={`${cx.btn} ${cx.btnGold}`} onClick={openCreate}>+ Giao bài mới</button>
@@ -253,25 +257,75 @@ export default function AdminAssignmentsPage() {
         </article>)}</div>}
 
       {formOpen && <Modal title={editing ? "Sửa bài tập" : duplicating ? "Nhân bản và giao lại" : "Giao bài mới"} onClose={() => !saving && setFormOpen(false)}>
-        <form onSubmit={submit}>
-          {duplicating && <div className="mb-4 rounded-lg border border-gold/40 bg-goldpale/50 p-3 text-[0.82rem]">Nội dung đã được sao chép từ <b>“{duplicating.title}”</b>. Hãy chọn lại lớp hoặc hạn nộp nếu cần; tiến độ của bản cũ không bị ảnh hưởng.</div>}
-          {!editing && <label className="mb-4 flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-[#faf8f2] p-3 text-[0.84rem]"><input className="mt-0.5" type="checkbox" checked={bulkMode} onChange={(e) => { const enabled = e.target.checked; setBulkMode(enabled); setBulkClassIds(enabled && form.classId ? [Number(form.classId)] : []); setForm((current) => ({ ...current, classId: enabled ? "" : current.classId, setId: enabled ? "" : current.setId })); }} /><span><b>Giao cùng lúc cho nhiều lớp</b><span className="mt-0.5 block text-[0.75rem] text-muted">Mỗi lớp nhận một bản riêng để theo dõi tiến độ độc lập.</span></span></label>}
-          <div className="grid gap-x-3 sm:grid-cols-2">
-            {bulkMode ? <div className="mb-3 sm:col-span-2"><span className={cx.label}>Các lớp nhận bài *</span><div className="grid max-h-44 gap-1 overflow-y-auto rounded-lg border border-line bg-white p-2 sm:grid-cols-2">{classes.length ? classes.map((item) => <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[0.82rem] hover:bg-goldpale/30"><input type="checkbox" checked={bulkClassIds.includes(item.id)} onChange={() => setBulkClassIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} /><span className="min-w-0 flex-1 truncate">{item.name}</span><span className="text-[0.7rem] text-muted">{item.memberCount} HS</span></label>) : <span className="p-2 text-sm text-muted">Chưa có lớp học.</span>}</div><div className="mt-1 text-[0.72rem] text-muted">Đã chọn {bulkClassIds.length}/{classes.length} lớp</div></div>
-              : <label><span className={cx.label}>Lớp học *</span><select className={cx.input} disabled={!!editing} value={form.classId} onChange={(e) => { const nextClassId = e.target.value; setForm((current) => { const currentSet = sets.find((item) => item.id === Number(current.setId)); const canKeepSet = currentSet && (currentSet.classId === null || currentSet.classId === Number(nextClassId)); return { ...current, classId: nextClassId, setId: canKeepSet ? current.setId : "" }; }); }}><option value="">Chọn lớp</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.memberCount} học sinh)</option>)}</select></label>}
-            <label className={bulkMode ? "sm:col-span-2" : ""}><span className={cx.label}>Bộ từ *</span><select className={cx.input} disabled={!!editing || (bulkMode ? bulkClassIds.length === 0 : !form.classId)} value={form.setId} onChange={(e) => { const set = sets.find((item) => item.id === Number(e.target.value)); update("setId", e.target.value); update("mode", modesForSetType(set?.type || "ielts_vocab")[0]); if (!form.title && set) update("title", set.name); }}><option value="">Chọn bộ từ{bulkMode ? " công khai" : ""}</option>{availableSets.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.count} từ){item.classId === null ? " · công khai" : ""}</option>)}</select></label>
+        <div>
+          {duplicating && <div className="mb-4 rounded-lg border border-gold/40 bg-goldpale/50 p-3 text-[0.82rem]">Nội dung đã được sao chép từ <b>"{duplicating.title}"</b>. Hãy chọn lại lớp hoặc hạn nộp nếu cần; tiến độ của bản cũ không bị ảnh hưởng.</div>}
+          <div className="mb-5 flex gap-1.5 overflow-x-auto rounded-xl border border-line bg-white p-1">
+            {["Đối tượng", "Nội dung", "Điều kiện", "Xác nhận"].map((label, i) => {
+              const n = i + 1;
+              return <button key={label} type="button" onClick={() => { if (!editing && (n === 2 || n === 3)) { if (!(bulkMode ? bulkClassIds.length : form.classId)) { toast("Hãy chọn lớp trước."); return; } } if (n === 3 && !form.setId) { toast("Hãy chọn bộ từ."); return; } if (n === 4 && !form.title.trim()) { toast("Hãy nhập tên bài."); return; } setStep(n); }} className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-xs font-bold transition ${step === n ? "bg-ink text-white" : "text-muted hover:bg-goldpale/40"}`}><span className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.65rem] ${step === n ? "bg-white/20" : "bg-line/60"}`}>{n}</span>{label}</button>;
+            })}
           </div>
-          <label><span className={cx.label}>Tên bài *</span><input required maxLength={256} className={cx.input} value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="VD: Ôn tập Unit 3" /></label>
-          <label><span className={cx.label}>Hướng dẫn cho học sinh</span><textarea maxLength={4000} rows={3} className={cx.input} value={form.instructions} onChange={(e) => update("instructions", e.target.value)} placeholder="Nội dung cần lưu ý (không bắt buộc)" /></label>
-          <div className="grid gap-x-3 sm:grid-cols-2">
-            <label><span className={cx.label}>Chế độ *</span><select className={cx.input} disabled={!!editing || !form.setId} value={form.mode} onChange={(e) => update("mode", e.target.value as AssignmentMode)}>{availableModes.map((mode) => <option key={mode} value={mode}>{ASSIGNMENT_MODE_LABELS[mode]}</option>)}</select></label>
-            <label><span className={cx.label}>Điểm hoàn thành (%) *</span><input type="number" min={0} max={100} required className={cx.input} value={form.minScore} onChange={(e) => update("minScore", e.target.value)} /></label>
-            <label><span className={cx.label}>Hạn nộp</span><input type="datetime-local" className={cx.input} value={form.dueAt} onChange={(e) => update("dueAt", e.target.value)} /></label>
-            {form.mode === "timed" && <label><span className={cx.label}>Thời gian thi (phút) *</span><input type="number" min={1} max={120} required className={cx.input} value={form.timeLimitMinutes} onChange={(e) => update("timeLimitMinutes", e.target.value)} /></label>}
-          </div>
-          {editing && <p className="mb-3 text-[0.78rem] text-muted">Lớp, bộ từ và chế độ được giữ nguyên để tiến độ cũ không bị sai lệch.</p>}
-          <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setFormOpen(false)} disabled={saving}>Hủy</button><button type="submit" className={`${cx.btn} ${cx.btnGold}`} disabled={saving}>{saving ? "Đang lưu..." : editing ? "Lưu thay đổi" : bulkMode ? `Giao cho ${bulkClassIds.length || 0} lớp` : duplicating ? "Giao bản sao" : "Giao bài"}</button></div>
-        </form>
+
+          {step === 1 && (
+            <div className="space-y-4">
+              {!editing && <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-line bg-[#faf8f2] p-3 text-[0.84rem]"><input className="mt-0.5" type="checkbox" checked={bulkMode} onChange={(e) => { const enabled = e.target.checked; setBulkMode(enabled); setBulkClassIds(enabled && form.classId ? [Number(form.classId)] : []); setForm((current) => ({ ...current, classId: enabled ? "" : current.classId, setId: enabled ? "" : current.setId })); }} /><span><b>Giao cùng lúc cho nhiều lớp</b><span className="mt-0.5 block text-[0.75rem] text-muted">Mỗi lớp nhận một bản riêng để theo dõi tiến độ độc lập.</span></span></label>}
+              {bulkMode ? <div><span className={cx.label}>Các lớp nhận bài *</span><div className="grid max-h-44 gap-1 overflow-y-auto rounded-lg border border-line bg-white p-2 sm:grid-cols-2">{classes.length ? classes.map((item) => <label key={item.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[0.82rem] hover:bg-goldpale/30"><input type="checkbox" checked={bulkClassIds.includes(item.id)} onChange={() => setBulkClassIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} /><span className="min-w-0 flex-1 truncate">{item.name}</span><span className="text-[0.7rem] text-muted">{item.memberCount} HS</span></label>) : <span className="p-2 text-sm text-muted">Chưa có lớp học.</span>}</div><div className="mt-1 text-[0.72rem] text-muted">Đã chọn {bulkClassIds.length}/{classes.length} lớp</div></div>
+                : <label><span className={cx.label}>Lớp học *</span><select className={cx.input} disabled={!!editing} value={form.classId} onChange={(e) => { const nextClassId = e.target.value; setForm((current) => { const currentSet = sets.find((item) => item.id === Number(current.setId)); const canKeepSet = currentSet && (currentSet.classId === null || currentSet.classId === Number(nextClassId)); return { ...current, classId: nextClassId, setId: canKeepSet ? current.setId : "" }; }); }}><option value="">Chọn lớp</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.memberCount} học sinh)</option>)}</select></label>}
+              <div className="flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setFormOpen(false)} disabled={saving}>Hủy</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} onClick={() => { if (!(bulkMode ? bulkClassIds.length : form.classId)) return toast("Hãy chọn lớp."); setStep(2); }}>Tiếp tục: Nội dung →</button></div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="space-y-4">
+              <div>
+                <span className={cx.label}>Bộ từ *</span>
+                <SetPicker
+                  sets={sets}
+                  mode="single"
+                  selected={form.setId ? [Number(form.setId)] : []}
+                  onSelect={(ids) => { const id = ids[0] ?? null; const set = sets.find((item) => item.id === id); update("setId", id == null ? "" : String(id)); update("mode", modesForSetType(set?.type || "ielts_vocab")[0]); if (!form.title && set) update("title", set.name); }}
+                  renderTrigger={(count, label) => (
+                    <span className={`flex min-h-11 w-full items-center justify-between rounded-[11px] border border-gold/60 bg-goldpale/30 px-4 text-sm font-bold ${count ? "text-golddark" : "text-muted"}`}>
+                      {form.setId ? (sets.find((item) => item.id === Number(form.setId))?.name || label) : "Chọn thư mục / bộ từ"}
+                      <span aria-hidden="true">▾</span>
+                    </span>
+                  )}
+                />
+              </div>
+              <label><span className={cx.label}>Chế độ *</span><select className={cx.input} disabled={!!editing || !form.setId} value={form.mode} onChange={(e) => update("mode", e.target.value as AssignmentMode)}>{availableModes.map((mode) => <option key={mode} value={mode}>{ASSIGNMENT_MODE_LABELS[mode]}</option>)}</select></label>
+              <div className="flex justify-between gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setStep(1)}>← Đối tượng</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} onClick={() => { if (!form.setId) return toast("Hãy chọn bộ từ."); setStep(3); }}>Tiếp tục: Điều kiện →</button></div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4">
+              <label><span className={cx.label}>Tên bài *</span><input required maxLength={256} className={cx.input} value={form.title} onChange={(e) => update("title", e.target.value)} placeholder="VD: Ôn tập Unit 3" /></label>
+              <label><span className={cx.label}>Hướng dẫn cho học sinh</span><textarea maxLength={4000} rows={3} className={cx.input} value={form.instructions} onChange={(e) => update("instructions", e.target.value)} placeholder="Nội dung cần lưu ý (không bắt buộc)" /></label>
+              <div className="grid gap-x-3 sm:grid-cols-2">
+                <label><span className={cx.label}>Điểm hoàn thành (%) *</span><input type="number" min={0} max={100} required className={cx.input} value={form.minScore} onChange={(e) => update("minScore", e.target.value)} /></label>
+                <label><span className={cx.label}>Hạn nộp</span><input type="datetime-local" className={cx.input} value={form.dueAt} onChange={(e) => update("dueAt", e.target.value)} /></label>
+                {form.mode === "timed" && <label><span className={cx.label}>Thời gian thi (phút) *</span><input type="number" min={1} max={120} required className={cx.input} value={form.timeLimitMinutes} onChange={(e) => update("timeLimitMinutes", e.target.value)} /></label>}
+              </div>
+              {editing && <p className="text-[0.78rem] text-muted">Lớp, bộ từ và chế độ được giữ nguyên để tiến độ cũ không bị sai lệch.</p>}
+              <div className="flex justify-between gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setStep(2)}>← Nội dung</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} onClick={() => { if (!form.title.trim()) return toast("Hãy nhập tên bài."); setStep(4); }}>Tiếp tục: Xác nhận →</button></div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="rounded-xl border border-line bg-[#faf8f2] p-4 text-sm">
+              <div className="space-y-2">
+                <div><span className="text-muted">Lớp:</span> <b>{bulkMode ? bulkClassIds.map((id) => classes.find((c) => c.id === id)?.name).filter(Boolean).join(", ") : classes.find((c) => c.id === Number(form.classId))?.name || "—"}</b></div>
+                <div><span className="text-muted">Bộ từ:</span> <b>{sets.find((item) => item.id === Number(form.setId))?.name || "—"}</b></div>
+                <div><span className="text-muted">Chế độ:</span> <b>{availableModes.includes(form.mode) ? ASSIGNMENT_MODE_LABELS[form.mode] : form.mode}</b></div>
+                <div><span className="text-muted">Tên bài:</span> <b>{form.title || "—"}</b></div>
+                <div><span className="text-muted">Điểm hoàn thành:</span> <b>≥ {form.minScore}%</b></div>
+                <div><span className="text-muted">Hạn nộp:</span> <b>{form.dueAt ? new Date(form.dueAt).toLocaleString("vi-VN") : "Không giới hạn"}</b></div>
+                {form.mode === "timed" && <div><span className="text-muted">Thời gian thi:</span> <b>{form.timeLimitMinutes} phút</b></div>}
+              </div>
+              <div className="mt-4 flex justify-end gap-2"><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setStep(3)}>← Sửa</button><button type="button" className={`${cx.btn} ${cx.btnGold}`} disabled={saving} onClick={(e) => submit(e as unknown as FormEvent)}>{saving ? "Đang lưu..." : editing ? "Lưu thay đổi" : bulkMode ? `Giao cho ${bulkClassIds.length || 0} lớp` : duplicating ? "Giao bản sao" : "Giao bài"}</button></div>
+            </div>
+          )}
+        </div>
       </Modal>}
 
       {detail && <Modal wide title={`Tiến độ · ${detail.assignment.title}`} onClose={() => setDetail(null)}>

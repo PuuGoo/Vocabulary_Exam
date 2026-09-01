@@ -5,6 +5,7 @@ import Link from "next/link";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import { XP_PER_ATTEMPT_BONUS, XP_PER_CORRECT } from "@/lib/gamification";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 
@@ -119,7 +120,7 @@ export default function DailyChallengePage() {
   if (completion) return (
     <div className={cx.panel}>
       <section className="mx-auto max-w-lg rounded-2xl border border-gold bg-goldpale/40 p-6 text-center">
-        <div className="text-4xl" aria-hidden="true">🏆</div><h2 className="mt-2 font-serif text-xl font-bold">Đã hoàn thành thử thách hôm nay</h2><div className="mt-3 font-serif text-5xl font-bold text-golddark">{score}/{completion.total}</div><div className="mt-2 text-sm text-muted">{Math.round(score / completion.total * 100)}% chính xác · {score * 10 + 5} XP</div>
+        <div className="text-4xl" aria-hidden="true">🏆</div><h2 className="mt-2 font-serif text-xl font-bold">Đã hoàn thành thử thách hôm nay</h2><div className="mt-3 font-serif text-5xl font-bold text-golddark">{score}/{completion.total}</div><div className="mt-2 text-sm text-muted">{Math.round(score / completion.total * 100)}% chính xác · {score * XP_PER_CORRECT + XP_PER_ATTEMPT_BONUS} XP</div>
         <div className="mt-5 rounded-lg bg-white/70 p-3 text-sm"><div className="text-xs text-muted">Thử thách mới sau</div><div className="mt-1 font-mono text-lg font-bold">{countdown}</div></div>
         <div className="mt-5 flex flex-wrap justify-center gap-2"><Link className={`${cx.btn} ${cx.btnGold}`} href="/leaderboard">Xem bảng xếp hạng</Link>{score < completion.total && <Link className={`${cx.btn} ${cx.btnGhost}`} href="/review">Ôn lại {completion.total - score} từ sai</Link>}<Link className={`${cx.btn} ${cx.btnGhost}`} href="/smart-review">Ôn tập thông minh</Link></div>
       </section>
@@ -129,7 +130,7 @@ export default function DailyChallengePage() {
 
   if (!started) return (
     <div className={cx.panel}>
-      <section className="mx-auto max-w-xl rounded-2xl border border-gold bg-gradient-to-br from-goldpale/70 to-white p-6 text-center"><div className="text-5xl" aria-hidden="true">⚡</div><h2 className="mt-3 font-serif text-2xl font-bold">Thử thách ngày {date.split("-").reverse().join("/")}</h2><p className="mx-auto mt-2 max-w-md text-sm text-muted">10 câu giống nhau cho mọi người. Bạn chỉ có một lượt được tính điểm hôm nay.</p><div className="my-5 grid grid-cols-3 gap-2"><div className="rounded-lg bg-white p-3"><b className="block text-xl">10</b><span className="text-xs text-muted">câu hỏi</span></div><div className="rounded-lg bg-white p-3"><b className="block text-xl">+10</b><span className="text-xs text-muted">XP/câu đúng</span></div><div className="rounded-lg bg-white p-3"><b className="block text-xl">1</b><span className="text-xs text-muted">lượt/ngày</span></div></div><button className={`${cx.btn} ${cx.btnGold} px-8`} onClick={() => setStarted(true)}>Bắt đầu thử thách</button></section>
+      <section className="mx-auto max-w-xl rounded-2xl border border-gold bg-gradient-to-br from-goldpale/70 to-white p-6 text-center"><div className="text-5xl" aria-hidden="true">⚡</div><h2 className="mt-3 font-serif text-2xl font-bold">Thử thách ngày {date.split("-").reverse().join("/")}</h2><p className="mx-auto mt-2 max-w-md text-sm text-muted">{questions.length} câu giống nhau cho mọi người. Bạn chỉ có một lượt được tính điểm hôm nay.</p><div className="my-5 grid grid-cols-3 gap-2"><div className="rounded-lg bg-white p-3"><b className="block text-xl">{questions.length}</b><span className="text-xs text-muted">câu hỏi</span></div><div className="rounded-lg bg-white p-3"><b className="block text-xl">+{XP_PER_CORRECT}</b><span className="text-xs text-muted">XP/câu đúng</span></div><div className="rounded-lg bg-white p-3"><b className="block text-xl">1</b><span className="text-xs text-muted">lượt/ngày</span></div></div><button className={`${cx.btn} ${cx.btnGold} px-8`} onClick={() => setStarted(true)}>Bắt đầu thử thách</button></section>
     </div>
   );
 

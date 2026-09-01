@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, useEffect, useState } from "react";
 import { toast } from "@/components/Toast";
@@ -96,7 +96,6 @@ async function uploadFileInChunks(
   }
   return sessionId;
 }
-
 type Preview = {
   createdAt: string;
   version: number;
@@ -467,6 +466,20 @@ export default function BackupPage() {
           không ghi đè tài khoản, mật khẩu hay dữ liệu đang có.
         </p>
       </section>
+      <section className={`rounded-[16px] border p-5 sm:p-6 ${emailSchedule.enabled && emailConfigured && cronConfigured && !emailSchedule.lastError ? "border-[#BFE3D2] bg-[#F3FBF7]" : "border-[#F0DDA2] bg-[#FFF9E7]"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="font-extrabold">{emailSchedule.enabled && emailConfigured && cronConfigured && !emailSchedule.lastError ? "✓ Sao lưu tự động đang hoạt động" : "⚠ Sao lưu tự động đang gặp vấn đề"}</h2>
+            <p className="mt-1 text-sm text-muted">Hệ thống tạo bản sao lưu lúc 00:00 ICT mỗi ngày và gửi liên kết tải qua email.</p>
+          </div>
+          <a href="#backup-diagnostics" className="min-h-10 rounded-[10px] border border-line bg-white px-4 py-2 text-sm font-bold">Kiểm tra</a>
+        </div>
+        <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+          <div><dt className="text-xs text-muted">Lần gần nhất</dt><dd className="mt-1 font-bold">{emailSchedule.lastSentAt ? new Date(emailSchedule.lastSentAt).toLocaleString("vi-VN") : "Chưa có"}</dd></div>
+          <div><dt className="text-xs text-muted">Backup cloud</dt><dd className="mt-1 font-bold">{storageConfigured ? `${cloudBackups.length} bản` : "Chưa cấu hình"}</dd></div>
+          <div><dt className="text-xs text-muted">Email</dt><dd className="mt-1 truncate font-bold">{emailSchedule.recipient || "Chưa cấu hình"}</dd></div>
+        </dl>
+      </section>
       {cloudStorageSection}
 
       <section className="grid gap-5 lg:grid-cols-2">
@@ -582,8 +595,7 @@ export default function BackupPage() {
             <div>
               <h2 className="font-extrabold">Gửi sao lưu tự động qua email</h2>
               <p className="mt-1 text-sm leading-6 text-muted">
-                Mỗi ngày hệ thống nén bản sao lưu và gửi trong khung giờ bạn
-                chọn.
+                Hệ thống tạo bản sao lưu lúc 00:00 ICT mỗi ngày và gửi liên kết tải qua email.
               </p>
             </div>
           </div>
@@ -673,7 +685,7 @@ export default function BackupPage() {
               nhất (phù hợp giới hạn 2 cron/ngày của gói Hobby).
             </span>
           </div>
-          <details className="mt-4 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs">
+          <details id="backup-diagnostics" className="mt-4 scroll-mt-24 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs">
             <summary className="cursor-pointer font-bold text-ink">Chẩn đoán kỹ thuật</summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <div>

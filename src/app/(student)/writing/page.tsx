@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -581,7 +581,7 @@ const nextSentence = useCallback(() => {
         <div className={cx.panel}>
           <div className="text-center mb-6">
             <div className="text-4xl mb-3">✍️</div>
-            <h2 className={cx.h2}>Ngân hàng câu hỏi</h2>
+            <h2 className={cx.h2}>Luyện câu hỏi</h2>
             <p className={cx.desc}>Chọn một thư mục để luyện IELTS Speaking, trắc nghiệm hoặc tự luận.</p>
           </div>
           {catLoading ? (

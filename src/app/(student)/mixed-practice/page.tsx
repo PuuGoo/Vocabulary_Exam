@@ -1,13 +1,14 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import SetPicker from "@/components/SetPicker";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 
-type SetSummary = { id: number; name: string; type: string; count: number; className: string | null };
+type SetSummary = { id: number; name: string; type: string; count: number; className: string | null; category?: string | null };
 type MixedWord = { id: number; setId: number; setName: string; meaning: string; term: string; ipa: string | null; example: string | null; wtype: string | null };
 type PracticeMode = "interleaved" | "fill" | "mc";
 type Question = MixedWord & { choices: string[]; questionMode: "fill" | "mc" };
@@ -37,7 +38,7 @@ export default function MixedPracticePage() {
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [selectedSetIds, setSelectedSetIds] = useState<number[]>([]);
-  const [search, setSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [mode, setMode] = useState<PracticeMode>("interleaved");
   const [count, setCount] = useState("20");
   const [starting, setStarting] = useState(false);
@@ -68,16 +69,12 @@ export default function MixedPracticePage() {
         if (!active) return;
         const eligible = (data.sets || []).filter((item: SetSummary) => item.type === "ielts_vocab" && item.count > 0);
         setSets(eligible);
-        setSelectedSetIds(eligible.slice(0, Math.min(3, eligible.length)).map((item: SetSummary) => item.id));
+        setSelectedSetIds([]);
       })
       .catch(() => { if (active) { setSets([]); setLoadError(true); } });
     return () => { active = false; };
   }, [loadAttempt]);
 
-  const filteredSets = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("vi");
-    return (sets || []).filter((item) => !query || `${item.name} ${item.className || ""}`.toLocaleLowerCase("vi").includes(query));
-  }, [search, sets]);
   const question = questions[index];
   const activeMode = question?.questionMode || "mc";
   const answerCorrect = checked && !!question && matches(answer, question.term);
@@ -166,35 +163,31 @@ export default function MixedPracticePage() {
   useEffect(() => { if (finished && !saved && !saving && !saveError) void saveResult(); });
   useEffect(() => { if (checked) nextButtonRef.current?.focus(); else if (started && !finished && activeMode === "fill") inputRef.current?.focus(); }, [activeMode, checked, finished, index, started]);
 
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (!started || finished) return;
-      const target = event.target as HTMLElement | null;
-      if (checked && event.key === "Enter") { event.preventDefault(); next(); return; }
-      if (activeMode === "mc" && !checked && !(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) {
-        const choiceIndex = Number(event.key) - 1;
-        if (choiceIndex >= 0 && choiceIndex < (question?.choices.length || 0)) { event.preventDefault(); grade(question.choices[choiceIndex]); }
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  });
-
   if (!started) return (
     <div className={cx.panel}>
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className={cx.h2}>🎯 Kiểm tra tổng hợp</h2><div className={cx.desc}>Trộn từ giữa nhiều chủ đề để kiểm tra khả năng nhớ thật, không phụ thuộc thứ tự của từng bộ.</div></div><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Trang học bài</button></div>
       {sets === null ? <div className={cx.empty} role="status">Đang tải các bộ từ...</div> : loadError ? <div className={cx.empty}>Không thể tải danh sách bộ từ.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div> : sets.length === 0 ? <div className={cx.empty}>Chưa có bộ từ IELTS phù hợp.</div> : (
         <div className="grid gap-5 lg:grid-cols-[1fr_300px]">
           <section className="rounded-xl border border-line bg-white p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">1. Chọn bộ từ</h3><div className="mt-0.5 text-xs text-muted">Đã chọn {selectedSetIds.length}/{sets.length} bộ</div></div><div className="flex gap-2"><button className="text-xs font-medium text-golddark hover:underline" onClick={() => setSelectedSetIds(sets.map((item) => item.id))}>Chọn tất cả</button><button className="text-xs text-muted hover:underline" onClick={() => setSelectedSetIds([])}>Bỏ chọn</button></div></div>
-            <input type="search" className={`${cx.input} !mb-3`} placeholder="Tìm bộ từ..." value={search} onChange={(event) => setSearch(event.target.value)} />
-            <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
-              {filteredSets.map((item) => {
-                const selected = selectedSetIds.includes(item.id);
-                return <label key={item.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 ${selected ? "border-gold bg-goldpale/40" : "border-line hover:border-gold/60"}`}><input type="checkbox" checked={selected} onChange={() => setSelectedSetIds((current) => selected ? current.filter((id) => id !== item.id) : [...current, item.id])} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{item.name}</span><span className="text-xs text-muted">{item.count} từ{item.className ? ` · ${item.className}` : ""}</span></span></label>;
-              })}
-              {filteredSets.length === 0 && <div className="py-6 text-center text-sm text-muted">Không tìm thấy bộ từ.</div>}
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div><h3 className="font-semibold">1. Chọn bộ từ</h3><div className="mt-0.5 text-xs text-muted">Đã chọn {selectedSetIds.length}/{sets.length} bộ</div></div>
+              {selectedSetIds.length > 0 && <div className="flex gap-2"><button className="text-xs text-muted hover:underline" onClick={() => setSelectedSetIds([])}>Bỏ chọn</button></div>}
             </div>
+            <SetPicker
+              sets={sets}
+              mode="multiple"
+              selected={selectedSetIds}
+              onSelect={(ids) => setSelectedSetIds(ids)}
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+              renderTrigger={(count, label) => (
+                <span className={`flex min-h-11 w-full items-center justify-between rounded-[11px] border border-gold/60 bg-goldpale/30 px-4 text-sm font-bold ${count ? "text-golddark" : "text-muted"}`}>
+                  {count ? `Đã chọn ${count} bộ` : "Chọn thư mục / bộ từ"}
+                  <span aria-hidden="true">▾</span>
+                </span>
+              )}
+            />
+            {selectedSetIds.length > 0 && <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto pr-1">{selectedSetIds.map((id) => { const set = sets.find((item) => item.id === id); return set ? <div key={set.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-sm"><span className="min-w-0 flex-1 truncate">{set.name}</span><button className="text-xs text-bad hover:underline" onClick={() => setSelectedSetIds((current) => current.filter((value) => value !== id))}>Bỏ</button></div> : null; })}</div>}
           </section>
           <section className="h-fit rounded-xl border border-gold/50 bg-goldpale/30 p-4 lg:sticky lg:top-4">
             <h3 className="font-semibold">2. Thiết lập bài</h3>
