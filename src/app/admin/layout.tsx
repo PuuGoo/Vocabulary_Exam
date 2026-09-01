@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
 import AppShell from "@/components/AppShell";
 import ToastHost from "@/components/Toast";
-import { ADMIN_TABS, LEARNING_TABS } from "@/lib/navigation";
+import { ADMIN_TABS } from "@/lib/navigation";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -10,7 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (session.role !== "admin") redirect("/study");
 
   return (
-    <AppShell displayName={session.displayName} roleLabel="Admin" tabs={[...LEARNING_TABS, ...ADMIN_TABS]}>
+    <AppShell displayName={session.displayName} roleLabel="Admin" mode="admin" tabs={ADMIN_TABS}>
       {children}
       <ToastHost />
     </AppShell>

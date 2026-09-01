@@ -1,29 +1,31 @@
-export const LEARNING_TABS = [
-  { href: "/dashboard", label: "Tổng quan" },
-  { href: "/vocabulary-vault", label: "Kho từ vựng" },
-  { href: "/assignments", label: "Bài tập của tôi" },
-  { href: "/feynman", label: "Feynman Lab" },
-  { href: "/study", label: "Chọn bộ từ & làm bài" },
-  { href: "/daily-challenge", label: "Thử thách hôm nay" },
-  { href: "/smart-review", label: "Ôn tập thông minh" },
-  { href: "/mixed-practice", label: "Kiểm tra tổng hợp" },
-  { href: "/print-sets", label: "Phiếu học PDF" },
-  { href: "/writing", label: "Ngân hàng câu hỏi" },
-  { href: "/dictionary", label: "Tra cứu từ vựng" },
-  { href: "/review", label: "Ôn từ sai" },
-  { href: "/leaderboard", label: "Bảng xếp hạng" },
-  { href: "/history", label: "Lịch sử của tôi" },
-  { href: "/progress", label: "Tiến độ của tôi" },
-  { href: "/notebook", label: "Sổ tay từ vựng" },
+export type NavigationItem = { href: string; label: string; icon: string };
+export type NavigationSection = { label?: string; items: NavigationItem[] };
+
+export const STUDENT_PRIMARY_NAV: NavigationItem[] = [
+  { href: "/dashboard", label: "Tổng quan", icon: "⌂" },
+  { href: "/study", label: "Học & luyện", icon: "▷" },
+  { href: "/assignments", label: "Bài tập", icon: "◇" },
+  { href: "/vocabulary-vault", label: "Kho từ vựng", icon: "Aa" },
+  { href: "/progress", label: "Tiến độ", icon: "↗" },
 ];
 
-export const ADMIN_TABS = [
-  { href: "/admin/backup", label: "Sao lưu dữ liệu" },
-  { href: "/admin/assignments", label: "Giao bài" },
-  { href: "/admin/sets", label: "Bộ từ vựng" },
-  { href: "/admin/import", label: "Nhập dữ liệu" },
-  { href: "/admin/classes", label: "Lớp học" },
-  { href: "/admin/users", label: "Người dùng" },
-  { href: "/admin/results", label: "Kết quả học sinh" },
-  { href: "/admin/progress", label: "Tiến độ học tập" },
+export const ADMIN_NAV_SECTIONS: NavigationSection[] = [
+  { items: [{ href: "/admin", label: "Tổng quan", icon: "⌂" }] },
+  { label: "Nội dung", items: [{ href: "/admin/sets", label: "Bộ từ & câu hỏi", icon: "Aa" }, { href: "/admin/import", label: "Nhập dữ liệu", icon: "↑" }] },
+  { label: "Học viên", items: [{ href: "/admin/users", label: "Người dùng", icon: "◎" }, { href: "/admin/classes", label: "Lớp học", icon: "▦" }] },
+  { label: "Đánh giá", items: [{ href: "/admin/assignments", label: "Giao bài", icon: "✓" }, { href: "/admin/results", label: "Kết quả", icon: "◇" }, { href: "/admin/progress", label: "Tiến độ", icon: "↗" }] },
+  { label: "Hệ thống", items: [{ href: "/admin/backup", label: "Sao lưu dữ liệu", icon: "↓" }] },
 ];
+
+export const STUDENT_QUICK_LINKS = [
+  ...STUDENT_PRIMARY_NAV,
+  { href: "/smart-review", label: "Smart Review", icon: "↻" }, { href: "/daily-challenge", label: "Thử thách hôm nay", icon: "✦" },
+  { href: "/mixed-practice", label: "Luyện tập tổng hợp", icon: "◎" }, { href: "/feynman", label: "Feynman Lab", icon: "F" },
+  { href: "/writing", label: "Ngân hàng câu hỏi", icon: "Q" }, { href: "/dictionary", label: "Từ điển", icon: "D" },
+  { href: "/review", label: "Ôn từ sai", icon: "↻" }, { href: "/leaderboard", label: "Bảng xếp hạng", icon: "#" },
+  { href: "/history", label: "Lịch sử học tập", icon: "◷" }, { href: "/notebook", label: "Sổ tay từ vựng", icon: "N" },
+  { href: "/print-sets", label: "Phiếu học PDF", icon: "P" },
+];
+export const ADMIN_QUICK_LINKS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);
+export const LEARNING_TABS = STUDENT_QUICK_LINKS;
+export const ADMIN_TABS = ADMIN_QUICK_LINKS;
