@@ -1,20 +1,29 @@
 import { gzipSync } from "node:zlib";
 import { createBackupExport } from "@/lib/backupExport";
 import { sendBackupEmail } from "@/lib/mailer";
+import { backupAttachmentError } from "@/lib/backupEmailAttachment";
 
-const MAX_EMAIL_ATTACHMENT_BYTES = 18 * 1024 * 1024;
+export type BackupEmailStage = "backup" | "compress" | "attachment" | "smtp";
+export type BackupEmailResult = { ok: true; filename: string; compressedBytes: number; originalBytes: number } | { ok: false; stage: BackupEmailStage; error: string };
 
-export async function createAndSendBackupEmail(to: string) {
-  const backup = await createBackupExport();
-  const compressed = gzipSync(Buffer.from(backup.body, "utf8"), { level: 9 });
-  if (compressed.byteLength > MAX_EMAIL_ATTACHMENT_BYTES) {
-    return {
-      ok: false as const,
-      error: `Bản sao lưu sau khi nén vẫn lớn hơn 18 MB (${(compressed.byteLength / 1024 / 1024).toFixed(1)} MB). Hãy tải thủ công hoặc chuyển sang lưu trữ đám mây.`,
-    };
+export async function createAndSendBackupEmail(to: string): Promise<BackupEmailResult> {
+  let backup: Awaited<ReturnType<typeof createBackupExport>>;
+  try { backup = await createBackupExport(); }
+  catch (error) {
+    console.error("createBackupExport failed:", error instanceof Error ? error.message : error);
+    return { ok: false, stage: "backup", error: "Không thể tạo bản sao lưu từ cơ sở dữ liệu. Hãy kiểm tra DATABASE_URL và log function trên Vercel." };
   }
+  let compressed: Buffer;
+  try { compressed = gzipSync(Buffer.from(backup.body, "utf8"), { level: 9 }); }
+  catch (error) {
+    console.error("gzip backup failed:", error instanceof Error ? error.message : error);
+    return { ok: false, stage: "compress", error: "Không thể nén bản sao lưu." };
+  }
+  const attachmentError = backupAttachmentError(compressed.byteLength);
+  if (attachmentError) return { ok: false, stage: "attachment", error: attachmentError };
   const filename = backup.filename.replace(/\.json$/i, ".json.gz");
   const recordCount = Object.values(backup.counts).reduce((sum, count) => sum + count, 0);
   const result = await sendBackupEmail({ to, attachment: compressed, filename, createdAt: backup.createdAt, recordCount });
-  return { ...result, filename, compressedBytes: compressed.byteLength, originalBytes: backup.byteLength };
+  if (!result.ok) return { ok: false, stage: "smtp", error: result.error || "Gửi email qua SMTP thất bại." };
+  return { ok: true, filename, compressedBytes: compressed.byteLength, originalBytes: backup.byteLength };
 }

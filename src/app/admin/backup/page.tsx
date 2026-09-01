@@ -71,6 +71,7 @@ async function uploadFileInChunks(file: File, onProgress: (received: number, tot
 type Preview = { createdAt: string; version: number; integrity: "verified" | "legacy"; counts: Record<BackupCollection, number>; unknownUsers: string[]; strategy: string };
 type RestoreReport = { added: Record<BackupCollection, number>; skipped: Record<BackupCollection, number>; warnings: string[] };
 type EmailSchedule = { enabled: boolean; recipient: string; hour?: number; timezone?: string; lastSentAt: string; lastError: string; lastCronAt: string; lastAttemptAt: string; lastAttemptStatus: string };
+type EmailStatus = { configured: boolean; reachable?: boolean; error?: string; port: number | null };
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -96,12 +97,18 @@ export default function BackupPage() {
   const [testingEmail, setTestingEmail] = useState(false);
   const [emailConfigured, setEmailConfigured] = useState(false);
   const [cronConfigured, setCronConfigured] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
+
+  async function refreshSchedule(verify = false) {
+    const response = await fetch(`/api/admin/backup/schedule${verify ? "?verify=1" : ""}`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error);
+    setEmailSchedule(payload.schedule); setEmailConfigured(payload.emailConfigured); setCronConfigured(payload.cronConfigured); setEmailStatus(payload.emailStatus);
+  }
 
   useEffect(() => {
     setLastBackupAt(localStorage.getItem(STORAGE_KEY));
-    fetch("/api/admin/backup/schedule", { cache: "no-store" })
-      .then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error); return payload; })
-      .then((payload) => { setEmailSchedule(payload.schedule); setEmailConfigured(payload.emailConfigured); setCronConfigured(payload.cronConfigured); })
+    refreshSchedule()
       .catch((error) => toast(error instanceof Error ? error.message : "Không thể tải lịch sao lưu."))
       .finally(() => setScheduleLoading(false));
   }, []);
@@ -125,7 +132,8 @@ export default function BackupPage() {
       const response = await fetch("/api/admin/backup/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: emailSchedule.recipient }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Không thể gửi email thử.");
-      toast("Đã gửi bản sao lưu thử. Hãy kiểm tra hộp thư và thư rác.");
+      toast(`Đã gửi bản sao lưu thử tới ${emailSchedule.recipient.trim()}. Hãy kiểm tra hộp thư và thư rác.`);
+      await refreshSchedule(true);
     } catch (error) { toast(error instanceof Error ? error.message : "Không thể gửi email thử."); }
     finally { setTestingEmail(false); }
   }
@@ -213,7 +221,12 @@ export default function BackupPage() {
           <div className="rounded-[13px] border border-line bg-[#FAF9FD] p-4 text-sm leading-6"><span className="block text-xs font-bold uppercase tracking-[0.12em] text-muted">Giờ gửi cố định</span><b className="mt-1 block text-base text-ink">00:00 mỗi ngày (ICT)</b><span className="mt-2 block text-xs leading-5 text-muted">Cron Vercel chạy 1 lần/ngày lúc 17:00 UTC để phù hợp giới hạn gói Hobby.</span></div>
         </div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center"><button type="button" onClick={() => void saveSchedule()} disabled={scheduleLoading || scheduleSaving || testingEmail} className="h-11 rounded-[11px] bg-gold px-5 text-sm font-bold text-white transition hover:bg-golddark disabled:cursor-wait disabled:opacity-50">{scheduleSaving ? "Đang lưu…" : "Lưu lịch tự động"}</button><button type="button" onClick={() => void sendTestEmail()} disabled={scheduleLoading || scheduleSaving || testingEmail || !emailConfigured} className="h-11 rounded-[11px] border border-line bg-white px-5 text-sm font-bold transition hover:border-[#CFC7FF] hover:text-gold disabled:cursor-wait disabled:opacity-50">{testingEmail ? "Đang tạo và gửi…" : "Gửi bản thử ngay"}</button><span className="text-xs leading-5 text-muted">Sao lưu được gửi lúc 00:00 ICT mỗi ngày qua một cron Vercel duy nhất (phù hợp giới hạn 2 cron/ngày của gói Hobby).</span></div>
-        {emailSchedule.lastSentAt ? <p className="mt-4 text-xs text-[#267A52]">✓ Gửi thành công gần nhất: {new Date(emailSchedule.lastSentAt).toLocaleString("vi-VN")}</p> : null}
+        <div className="mt-4 grid gap-2 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs sm:grid-cols-2">
+          <div><span className="block text-muted">Email server</span><b className={`mt-1 block ${emailConfigured ? "text-ink" : "text-[#A34141]"}`}>{!emailConfigured ? "Chưa cấu hình" : emailStatus?.reachable === false ? "Lỗi gửi gần nhất" : "Đã cấu hình"}</b></div>
+          <div><span className="block text-muted">Cron secret</span><b className={`mt-1 block ${cronConfigured ? "text-ink" : "text-[#A34141]"}`}>{cronConfigured ? "Đã cấu hình" : "Chưa cấu hình"}</b></div>
+        </div>
+        {emailSchedule.lastSentAt ? <p className="mt-4 text-xs text-[#267A52]">✓ Email gửi thành công gần nhất: {new Date(emailSchedule.lastSentAt).toLocaleString("vi-VN")}</p> : null}
+        {emailStatus?.error ? <p className="mt-2 text-xs text-[#A34141]">Chẩn đoán SMTP: {emailStatus.error}</p> : null}
         {emailSchedule.lastError ? <p className="mt-2 text-xs text-[#A34141]">Lỗi gần nhất: {emailSchedule.lastError}</p> : null}
         <div className="mt-4 grid gap-2 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs sm:grid-cols-2">
           <div><span className="block text-muted">Vercel Cron gọi gần nhất</span><b className={emailSchedule.lastCronAt ? "mt-1 block text-ink" : "mt-1 block text-[#A34141]"}>{emailSchedule.lastCronAt ? new Date(emailSchedule.lastCronAt).toLocaleString("vi-VN") : "Chưa ghi nhận lần gọi nào"}</b></div>

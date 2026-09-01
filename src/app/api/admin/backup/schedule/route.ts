@@ -2,7 +2,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { createAndSendBackupEmail } from "@/lib/backupEmail";
 import { getBackupEmailSchedule, saveBackupEmailSchedule } from "@/lib/backupSchedule";
-import { isEmailConfigured } from "@/lib/mailer";
+import { getEmailConfigStatus, verifyEmailTransport } from "@/lib/mailer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,11 +22,14 @@ async function requireAdmin() {
   return session?.role === "admin" ? session : null;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!await requireAdmin()) return Response.json({ error: "Bạn không có quyền xem lịch sao lưu." }, { status: 403 });
+  const email = getEmailConfigStatus();
+  const verify = new URL(request.url).searchParams.get("verify") === "1";
   return Response.json({
     schedule: await getBackupEmailSchedule(),
-    emailConfigured: isEmailConfigured(),
+    emailConfigured: email.configured,
+    emailStatus: { ...email, ...(verify ? await verifyEmailTransport() : {}) },
     cronConfigured: Boolean(process.env.CRON_SECRET),
   });
 }
@@ -49,8 +52,11 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { recipient?: unknown } | null;
   const email = z.string().trim().email().max(256).safeParse(body?.recipient);
   if (!email.success) return Response.json({ error: "Email nhận không hợp lệ." }, { status: 400 });
-  if (!isEmailConfigured()) return Response.json({ error: "SMTP chưa được cấu hình trên máy chủ." }, { status: 503 });
+  const config = getEmailConfigStatus();
+  if (!config.configured) return Response.json({ ok: false, stage: "smtp", error: config.error }, { status: 503 });
+  const verification = await verifyEmailTransport();
+  if (!verification.reachable) return Response.json({ ok: false, stage: "smtp", error: verification.error }, { status: 502 });
   const result = await createAndSendBackupEmail(email.data);
-  if (!result.ok) return Response.json({ error: result.error }, { status: 502 });
+  if (!result.ok) return Response.json(result, { status: result.stage === "attachment" ? 413 : 502 });
   return Response.json({ ok: true, result });
 }
