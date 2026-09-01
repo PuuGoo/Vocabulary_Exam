@@ -72,6 +72,7 @@ type Preview = { createdAt: string; version: number; integrity: "verified" | "le
 type RestoreReport = { added: Record<BackupCollection, number>; skipped: Record<BackupCollection, number>; warnings: string[] };
 type EmailSchedule = { enabled: boolean; recipient: string; hour?: number; timezone?: string; lastSentAt: string; lastError: string; lastCronAt: string; lastAttemptAt: string; lastAttemptStatus: string };
 type EmailStatus = { configured: boolean; reachable?: boolean; error?: string; port: number | null };
+type CloudBackup = { pathname: string; filename: string; size: number; uploadedAt: string; etag: string };
 
 function saveBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -98,12 +99,23 @@ export default function BackupPage() {
   const [emailConfigured, setEmailConfigured] = useState(false);
   const [cronConfigured, setCronConfigured] = useState(false);
   const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
+  const [storageConfigured, setStorageConfigured] = useState(false);
+  const [cloudBackups, setCloudBackups] = useState<CloudBackup[]>([]);
+  const [cloudLoading, setCloudLoading] = useState(true);
+  const [cloudDownloading, setCloudDownloading] = useState("");
 
   async function refreshSchedule(verify = false) {
     const response = await fetch(`/api/admin/backup/schedule${verify ? "?verify=1" : ""}`, { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error);
-    setEmailSchedule(payload.schedule); setEmailConfigured(payload.emailConfigured); setCronConfigured(payload.cronConfigured); setEmailStatus(payload.emailStatus);
+    setEmailSchedule(payload.schedule); setEmailConfigured(payload.emailConfigured); setCronConfigured(payload.cronConfigured); setEmailStatus(payload.emailStatus); setStorageConfigured(payload.storageConfigured);
+  }
+
+  async function refreshCloudBackups() {
+    const response = await fetch("/api/admin/backup/storage", { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Không thể tải danh sách backup đám mây.");
+    setStorageConfigured(payload.configured); setCloudBackups(payload.backups || []);
   }
 
   useEffect(() => {
@@ -111,6 +123,7 @@ export default function BackupPage() {
     refreshSchedule()
       .catch((error) => toast(error instanceof Error ? error.message : "Không thể tải lịch sao lưu."))
       .finally(() => setScheduleLoading(false));
+    refreshCloudBackups().catch((error) => toast(error instanceof Error ? error.message : "Không thể tải backup đám mây.")).finally(() => setCloudLoading(false));
   }, []);
 
   async function saveSchedule() {
@@ -132,10 +145,21 @@ export default function BackupPage() {
       const response = await fetch("/api/admin/backup/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recipient: emailSchedule.recipient }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Không thể gửi email thử.");
-      toast(`Đã gửi bản sao lưu thử tới ${emailSchedule.recipient.trim()}. Hãy kiểm tra hộp thư và thư rác.`);
-      await refreshSchedule(true);
+      toast(`Đã sao lưu dữ liệu lên bộ nhớ riêng tư và gửi liên kết tải tới ${emailSchedule.recipient.trim()}.`);
+      await Promise.all([refreshSchedule(true), refreshCloudBackups()]);
     } catch (error) { toast(error instanceof Error ? error.message : "Không thể gửi email thử."); }
     finally { setTestingEmail(false); }
+  }
+
+  async function downloadCloudBackup(pathname: string) {
+    setCloudDownloading(pathname);
+    try {
+      const response = await fetch("/api/admin/backup/storage/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pathname }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Không thể tạo liên kết tải backup.");
+      window.location.assign(payload.url);
+    } catch (error) { toast(error instanceof Error ? error.message : "Không thể tải backup đám mây."); }
+    finally { setCloudDownloading(""); }
   }
 
   async function downloadBackup(showToast = true) {
@@ -200,7 +224,16 @@ export default function BackupPage() {
     finally { setRestoring(false); }
   }
 
+  const cloudStorageSection = <section className="lexora-card overflow-hidden">
+    <div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6"><h2 className="font-extrabold">Backup trên đám mây</h2><p className="mt-1 text-sm leading-6 text-muted">Các file .json.gz được lưu trong Vercel Private Blob. Nút tải tạo liên kết riêng tư có hiệu lực 10 phút.</p></div>
+    <div className="p-5 sm:p-6">
+      <p className={`mb-4 text-sm font-bold ${storageConfigured ? "text-[#267A52]" : "text-[#A34141]"}`}>Cloud storage: {storageConfigured ? "Đã cấu hình" : "Chưa cấu hình"}</p>
+      {cloudLoading ? <p className="text-sm text-muted">Đang tải danh sách…</p> : !cloudBackups.length ? <p className="text-sm text-muted">Chưa có backup tự động nào trên đám mây.</p> : <div className="overflow-x-auto"><table className="w-full min-w-[640px] text-left text-sm"><thead><tr className="border-b border-line text-xs text-muted"><th className="pb-3 pr-4">Ngày tạo</th><th className="pb-3 pr-4">Tên file</th><th className="pb-3 pr-4">Dung lượng</th><th className="pb-3 text-right">Trạng thái</th></tr></thead><tbody>{cloudBackups.map((item) => <tr key={item.pathname} className="border-b border-line/70 last:border-0"><td className="py-3 pr-4 whitespace-nowrap">{new Date(item.uploadedAt).toLocaleString("vi-VN")}</td><td className="py-3 pr-4 font-medium">{item.filename}</td><td className="py-3 pr-4 whitespace-nowrap">{(item.size / 1024 / 1024).toFixed(1)} MB</td><td className="py-3 text-right"><button type="button" onClick={() => void downloadCloudBackup(item.pathname)} disabled={Boolean(cloudDownloading)} className="rounded-[9px] border border-line bg-white px-3 py-2 text-xs font-bold hover:text-gold disabled:cursor-wait disabled:opacity-50">{cloudDownloading === item.pathname ? "Đang tạo link…" : "Tải xuống"}</button></td></tr>)}</tbody></table></div>}
+    </div>
+  </section>;
+
   return <div className="lexora-page-enter mx-auto max-w-5xl space-y-6">
+    {cloudStorageSection}
     <section><p className="mb-2 text-sm font-semibold text-gold">Quản trị / An toàn dữ liệu</p><h1 className="text-[clamp(1.8rem,4vw,2.5rem)] font-extrabold tracking-[-0.045em]">Sao lưu và khôi phục</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-muted">Giữ một bản dữ liệu ngoại tuyến và gộp lại an toàn khi cần. Hệ thống không ghi đè tài khoản, mật khẩu hay dữ liệu đang có.</p></section>
 
     <section className="grid gap-5 lg:grid-cols-2">

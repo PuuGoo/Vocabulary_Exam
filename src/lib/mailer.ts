@@ -54,18 +54,23 @@ export async function verifyEmailTransport(): Promise<{ configured: boolean; rea
   catch (error) { return { configured: true, reachable: false, error: safeSmtpError(error) }; }
 }
 
-export async function sendBackupEmail(options: { to: string; attachment: Buffer; filename: string; createdAt: Date; recordCount: number }): Promise<{ ok: boolean; error?: string }> {
+export type BackupLinkEmailOptions = { to: string; filename: string; downloadUrl: string; createdAt: Date; recordCount: number; compressedBytes: number; checksum: string; expiresAt: Date };
+
+export function buildBackupLinkMessage(options: BackupLinkEmailOptions) {
+  return {
+    from: process.env.SMTP_FROM, to: options.to,
+    subject: `Lexora · Sao lưu tự động · ${options.createdAt.toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`,
+    text: `Sao lưu dữ liệu đã hoàn tất.\n\nTên file: ${options.filename}\nDung lượng: ${(options.compressedBytes / 1024 / 1024).toFixed(1)} MB\nThời gian tạo: ${options.createdAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}\nTổng số bản ghi: ${options.recordCount}\nSHA-256: ${options.checksum}\n\nTải bản sao lưu: ${options.downloadUrl}\n\nLiên kết tải hết hạn lúc ${options.expiresAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}. Bản sao lưu vẫn được lưu riêng tư trên hệ thống.`,
+    html: `<h2>Sao lưu dữ liệu đã hoàn tất</h2><p><b>Tên file:</b> ${options.filename}</p><p><b>Dung lượng:</b> ${(options.compressedBytes / 1024 / 1024).toFixed(1)} MB</p><p><b>Thời gian tạo:</b> ${options.createdAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</p><p><b>Tổng số bản ghi:</b> ${options.recordCount.toLocaleString("vi-VN")}</p><p><b>SHA-256:</b> <code>${options.checksum}</code></p><p><a href="${options.downloadUrl}">Tải bản sao lưu</a></p><p>Liên kết tải này hết hạn lúc ${options.expiresAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}. Bản sao lưu vẫn được lưu riêng tư trên hệ thống.</p>`,
+  };
+}
+
+export async function sendBackupLinkEmail(options: BackupLinkEmailOptions): Promise<{ ok: boolean; error?: string }> {
   const status = getEmailConfigStatus();
   const transport = getTransport();
   if (!transport) return { ok: false, error: status.error || "SMTP chưa được cấu hình đầy đủ." };
   try {
-    const info = await transport.sendMail({
-      from: process.env.SMTP_FROM, to: options.to,
-      subject: `Sao lưu Lexora · ${options.createdAt.toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`,
-      text: `Bản sao lưu Lexora được tạo lúc ${options.createdAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}. Tổng số bản ghi: ${options.recordCount}. File đã được nén gzip và có checksum SHA-256.`,
-      html: `<h2>Sao lưu Lexora</h2><p>Bản sao lưu được tạo lúc <b>${options.createdAt.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}</b>.</p><p>Tổng số bản ghi: <b>${options.recordCount.toLocaleString("vi-VN")}</b>.</p><p>File đính kèm đã được nén gzip và chứa checksum SHA-256.</p>`,
-      attachments: [{ filename: options.filename, content: options.attachment, contentType: "application/gzip" }],
-    });
+    const info = await transport.sendMail(buildBackupLinkMessage(options));
     if (info.rejected?.length || !info.accepted?.length) return { ok: false, error: "Địa chỉ người nhận bị máy chủ SMTP từ chối." };
     return { ok: true };
   } catch (error) {

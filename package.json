@@ -23,6 +23,7 @@
     "@capacitor/core": "^7.6.8",
     "@capacitor/splash-screen": "^7.0.5",
     "@capacitor/status-bar": "^7.0.6",
+    "@vercel/blob": "^2.8.0",
     "bcryptjs": "2.4.3",
     "dompurify": "^3.2.6",
     "dotenv": "^17.4.2",

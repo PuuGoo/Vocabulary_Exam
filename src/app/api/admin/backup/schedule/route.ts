@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { createAndSendBackupEmail } from "@/lib/backupEmail";
 import { getBackupEmailSchedule, saveBackupEmailSchedule } from "@/lib/backupSchedule";
 import { getEmailConfigStatus, verifyEmailTransport } from "@/lib/mailer";
+import { isBackupStorageConfigured } from "@/lib/backupStorage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ export async function GET(request: Request) {
     schedule: await getBackupEmailSchedule(),
     emailConfigured: email.configured,
     emailStatus: { ...email, ...(verify ? await verifyEmailTransport() : {}) },
+    storageConfigured: isBackupStorageConfigured(),
     cronConfigured: Boolean(process.env.CRON_SECRET),
   });
 }
@@ -57,6 +59,6 @@ export async function POST(request: Request) {
   const verification = await verifyEmailTransport();
   if (!verification.reachable) return Response.json({ ok: false, stage: "smtp", error: verification.error }, { status: 502 });
   const result = await createAndSendBackupEmail(email.data);
-  if (!result.ok) return Response.json(result, { status: result.stage === "attachment" ? 413 : 502 });
+  if (!result.ok) return Response.json(result, { status: 502 });
   return Response.json({ ok: true, result });
 }
