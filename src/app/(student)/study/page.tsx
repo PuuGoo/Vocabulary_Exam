@@ -6,6 +6,16 @@ import { useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
+import {
+  categoryBreadcrumbs,
+  categoryCollator,
+  listChildCategoryFolders,
+  parentCategoryPath,
+  searchCategorizedItems,
+  setsDirectlyInFolder,
+  splitCategoryPath,
+  UNCATEGORIZED_PATH,
+} from "@/lib/categoryPath";
 
 type SetSummary = {
   id: number;
@@ -21,15 +31,13 @@ type GoalSummary = {
   streak: number;
   completed: boolean;
 };
-const ALL_CATEGORIES = "__all__";
-const UNCATEGORIZED = "__uncategorized__";
-
 export default function StudyPage() {
   const router = useRouter();
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
+  const [currentFolderPath, setCurrentFolderPath] = useState("");
+  const [categoryPaths, setCategoryPaths] = useState<string[]>([]);
   const [timedSetId, setTimedSetId] = useState<number | null>(null);
   const [minutes, setMinutes] = useState("15");
   const [quickCount, setQuickCount] = useState("10");
@@ -38,40 +46,14 @@ export default function StudyPage() {
   >({});
   const [goal, setGoal] = useState<GoalSummary | null>(null);
 
-  const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const set of sets || []) {
-      const category = set.category?.trim() || UNCATEGORIZED;
-      counts.set(category, (counts.get(category) || 0) + 1);
-    }
-    return Array.from(counts.entries()).sort(([left], [right]) => {
-      if (left === UNCATEGORIZED) return 1;
-      if (right === UNCATEGORIZED) return -1;
-      return left.localeCompare(right, "vi");
-    });
-  }, [sets]);
-  const filteredSets = useMemo(() => {
+  const childFolders = useMemo(() => listChildCategoryFolders(currentFolderPath, categoryPaths, sets || []), [categoryPaths, currentFolderPath, sets]);
+  const directSets = useMemo(() => setsDirectlyInFolder(currentFolderPath, sets || []).sort((left, right) => categoryCollator.compare(left.name, right.name)), [currentFolderPath, sets]);
+  const breadcrumbs = useMemo(() => categoryBreadcrumbs(currentFolderPath), [currentFolderPath]);
+  const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("vi");
-    return (sets || []).filter((set) => {
-      const category = set.category?.trim() || UNCATEGORIZED;
-      const categoryMatches =
-        selectedCategory === ALL_CATEGORIES || category === selectedCategory;
-      const queryMatches =
-        !query ||
-        `${set.name} ${set.category || ""} ${set.className || ""}`
-          .toLocaleLowerCase("vi")
-          .includes(query);
-      return categoryMatches && queryMatches;
-    });
-  }, [sets, searchQuery, selectedCategory]);
-  const groupedSets = useMemo(() => {
-    const groups = new Map<string, SetSummary[]>();
-    for (const set of filteredSets) {
-      const label = set.category?.trim() || "Bộ từ khác";
-      groups.set(label, [...(groups.get(label) || []), set]);
-    }
-    return Array.from(groups.entries());
-  }, [filteredSets]);
+    if (!query) return [];
+    return searchCategorizedItems(query, sets || []).sort((left, right) => categoryCollator.compare(left.name, right.name));
+  }, [searchQuery, sets]);
   const timedSet = sets?.find((set) => set.id === timedSetId) || null;
 
   async function loadSets() {
@@ -82,6 +64,7 @@ export default function StudyPage() {
       if (!response.ok) throw new Error();
       const data = await response.json();
       setSets(data.sets || []);
+      setCategoryPaths(data.categories || []);
       void fetch("/api/study-sessions")
         .then(async (result) => {
           if (!result.ok) return;
@@ -130,6 +113,14 @@ export default function StudyPage() {
     if (!Number.isInteger(duration) || duration < 1 || duration > 120)
       return toast("Thời gian thi phải từ 1 đến 120 phút.");
     router.push(`/quiz/${setId}?mode=fill&timed=1&minutes=${duration}`);
+  }
+
+  function renderSetCard(set: SetSummary) {
+    return <CollectionCard key={set.id} set={set} position={sessionPositionBySetId[set.id] || 0}
+      onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }}
+      onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")}
+      onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }}
+      onTimed={() => setTimedSetId(set.id)} />;
   }
 
   return (
@@ -255,47 +246,25 @@ export default function StudyPage() {
               Bộ từ của bạn
             </h2>
             <p className="mt-1 text-xs text-muted">
-              Chọn một bộ từ, sau đó chọn chế độ luyện tập.
+              Chọn thư mục để xem các bộ từ bên trong.
             </p>
           </div>
           {sets && sets.length > 0 && (
             <label className="relative block w-full sm:w-72">
-              <span className="sr-only">Tìm bộ từ</span>
+              <span className="sr-only">Tìm thư mục hoặc bộ từ</span>
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted">
                 ⌕
               </span>
               <input
                 type="search"
                 className="h-10 w-full rounded-[11px] border border-line bg-white pl-9 pr-3 text-sm outline-none focus:border-gold"
-                placeholder="Tìm kiếm bộ từ..."
+                placeholder="Tìm thư mục hoặc bộ từ..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
             </label>
           )}
         </div>
-        {sets && sets.length > 0 && categories.length > 0 && (
-          <div
-            className="mb-4 flex flex-wrap gap-2"
-            aria-label="Lọc bộ từ theo danh mục"
-          >
-            <CategoryFilter
-              label="Tất cả"
-              count={sets.length}
-              active={selectedCategory === ALL_CATEGORIES}
-              onClick={() => setSelectedCategory(ALL_CATEGORIES)}
-            />
-            {categories.map(([category, count]) => (
-              <CategoryFilter
-                key={category}
-                label={category === UNCATEGORIZED ? "Chưa phân loại" : category}
-                count={count}
-                active={selectedCategory === category}
-                onClick={() => setSelectedCategory(category)}
-              />
-            ))}
-          </div>
-        )}
         {sets === null ? (
           <div className="grid gap-4 md:grid-cols-2">
             {[1, 2, 3, 4].map((item) => (
@@ -314,54 +283,25 @@ export default function StudyPage() {
             title="Chưa có bộ từ nào"
             detail="Hãy nhờ giáo viên hoặc quản trị viên thêm bộ từ vựng."
           />
-        ) : filteredSets.length === 0 ? (
+        ) : searchQuery.trim() && searchResults.length === 0 ? (
           <EmptyState
-            title="Không tìm thấy bộ từ phù hợp"
-            detail="Hãy thử danh mục hoặc từ khóa khác."
-            action="Xóa bộ lọc"
-            onAction={() => {
-              setSearchQuery("");
-              setSelectedCategory(ALL_CATEGORIES);
-            }}
+            title="Không tìm thấy thư mục hoặc bộ từ phù hợp"
+            detail="Hãy thử một từ khóa khác."
+            action="Xóa tìm kiếm"
+            onAction={() => setSearchQuery("")}
           />
+        ) : searchQuery.trim() ? (
+          <div className="space-y-4"><h3 className="text-sm font-extrabold">Kết quả tìm kiếm</h3><div className="grid items-start gap-4 md:grid-cols-2">{searchResults.map((set) => <div key={set.id} className="space-y-2"><p className="truncate px-1 text-[0.68rem] font-semibold text-muted" title={set.category || "Chưa phân loại"}>{splitCategoryPath(set.category).join(" › ") || "Chưa phân loại"}</p>{renderSetCard(set)}</div>)}</div></div>
         ) : (
-          <div className="space-y-6">
-            {groupedSets.map(([category, categorySets]) => (
-              <section
-                key={category}
-                className="rounded-[16px] border border-line bg-white/50 p-3 sm:p-4"
-              >
-                <div className="mb-3 flex items-center justify-between gap-2 px-1">
-                  <h3 className="flex items-center gap-2 text-sm font-extrabold">
-                    <span aria-hidden="true">📁</span>
-                    {category}
-                  </h3>
-                  <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-[0.68rem] font-bold text-[#6550DB]">
-                    {categorySets.length} bộ
-                  </span>
-                </div>
-                <div className="grid items-start gap-4 md:grid-cols-2">
-                  {categorySets.map((set) => (
-                    <CollectionCard
-                      key={set.id}
-                      set={set}
-                      position={sessionPositionBySetId[set.id] || 0}
-                      onLearn={() => {
-                        if (requireWords(set.id))
-                          router.push(`/learn/${set.id}`);
-                      }}
-                      onFill={() => startQuiz(set.id, "fill")}
-                      onMc={() => startQuiz(set.id, "mc")}
-                      onRoute={(route) => {
-                        if (requireWords(set.id))
-                          router.push(`/${route}/${set.id}`);
-                      }}
-                      onTimed={() => setTimedSetId(set.id)}
-                    />
-                  ))}
-                </div>
-              </section>
-            ))}
+          <div className="space-y-5">
+            <nav aria-label="Đường dẫn thư mục" className="flex flex-wrap items-center gap-2 text-xs font-bold">
+              <button type="button" onClick={() => setCurrentFolderPath("")} aria-current={!currentFolderPath ? "page" : undefined} className={!currentFolderPath ? "text-ink" : "text-gold hover:underline"}>Tất cả</button>
+              {breadcrumbs.map((crumb) => <span key={crumb.path} className="flex items-center gap-2"><span className="text-muted">›</span><button type="button" onClick={() => setCurrentFolderPath(crumb.path)} aria-current={crumb.path === currentFolderPath ? "page" : undefined} className={crumb.path === currentFolderPath ? "text-ink" : "text-gold hover:underline"}>{crumb.label}</button></span>)}
+            </nav>
+            {currentFolderPath && <button type="button" onClick={() => setCurrentFolderPath(currentFolderPath === UNCATEGORIZED_PATH ? "" : parentCategoryPath(currentFolderPath))} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line bg-white px-3 text-xs font-bold hover:border-[#CFC7FF] hover:text-gold">← Quay lại</button>}
+            {childFolders.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{childFolders.map((folder) => <button key={folder.path} type="button" onClick={() => setCurrentFolderPath(folder.path)} aria-label={`Mở thư mục ${folder.name}, ${folder.count} bộ`} className="lexora-card flex min-h-24 items-center gap-4 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EFECFF] text-xl" aria-hidden="true">📁</span><span className="min-w-0"><b className="line-clamp-2 text-sm leading-5">{folder.name}</b><span className="mt-1 block text-xs text-muted">{folder.count} bộ</span></span><span className="ml-auto text-muted" aria-hidden="true">›</span></button>)}</div>}
+            {directSets.length > 0 && <div className="grid items-start gap-4 md:grid-cols-2">{directSets.map(renderSetCard)}</div>}
+            {childFolders.length === 0 && directSets.length === 0 && <EmptyState title="Thư mục này chưa có bộ từ" detail="Hãy quay lại và chọn một thư mục khác." />}
           </div>
         )}
       </section>
@@ -407,34 +347,6 @@ export default function StudyPage() {
         </Modal>
       )}
     </div>
-  );
-}
-
-function CategoryFilter({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition ${active ? "border-[#7865EE] bg-[#7865EE] text-white shadow-[0_4px_12px_rgba(120,101,238,0.2)]" : "border-line bg-white text-muted hover:border-[#CFC7FF] hover:text-ink"}`}
-    >
-      <span className="max-w-[180px] truncate">{label}</span>
-      <span
-        className={`rounded-full px-1.5 py-0.5 text-[0.62rem] ${active ? "bg-white/20 text-white" : "bg-[#F1EFF8] text-muted"}`}
-      >
-        {count}
-      </span>
-    </button>
   );
 }
 

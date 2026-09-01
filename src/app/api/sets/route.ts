@@ -40,7 +40,8 @@ export async function GET() {
 
   const rows = classFilter ? await query.where(classFilter) : await query;
 
-  return NextResponse.json({ sets: rows });
+  const categories = await db.select({ name: vocabCategories.name }).from(vocabCategories);
+  return NextResponse.json({ sets: rows, categories: categories.map((category) => category.name) });
 }
 
 const createSchema = z.object({

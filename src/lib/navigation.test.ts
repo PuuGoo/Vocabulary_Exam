@@ -23,7 +23,7 @@ test("dashboards contain no former demo data", () => {
 });
 test("admin shell excludes student utilities and fake assistant", () => {
   const shell = readFileSync("src/components/AppShell.tsx", "utf8");
-  assert.match(shell, /!isAdminMode&&<><PomodoroTimer\/><AssignmentReminder\/><\/>/);
+  assert.match(shell, /!isAdminMode\s*&&\s*\([\s\S]*?<PomodoroTimer\s*\/>[\s\S]*?<AssignmentReminder\s*\/>/);
   assert.equal(shell.includes("Hỏi trợ lý Lexi"), false);
   assert.equal(shell.includes("<ThemeToggle"), false);
 });
