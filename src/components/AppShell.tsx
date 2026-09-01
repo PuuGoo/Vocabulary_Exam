@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -12,24 +12,9 @@ import {
   STUDENT_PRIMARY_NAV,
   type NavigationItem,
 } from "@/lib/navigation";
+import { breadcrumbsForPath, routePageTitle } from "@/lib/routeMeta";
 
 type Tab = { href: string; label: string };
-const names: Record<string, string> = {
-  dashboard: "Tổng quan",
-  study: "Học & luyện",
-  assignments: "Bài tập",
-  "vocabulary-vault": "Kho từ vựng",
-  progress: "Tiến độ",
-  admin: "Khu quản trị",
-  sets: "Bộ từ & câu hỏi",
-  users: "Người dùng",
-  classes: "Lớp học",
-  results: "Kết quả",
-  import: "Nhập dữ liệu",
-  backup: "Sao lưu dữ liệu",
-  "smart-review": "Smart Review",
-  history: "Lịch sử học tập",
-};
 const studyPaths = [
   "/learn/",
   "/quiz/",
@@ -80,6 +65,14 @@ export default function AppShell({
       return (
         pathname === "/study" || studyPaths.some((p) => pathname.startsWith(p))
       );
+    if (item.href === "/my-words")
+      return (
+        pathname === "/my-words" ||
+        pathname === "/vocabulary-vault" ||
+        pathname === "/dictionary" ||
+        pathname === "/notebook" ||
+        pathname === "/review"
+      );
     return pathname === item.href || pathname.startsWith(item.href + "/");
   }
   useEffect(() => setDrawerOpen(false), [pathname]);
@@ -94,11 +87,8 @@ export default function AppShell({
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
-  const breadcrumb = useMemo(() => {
-    const parts = pathname.split("/").filter(Boolean);
-    const current = parts.at(-1) || "dashboard";
-    return names[current] || names[parts[0]] || current.replaceAll("-", " ");
-  }, [pathname]);
+  const breadcrumb = useMemo(() => routePageTitle(pathname), [pathname]);
+  const crumbStack = useMemo(() => breadcrumbsForPath(pathname), [pathname]);
   async function logout() {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -220,7 +210,9 @@ export default function AppShell({
               <div className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted">
                 {isAdminMode ? "Khu quản trị" : "Học viện Lexora"}
               </div>
-              <div className="truncate text-sm font-bold">{breadcrumb}</div>
+              <div className="truncate text-sm font-bold">
+                {crumbStack.length > 1 ? crumbStack.at(-1)?.label : breadcrumb}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -273,8 +265,8 @@ export default function AppShell({
               <span>
                 {item.href === "/study"
                   ? "Học"
-                  : item.href === "/vocabulary-vault"
-                    ? "Kho từ"
+                  : item.href === "/my-words"
+                    ? "Từ"
                     : item.label}
               </span>
             </Link>
@@ -295,6 +287,7 @@ export default function AppShell({
         open={quickOpen}
         onClose={() => setQuickOpen(false)}
         tabs={tabs}
+        mode={mode}
       />
     </div>
   );

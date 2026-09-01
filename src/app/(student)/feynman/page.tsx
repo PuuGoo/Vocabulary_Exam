@@ -1,12 +1,13 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import SetPicker from "@/components/SetPicker";
 
-type SetRow = { id: number; name: string; type: string; count: number };
+type SetRow = { id: number; name: string; type: string; count: number; category?: string | null };
 type StudyWord = { id: number; setId: number; setName: string; setType: string; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; example: string | null; wtype: string | null; ipa: string | null; confidence: number | null; reviewCount: number | null; nextReviewAt: string | null };
 
 function target(word: StudyWord) { return word.term || word.v1 || ""; }
@@ -24,6 +25,8 @@ export default function FeynmanPage() {
   const [saving, setSaving] = useState(false);
   const [sessionSize, setSessionSize] = useState(5);
   const [completed, setCompleted] = useState(0);
+  const [selectedSetIds, setSelectedSetIds] = useState<number[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   async function loadHome() {
     try {
@@ -75,8 +78,27 @@ export default function FeynmanPage() {
       : <div className="mt-4"><div className="rounded-[10px] border border-ok/30 bg-[#e5f4ea] p-4"><div className="text-[0.72rem] font-semibold uppercase text-ok">Định nghĩa tham chiếu</div><div className="mt-1 font-medium">{word.meaning}</div>{word.example && <div className="mt-2 text-sm italic text-muted">“{word.example}”</div>}</div><p className="mt-4 text-center text-sm font-medium">So sánh với lời giải thích của bạn: mức độ hiểu hiện tại?</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><button disabled={saving} className={`${cx.btn} border border-bad bg-badbg text-bad`} onClick={() => void rate(1)}>1 · Còn mơ hồ<br/><span className="text-[0.68rem] font-normal">Ôn lại sau 1 ngày</span></button><button disabled={saving} className={`${cx.btn} border border-gold bg-goldpale text-golddark`} onClick={() => void rate(2)}>2 · Hiểu phần lớn<br/><span className="text-[0.68rem] font-normal">Ôn lại sau 3–14 ngày</span></button><button disabled={saving} className={`${cx.btn} border border-ok/40 bg-[#e5f4ea] text-ok`} onClick={() => void rate(3)}>3 · Giải thích rõ<br/><span className="text-[0.68rem] font-normal">Ôn lại sau 7–60 ngày</span></button></div></div>}
   </div>;
 
+  const selectableSets = (sets || []).filter((set) => set.count > 0);
   return <div className={cx.panel}><div className="mb-5"><h2 className={cx.h2}>Phòng Feynman</h2><p className={cx.desc + " !mb-0"}>Hiểu thật sâu bằng cách tự giảng lại: khảo sát → đặt câu hỏi → tự giải thích → đối chiếu → ôn ngắt quãng.</p></div>
     <div className="mb-5 grid gap-3 sm:grid-cols-3"><div className="rounded-lg border border-line bg-white p-3"><b className="block text-xl">{due.length}</b><span className="text-[0.75rem] text-muted">từ đến lịch tự giảng lại</span></div><div className="rounded-lg border border-line bg-white p-3 sm:col-span-2"><div className="flex flex-wrap items-center gap-2"><span className="text-sm">Số từ mỗi lượt:</span>{[5,10].map((count) => <button key={count} className={`rounded-full border px-3 py-1 text-sm ${sessionSize === count ? "border-ink bg-ink text-white" : "border-line"}`} onClick={() => setSessionSize(count)}>{count}</button>)}{due.length > 0 && <button className={`${cx.btn} ${cx.btnGold} !py-1.5 ml-auto`} onClick={() => startQueue(due.slice(0, sessionSize))}>Ôn từ đến hạn</button>}</div></div></div>
-    <h3 className="mb-3 font-serif">Chọn bộ từ để bắt đầu</h3>{sets === null ? <div className={cx.empty}>Đang tải...</div> : sets.length === 0 ? <div className={cx.empty}>Chưa có bộ từ phù hợp.</div> : <div className="grid gap-3 sm:grid-cols-2">{sets.filter((set) => set.count > 0).map((set) => <button key={set.id} onClick={() => void startSet(set.id)} className="lexora-card rounded-[10px] p-4 text-left hover:bg-goldpale/20"><b>{set.name}</b><div className="mt-1 text-[0.75rem] text-muted">{set.count} từ · Bắt đầu tự giảng lại →</div></button>)}</div>}
+    <h3 className="mb-3 font-serif">Chọn bộ từ để bắt đầu</h3>{sets === null ? <div className={cx.empty}>Đang tải...</div> : selectableSets.length === 0 ? <div className={cx.empty}>Chưa có bộ từ phù hợp.</div> : (
+      <div className="max-w-md space-y-3">
+        <SetPicker
+          sets={selectableSets}
+          mode="single"
+          selected={selectedSetIds}
+          onSelect={(ids) => { setSelectedSetIds(ids); if (ids[0] != null) void startSet(ids[0]); }}
+          open={pickerOpen}
+          onOpenChange={setPickerOpen}
+          renderTrigger={(count, label) => (
+            <span className={`flex min-h-11 w-full items-center justify-between rounded-[11px] border border-gold/60 bg-goldpale/30 px-4 text-sm font-bold ${count ? "text-golddark" : "text-muted"}`}>
+              {count ? label : "Chọn thư mục / bộ từ"}
+              <span aria-hidden="true">▾</span>
+            </span>
+          )}
+        />
+        {sets.length > 25 && <p className="text-[0.72rem] text-muted">Hệ thống phân loại theo thư mục để dễ tìm khi có nhiều bộ từ.</p>}
+      </div>
+    )}
   </div>;
 }

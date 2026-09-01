@@ -3,9 +3,9 @@
 Hệ thống kiểm tra từ vựng luyện thi IELTS — có đăng nhập phân quyền (admin/học sinh),
 trang quản trị, import từ vựng bằng CSV/Excel, và giao diện làm bài cho học sinh.
 
-Đây là ứng dụng **production thật sự**: Next.js (App Router) + PostgreSQL + Drizzle ORM,
-không dùng localStorage hay dữ liệu giả — mọi thứ đọc/ghi qua API vào database thật,
-đã được kiểm thử end-to-end với PostgreSQL trước khi bàn giao.
+Đây là ứng dụng **production thật sự**: Next.js (App Router) + PostgreSQL + Drizzle ORM.
+Dữ liệu chính được lưu trong PostgreSQL và đọc/ghi qua API. `localStorage` chỉ được sử dụng cho
+UI preferences, draft và khả năng khôi phục phiên cục bộ khi phù hợp; không thay thế dữ liệu nghiệp vụ trong database.
 
 ## Công nghệ
 

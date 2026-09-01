@@ -1,11 +1,11 @@
-export type NavigationItem = { href: string; label: string; icon: string };
+﻿export type NavigationItem = { href: string; label: string; icon: string };
 export type NavigationSection = { label?: string; items: NavigationItem[] };
 
 export const STUDENT_PRIMARY_NAV: NavigationItem[] = [
   { href: "/dashboard", label: "Tổng quan", icon: "⌂" },
   { href: "/study", label: "Học & luyện", icon: "▷" },
   { href: "/assignments", label: "Bài tập", icon: "◇" },
-  { href: "/vocabulary-vault", label: "Kho từ vựng", icon: "Aa" },
+  { href: "/my-words", label: "Từ của tôi", icon: "Aa" },
   { href: "/progress", label: "Tiến độ", icon: "↗" },
 ];
 
@@ -19,11 +19,17 @@ export const ADMIN_NAV_SECTIONS: NavigationSection[] = [
 
 export const STUDENT_QUICK_LINKS = [
   ...STUDENT_PRIMARY_NAV,
-  { href: "/smart-review", label: "Smart Review", icon: "↻" }, { href: "/daily-challenge", label: "Thử thách hôm nay", icon: "✦" },
-  { href: "/mixed-practice", label: "Luyện tập tổng hợp", icon: "◎" }, { href: "/feynman", label: "Feynman Lab", icon: "F" },
-  { href: "/writing", label: "Ngân hàng câu hỏi", icon: "Q" }, { href: "/dictionary", label: "Từ điển", icon: "D" },
-  { href: "/review", label: "Ôn từ sai", icon: "↻" }, { href: "/leaderboard", label: "Bảng xếp hạng", icon: "#" },
-  { href: "/history", label: "Lịch sử học tập", icon: "◷" }, { href: "/notebook", label: "Sổ tay từ vựng", icon: "N" },
+  { href: "/smart-review", label: "Smart Review", icon: "↻" },
+  { href: "/review-center", label: "Ôn tập", icon: "↻" },
+  { href: "/daily-challenge", label: "Thử thách hôm nay", icon: "✦" },
+  { href: "/mixed-practice", label: "Luyện tập tổng hợp", icon: "◎" },
+  { href: "/feynman", label: "Feynman Lab", icon: "F" },
+  { href: "/writing", label: "Luyện câu hỏi", icon: "Q" },
+  { href: "/dictionary", label: "Tra cứu", icon: "D" },
+  { href: "/notebook", label: "Đã lưu", icon: "N" },
+  { href: "/review", label: "Cần ôn", icon: "↻" },
+  { href: "/leaderboard", label: "Bảng xếp hạng", icon: "#" },
+  { href: "/history", label: "Lịch sử", icon: "◷" },
   { href: "/print-sets", label: "Phiếu học PDF", icon: "P" },
 ];
 export const ADMIN_QUICK_LINKS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);

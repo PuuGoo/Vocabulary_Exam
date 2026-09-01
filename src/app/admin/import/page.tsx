@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cx } from "@/components/ui";
+import SetPicker from "@/components/SetPicker";
 import { toast } from "@/components/Toast";
 
 type SetSummary = { id: number; name: string; type: string; count: number; category?: string | null };
@@ -25,6 +26,7 @@ export default function AdminImportPage() {
   const [classId, setClassId] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewRows, setPreviewRows] = useState<Record<string, unknown>[] | null>(null);
+  const [previewLimit, setPreviewLimit] = useState(50);
   const [submitting, setSubmitting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,6 +84,7 @@ export default function AdminImportPage() {
 
   async function handlePickFile(f: File) {
     setFile(f);
+    setPreviewLimit(50);
     const ext = f.name.split(".").pop()?.toLowerCase();
     if (ext === "csv") {
       const Papa = (await import("papaparse")).default;
@@ -156,24 +159,29 @@ export default function AdminImportPage() {
           <input className={`${cx.input} !mb-0`} type="search" placeholder="Nhập tên bộ từ..." value={destinationSearch} onChange={(event) => setDestinationSearch(event.target.value)} />
         </label>
       </div>
-      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <label className={cx.label}>Chọn đích nhập dữ liệu</label>
-        <span className="text-xs font-semibold text-muted">{filteredDestinationSets.length}/{sets.length} bộ phù hợp</span>
-      </div>
-      <select className={cx.input} value={target} onChange={(e) => setTarget(e.target.value)}>
-        <option value="__new_vocab">+ Tạo bộ mới — Từ vựng IELTS</option>
-        <option value="__new_verb">+ Tạo bộ mới — Động từ bất quy tắc</option>
-        {destinationSets.map((s) => (
-          <option key={s.id} value={s.id}>
-            Thêm vào: {s.name}{s.category ? ` · ${s.category}` : " · Chưa phân loại"}
-          </option>
-        ))}
-      </select>
-      {sets.length > 0 && filteredDestinationSets.length === 0 && (
-        <div className="mb-3 rounded-[10px] border border-[#E4DFFC] bg-[#F7F5FF] px-3 py-2.5 text-xs text-muted">
-          Không có bộ từ khớp bộ lọc. Hãy đổi danh mục hoặc xóa từ khóa tìm kiếm.
+      <div className="mb-3">
+        <span className={cx.label}>Chọn đích nhập dữ liệu</span>
+        <div className="flex flex-wrap gap-2">
+          {[["__new_vocab", "+ Tạo bộ mới — Từ vựng IELTS"], ["__new_verb", "+ Tạo bộ mới — Động từ bất quy tắc"]].map(([value, label]) => (
+            <button key={value} type="button" onClick={() => setTarget(value)} className={`rounded-full border px-3.5 py-2 text-xs font-bold ${target === value ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:border-gold"}`}>{label}</button>
+          ))}
         </div>
-      )}
+        <div className="mt-3">
+          <span className="mb-1.5 block text-xs font-bold text-muted">Thêm vào bộ có sẵn</span>
+          <SetPicker
+            sets={sets}
+            mode="single"
+            selected={target && String(Number(target)) === target ? [Number(target)] : []}
+            onSelect={(ids) => { setTarget(ids[0] != null ? String(ids[0]) : "__new_vocab"); }}
+            renderTrigger={(count, label) => (
+              <span className={`flex min-h-11 w-full items-center justify-between rounded-[11px] border border-gold/60 bg-goldpale/30 px-4 text-sm font-bold ${count ? "text-golddark" : "text-muted"}`}>
+                {count ? (sets.find((item) => item.id === Number(target))?.name || label) : "Chọn thư mục / bộ từ để thêm vào"}
+                <span aria-hidden="true">▾</span>
+              </span>
+            )}
+          />
+        </div>
+      </div>
 
       {(target === "__new_vocab" || target === "__new_verb") && (
         <>
@@ -263,7 +271,7 @@ export default function AdminImportPage() {
       {previewRows && previewRows.length > 0 && (
         <>
           <div className={cx.desc}>
-            Xem trước đầy đủ {previewRows.length} dòng dữ liệu:
+            Xem trước {Math.min(previewLimit, previewRows.length)}/{previewRows.length} dòng dữ liệu:
           </div>
           <div className="max-h-[55vh] overflow-auto border border-line rounded-lg mb-3">
             <table className={cx.table}>
@@ -277,7 +285,7 @@ export default function AdminImportPage() {
                 </tr>
               </thead>
               <tbody>
-                {previewRows.map((r, i) => (
+                {previewRows.slice(0, previewLimit).map((r, i) => (
                   <tr key={i}>
                     {cols.map((c) => (
                       <td className={cx.td} key={c}>
@@ -289,7 +297,10 @@ export default function AdminImportPage() {
               </tbody>
             </table>
           </div>
-          <button className={`${cx.btn} ${cx.btnGold}`} disabled={submitting} onClick={confirmImport}>
+                    {previewRows.length > previewLimit && (
+            <button type="button" className={`${cx.btn} ${cx.btnGhost} mb-2`} onClick={() => setPreviewLimit(previewRows.length)}>Xem th?m {previewRows.length - previewLimit} d?ng</button>
+          )}
+<button className={`${cx.btn} ${cx.btnGold}`} disabled={submitting} onClick={confirmImport}>
             {submitting ? "Đang nhập..." : `Xác nhận nhập ${previewRows.length} mục`}
           </button>
         </>
