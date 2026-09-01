@@ -21,7 +21,9 @@ export type ScheduledBackupDependencies = {
 
 export async function runScheduledBackup(deps: ScheduledBackupDependencies) {
   await deps.heartbeat(deps.now);
+  console.log("[backup-cron] heartbeat recorded");
   const schedule = await deps.getSchedule();
+  console.log("[backup-cron] schedule loaded", { enabled: schedule.enabled, recipientConfigured: Boolean(schedule.recipient) });
   if (!schedule.enabled || !schedule.recipient) return { ok: true as const, skipped: "disabled" };
   const local = zonedScheduleParts(deps.now, schedule.timezone);
   if (await deps.alreadySent(local.date)) return { ok: true as const, skipped: "already-sent" };
@@ -32,16 +34,19 @@ export async function runScheduledBackup(deps: ScheduledBackupDependencies) {
   }
   if (isStaleBackupAttempt(schedule.lastAttemptAt, schedule.lastAttemptStatus, deps.now)) await deps.release(local.date);
   if (!await deps.claim(local.date)) return { ok: true as const, skipped: "already-claimed" };
+  console.log("[backup-cron] claim acquired");
   await deps.attempt(deps.now, "running");
   try {
     const sent = await deps.send(schedule.recipient);
     if (!sent.ok) {
+      console.error("[backup-cron] send failed", { stage: sent.stage, error: sent.error });
       await Promise.all([deps.result(local.date, null, sent.error), deps.attempt(new Date(), "error")]);
       await deps.release(local.date);
       return { ok: false as const, error: sent.error, stage: sent.stage, status: 502 };
     }
     const sentAt = new Date();
     await Promise.all([deps.result(local.date, sentAt), deps.attempt(sentAt, "success")]);
+    console.log("[backup-cron] success");
     return { ok: true as const, sentAt: sentAt.toISOString(), recipient: schedule.recipient };
   } catch (cause) {
     console.error("Scheduled backup failed:", cause instanceof Error ? cause.message : cause);

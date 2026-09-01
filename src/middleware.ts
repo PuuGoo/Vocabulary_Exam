@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/session";
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+export const BACKUP_CRON_PATH = "/api/cron/backup-email/daily";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Vercel Cron has no browser session. The route itself remains protected by
+  // Authorization: Bearer <CRON_SECRET> and must be allowed to reach it.
+  if (pathname === BACKUP_CRON_PATH) {
+    return NextResponse.next();
+  }
 
   // Always allow Next internals, api auth routes, and static assets
   if (

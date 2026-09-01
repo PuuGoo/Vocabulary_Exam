@@ -68,7 +68,11 @@ export async function sendBackupEmail(options: { to: string; attachment: Buffer;
     });
     if (info.rejected?.length || !info.accepted?.length) return { ok: false, error: "Địa chỉ người nhận bị máy chủ SMTP từ chối." };
     return { ok: true };
-  } catch (error) { console.error("sendBackupEmail failed:", error instanceof Error ? error.message : error); return { ok: false, error: safeSmtpError(error) }; }
+  } catch (error) {
+    const safeError = safeSmtpError(error);
+    console.error("[backup-email] smtp failed", { code: String((error as MailError)?.code || "UNKNOWN"), error: safeError });
+    return { ok: false, error: safeError };
+  }
 }
 
 export async function sendPasswordResetEmail(to: string, resetUrl: string): Promise<boolean> {
