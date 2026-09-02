@@ -34,3 +34,27 @@ test("shared Learn exits before generic StudyModeNav and SharedWordMode routing"
   const genericNav = shared.indexOf("<StudyModeNav");
   assert.ok(canonicalLearn >= 0 && genericNav > canonicalLearn);
 });
+
+test("shared question quiz delegates to canonical stable-option practice", () => {
+  const shared = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
+  assert.match(shared, /import SubjectQuestionPractice/);
+  assert.match(shared, /<SubjectQuestionPractice/);
+  assert.doesNotMatch(shared, /correctOptions\.includes\(answer\)/);
+  assert.doesNotMatch(shared, /function SharedQuestionMode/);
+});
+
+test("shared category hub renders explicit folders before direct content", () => {
+  const shared = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
+  assert.match(shared, /payload\.folders/);
+  assert.match(shared, /currentFolder/);
+  assert.match(shared, /breadcrumbs/);
+});
+
+test("admin and public documents share one Node binary response helper", () => {
+  const admin = readFileSync("src/app/api/admin/category-documents/[id]/file/route.ts", "utf8");
+  const shared = readFileSync("src/app/api/share/[token]/documents/[id]/route.ts", "utf8");
+  assert.match(admin, /buildCategoryDocumentResponse/);
+  assert.match(shared, /buildCategoryDocumentResponse/);
+  assert.match(shared, /runtime = "nodejs"/);
+  assert.doesNotMatch(shared, /new NextResponse\(document\.fileData/);
+});

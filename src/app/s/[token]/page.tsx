@@ -5,9 +5,9 @@ import SharePasswordGate from "@/components/SharePasswordGate";
 
 export const metadata: Metadata = { title: "Nội dung được chia sẻ · Lexora", robots: { index: false, follow: false } };
 
-export default async function SharedPage({ params, searchParams }: { params: { token: string }; searchParams: { mode?: string; set?: string; collection?: string } }) {
+export default async function SharedPage({ params, searchParams }: { params: { token: string }; searchParams: { mode?: string; set?: string; collection?: string; folder?: string } }) {
   const setId = Number(searchParams.set);
-  const result = await getPublicSharePayload(params.token, searchParams.mode, Number.isInteger(setId) && setId > 0 ? setId : undefined, searchParams.collection);
+  const result = await getPublicSharePayload(params.token, searchParams.mode, Number.isInteger(setId) && setId > 0 ? setId : undefined, searchParams.collection, searchParams.folder);
   if (result.error === "password_required" && result.share) return <SharePasswordGate identifier={params.token} title={result.metadata.title} />;
   if (!result.share || result.error === "target_missing") return <ShareError title="Không tìm thấy nội dung được chia sẻ." />;
   if (result.error === "mode_not_allowed") return <ShareError title="Chế độ học này không được bật cho liên kết." />;

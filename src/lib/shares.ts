@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, isNull, like, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryDocuments, categoryQuestions, vocabCategories, vocabSets, words, shareLinks } from "@/db/schema";
 import { buildShareUrl, defaultShareModes, getPublicShareUrl, modesForSetType, QUESTION_SHARE_MODES, SHARE_CONTENT_KEYS, SHARE_TARGET_TYPES, SHARE_ACCESS_MODES, VOCAB_SHARE_MODES, type ShareAccessMode, type ShareContentKey, type ShareTargetType, type ShareLearningMode } from "@/lib/shareConfig";
@@ -7,6 +7,8 @@ import { questionCollectionForType, questionTypesForCollections } from "@/lib/qu
 import { hashShareToken as hashToken } from "@/lib/shareToken";
 import { normalizeShareSlug, validateShareSlug } from "@/lib/shareSlug";
 import { hashSharePassword, hasShareAccess, validateSharePassword } from "@/lib/sharePassword";
+import { buildSharedFolderView, resolveSharedFolderPath } from "@/lib/shareCategoryTree";
+import { normalizeCategoryPath } from "@/lib/categoryPath";
 
 export { buildShareUrl, defaultShareModes, getPublicShareUrl, modesForSetType, QUESTION_SHARE_MODES, SHARE_TARGET_TYPES, SHARE_ACCESS_MODES, VOCAB_SHARE_MODES } from "@/lib/shareConfig";
 export { hashShareToken } from "@/lib/shareToken";
@@ -33,11 +35,12 @@ function parseContentSnapshot(value: string | null | undefined): ContentSnapshot
 export async function getCategoryShareContent(targetId: number) {
   const [category] = await db.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(eq(vocabCategories.id, targetId)).limit(1);
   if (!category) return null;
-  const inCategoryTree = (column: typeof vocabSets.category | typeof categoryQuestions.category | typeof categoryDocuments.category) => or(eq(column, category.name), like(column, `${category.name} / %`));
+  const escapedRoot = category.name.replace(/[\\%_]/g, (value) => `\\${value}`);
+  const inCategoryTree = (column: typeof vocabSets.category | typeof categoryQuestions.category | typeof categoryDocuments.category) => or(eq(column, category.name), sql<boolean>`${column} LIKE ${`${escapedRoot} / %`} ESCAPE '\\'`);
   const [sets, questions, documents] = await Promise.all([
-    db.select({ id: vocabSets.id, name: vocabSets.name }).from(vocabSets).where(inCategoryTree(vocabSets.category)),
-    db.select({ id: categoryQuestions.id, questionType: categoryQuestions.questionType }).from(categoryQuestions).where(inCategoryTree(categoryQuestions.category)),
-    db.select({ id: categoryDocuments.id, title: categoryDocuments.title, fileName: categoryDocuments.fileName }).from(categoryDocuments).where(inCategoryTree(categoryDocuments.category)),
+    db.select({ id: vocabSets.id, name: vocabSets.name, category: vocabSets.category }).from(vocabSets).where(inCategoryTree(vocabSets.category)),
+    db.select({ id: categoryQuestions.id, questionType: categoryQuestions.questionType, category: categoryQuestions.category }).from(categoryQuestions).where(inCategoryTree(categoryQuestions.category)),
+    db.select({ id: categoryDocuments.id, title: categoryDocuments.title, fileName: categoryDocuments.fileName, category: categoryDocuments.category }).from(categoryDocuments).where(inCategoryTree(categoryDocuments.category)),
   ]);
   const counts = { quiz: 0, essay: 0, speaking: 0 };
   for (const question of questions) { const key = questionCollectionForType(question.questionType); if (key) counts[key] += 1; }
@@ -61,7 +64,7 @@ export async function getShareByIdentifier(identifier: string) {
 
 export const getShareByToken = getShareByIdentifier;
 
-export async function getPublicSharePayload(token: string, requestedMode?: string, requestedSetId?: number, requestedCollection?: string) {
+export async function getPublicSharePayload(token: string, requestedMode?: string, requestedSetId?: number, requestedCollection?: string, requestedFolder?: string) {
   const share = await getShareByToken(token);
   if (!share) return { share: null, error: "not_found" as const };
   if (share.passwordEnabled && !await hasShareAccess(share)) {
@@ -86,9 +89,11 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
   const selectedTypes = questionTypesForCollections(share.contentSelectionList);
   const activeQuestionMeta = categoryContent.questions.filter((item) => selectedTypes.includes(item.questionType) && (share.includeNewContent || share.contentSnapshotValue.questionIds.includes(item.id)));
   const collectionKeys = ["quiz", "essay", "speaking"].filter((key) => share.contentSelectionList.includes(key as ShareContentKey));
+  const folderView = buildSharedFolderView(category.name, requestedFolder, { sets: allowedSets, questions: activeQuestionMeta, documents: allowedDocuments });
+  if (!folderView) return { share, error: "target_missing" as const };
   if (!requestedMode && !requestedSetId && !requestedCollection) {
-    const collections = collectionKeys.map((key) => ({ key, count: activeQuestionMeta.filter((item) => questionCollectionForType(item.questionType) === key).length })).filter((item) => item.count > 0);
-    return { share, payload: { targetType: "category_hub", title: category.name, count: allowedSets.length + activeQuestionMeta.length + allowedDocuments.length, allowedModes: share.allowedModesList, sets: allowedSets, documents: allowedDocuments, collections } };
+    const collections = folderView.collections.filter((item) => collectionKeys.includes(item.key));
+    return { share, payload: { targetType: "category_hub", title: folderView.currentFolder.name, count: folderView.folders.length + folderView.sets.length + collections.reduce((total, item) => total + item.count, 0) + folderView.documents.length, allowedModes: share.allowedModesList, root: folderView.root, currentFolder: folderView.currentFolder, folders: folderView.folders, sets: folderView.sets, documents: folderView.documents, collections } };
   }
   if (requestedSetId) {
     const selectedSet = allowedSets.find((item) => item.id === requestedSetId);
@@ -99,11 +104,14 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
     return { share, payload: { targetType: "vocab_set", title: set.name, count: publicWords.length, setType: set.type, allowedModes: share.allowedModesList.filter((mode) => modesForSetType(set.type).includes(mode)), words: publicWords } };
   }
   const requestedTypes = requestedCollection && collectionKeys.includes(requestedCollection) ? questionTypesForCollections([requestedCollection]) : selectedTypes;
+  const requestedFolderPath = resolveSharedFolderPath(category.name, requestedFolder);
+  if (!requestedFolderPath) return { share, error: "target_missing" as const };
+  const directQuestionIds = new Set(folderView.questions.map((item) => item.id));
   const questionScope = share.includeNewContent
-    ? and(or(eq(categoryQuestions.category, category.name), like(categoryQuestions.category, `${category.name} / %`)), inArray(categoryQuestions.questionType, requestedTypes))
-    : share.contentSnapshotValue.questionIds.length ? and(inArray(categoryQuestions.id, share.contentSnapshotValue.questionIds), inArray(categoryQuestions.questionType, requestedTypes)) : null;
+    ? and(eq(categoryQuestions.category, normalizeCategoryPath(requestedFolderPath)), inArray(categoryQuestions.questionType, requestedTypes))
+    : directQuestionIds.size ? and(inArray(categoryQuestions.id, [...directQuestionIds]), inArray(categoryQuestions.questionType, requestedTypes)) : null;
   const questions = requestedTypes.length && questionScope ? await db.select({ id: categoryQuestions.id, question: categoryQuestions.question, answer: categoryQuestions.answer, vnMeaning: categoryQuestions.vnMeaning, phonetic: categoryQuestions.phonetic, questionType: categoryQuestions.questionType, options: categoryQuestions.options, correctOption: categoryQuestions.correctOption, correctOptions: categoryQuestions.correctOptions, explanation: categoryQuestions.explanation }).from(categoryQuestions).where(questionScope).orderBy(categoryQuestions.order, categoryQuestions.id) : [];
-  return { share, payload: { targetType: share.targetType, title: category.name, count: questions.length, allowedModes: share.allowedModesList, questions: questions.map((question) => ({ ...question, options: (() => { try { const parsed = JSON.parse(question.options || "[]"); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })(), correctOptions: parseModes(question.correctOptions).length ? parseModes(question.correctOptions) : question.correctOption ? [question.correctOption] : [] })) } };
+  return { share, payload: { targetType: share.targetType, title: folderView.currentFolder.name, count: questions.length, collection: requestedCollection || null, folder: folderView.currentFolder.relativePath, allowedModes: share.allowedModesList, questions: questions.map((question) => ({ ...question, options: (() => { try { const parsed = JSON.parse(question.options || "[]"); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })(), correctOptions: parseModes(question.correctOptions).length ? parseModes(question.correctOptions) : question.correctOption ? [question.correctOption] : [] })) } };
 }
 
 export async function getActiveShare(targetType: ShareTargetType, targetId: number) {

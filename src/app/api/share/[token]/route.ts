@@ -4,7 +4,7 @@ import { getPublicSharePayload } from "@/lib/shares";
 export async function GET(request: NextRequest, { params }: { params: { token: string } }) {
   const mode = request.nextUrl.searchParams.get("mode") || undefined;
   const setId = Number(request.nextUrl.searchParams.get("set"));
-  const result = await getPublicSharePayload(params.token, mode, Number.isInteger(setId) && setId > 0 ? setId : undefined, request.nextUrl.searchParams.get("collection") || undefined);
+  const result = await getPublicSharePayload(params.token, mode, Number.isInteger(setId) && setId > 0 ? setId : undefined, request.nextUrl.searchParams.get("collection") || undefined, request.nextUrl.searchParams.get("folder") || undefined);
   if (!result.share) return NextResponse.json({ error: "SHARE_NOT_FOUND" }, { status: 404 });
   if (result.error === "password_required") return NextResponse.json({ error: "Mật khẩu được yêu cầu.", code: "SHARE_PASSWORD_REQUIRED", title: result.metadata.title, passwordRequired: true }, { status: 401, headers: { "Cache-Control": "no-store" } });
   if (result.error === "mode_not_allowed") return NextResponse.json({ error: "MODE_NOT_ALLOWED" }, { status: 403 });
