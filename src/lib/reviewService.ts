@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   classMembers, learningGoals, mistakes, reviewSessions, setReviewProgress,
@@ -44,6 +44,8 @@ async function accessFilter(userId: number, role: string) {
 
 export async function buildReviewPlanForUser(userId: number, role: string, options?: { extra?: boolean; now?: Date }) {
   const now = options?.now || new Date();
+  const todayStart = new Date(`${dateInVietnam(now)}T00:00:00+07:00`);
+  const tomorrowStart = addDays(todayStart, 1);
   const allowed = await accessFilter(userId, role);
   const dueWordWhere = and(eq(wordProgress.userId, userId), lte(wordProgress.nextReviewAt, now), allowed);
   const dueSetWhere = and(eq(setReviewProgress.userId, userId), lte(setReviewProgress.nextReviewAt, now), sql`${setReviewProgress.stage} between 1 and 3`, allowed);
@@ -57,7 +59,7 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
       .from(setReviewProgress).innerJoin(vocabSets, eq(vocabSets.id, setReviewProgress.setId)).where(dueSetWhere),
     db.select({ dailyReviewWords: learningGoals.dailyReviewWords }).from(learningGoals).where(eq(learningGoals.userId, userId)).limit(1),
     db.select({ count: sql<number>`coalesce(sum(${reviewSessions.wordCount}), 0)::int` }).from(reviewSessions)
-      .where(and(eq(reviewSessions.userId, userId), sql`date(${reviewSessions.completedAt} at time zone 'Asia/Ho_Chi_Minh') = date(${now} at time zone 'Asia/Ho_Chi_Minh')`)),
+      .where(and(eq(reviewSessions.userId, userId), gte(reviewSessions.completedAt, todayStart), lt(reviewSessions.completedAt, tomorrowStart))),
   ]);
 
   let dueSetReviews: DueSetReview[] = [];
