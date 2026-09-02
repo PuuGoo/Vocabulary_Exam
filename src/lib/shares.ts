@@ -6,6 +6,7 @@ import { buildShareUrl, defaultShareModes, getPublicShareUrl, modesForSetType, Q
 import { questionCollectionForType, questionTypesForCollections } from "@/lib/questionCollections";
 import { hashShareToken as hashToken } from "@/lib/shareToken";
 import { normalizeShareSlug, validateShareSlug } from "@/lib/shareSlug";
+import { hashSharePassword, hasShareAccess, validateSharePassword } from "@/lib/sharePassword";
 
 export { buildShareUrl, defaultShareModes, getPublicShareUrl, modesForSetType, QUESTION_SHARE_MODES, SHARE_TARGET_TYPES, SHARE_ACCESS_MODES, VOCAB_SHARE_MODES } from "@/lib/shareConfig";
 export { hashShareToken } from "@/lib/shareToken";
@@ -63,6 +64,12 @@ export const getShareByToken = getShareByIdentifier;
 export async function getPublicSharePayload(token: string, requestedMode?: string, requestedSetId?: number, requestedCollection?: string) {
   const share = await getShareByToken(token);
   if (!share) return { share: null, error: "not_found" as const };
+  if (share.passwordEnabled && !await hasShareAccess(share)) {
+    const [target] = share.targetType === "vocab_set"
+      ? await db.select({ title: vocabSets.name }).from(vocabSets).where(eq(vocabSets.id, share.targetId)).limit(1)
+      : await db.select({ title: vocabCategories.name }).from(vocabCategories).where(eq(vocabCategories.id, share.targetId)).limit(1);
+    return { share, error: "password_required" as const, metadata: { title: target?.title || "Nội dung được chia sẻ", passwordRequired: true } };
+  }
   if (requestedMode && !share.allowedModesList.includes(requestedMode)) return { share, error: "mode_not_allowed" as const };
   if (share.targetType === "vocab_set") {
     const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type }).from(vocabSets).where(eq(vocabSets.id, share.targetId)).limit(1);
@@ -120,7 +127,7 @@ export function isShareSlugConflict(error: unknown) {
   return candidate?.code === "23505" && (candidate.constraint_name === "share_links_custom_slug_idx" || candidate.constraint === "share_links_custom_slug_idx");
 }
 
-export async function createOrUpdateShare(input: { targetType: ShareTargetType; targetId: number; createdByUserId: number; accessMode: ShareAccessMode; allowedModes: string[]; contentSelection?: string[]; includeNewContent?: boolean; customSlug?: string | null; origin?: string }) {
+export async function createOrUpdateShare(input: { targetType: ShareTargetType; targetId: number; createdByUserId: number; accessMode: ShareAccessMode; allowedModes: string[]; contentSelection?: string[]; includeNewContent?: boolean; customSlug?: string | null; passwordEnabled?: boolean; newPassword?: string; origin?: string }) {
   const modes = defaultShareModes(input.targetType).filter((mode) => input.allowedModes.includes(mode));
   const contentSelection = SHARE_CONTENT_KEYS.filter((key) => (input.contentSelection || SHARE_CONTENT_KEYS).includes(key));
   const includeNewContent = input.includeNewContent ?? true;
@@ -134,6 +141,19 @@ export async function createOrUpdateShare(input: { targetType: ShareTargetType; 
     };
   }
   const current = await getManagedShare(input.targetType, input.targetId);
+  const passwordEnabled = input.passwordEnabled ?? current?.passwordEnabled ?? false;
+  let passwordHash = current?.passwordHash || null;
+  let passwordVersion = current?.passwordVersion || 0;
+  let passwordChangedAt = current?.passwordChangedAt || null;
+  if (passwordEnabled) {
+    if (input.newPassword !== undefined) {
+      const passwordError = validateSharePassword(input.newPassword);
+      if (passwordError) throw Object.assign(new Error(passwordError), { code: "INVALID_SHARE_PASSWORD" });
+      passwordHash = await hashSharePassword(input.newPassword); passwordVersion += 1; passwordChangedAt = new Date();
+    } else if (!passwordHash) throw Object.assign(new Error("Hãy đặt mật khẩu trước khi bật bảo vệ liên kết."), { code: "SHARE_PASSWORD_REQUIRED" });
+  } else if (passwordHash || current?.passwordEnabled) {
+    passwordHash = null; passwordVersion += 1; passwordChangedAt = new Date();
+  }
   let customSlug = current?.customSlug || null;
   if (input.customSlug !== undefined) {
     if (input.customSlug === null || !input.customSlug.trim()) customSlug = null;
@@ -145,17 +165,17 @@ export async function createOrUpdateShare(input: { targetType: ShareTargetType; 
     }
   }
   if (input.accessMode === "restricted") {
-    if (current) await db.update(shareLinks).set({ accessMode: "restricted", customSlug, updatedAt: new Date() }).where(eq(shareLinks.id, current.id));
-    return { id: current?.id || null, token: null, secureUrl: null, publicUrl: null, customSlug, accessMode: "restricted", allowedModes: modes };
+    if (current) await db.update(shareLinks).set({ accessMode: "restricted", customSlug, passwordEnabled, passwordHash, passwordVersion, passwordChangedAt, updatedAt: new Date() }).where(eq(shareLinks.id, current.id));
+    return { id: current?.id || null, token: null, secureUrl: null, publicUrl: null, customSlug, passwordEnabled, accessMode: "restricted", allowedModes: modes };
   }
   if (current) {
-    await db.update(shareLinks).set({ accessMode: "anyone_with_link", customSlug, allowedModes: JSON.stringify(modes), contentSelection: JSON.stringify(contentSelection), includeNewContent, contentSnapshot: JSON.stringify(contentSnapshot), updatedAt: new Date() }).where(eq(shareLinks.id, current.id));
-    return { id: current.id, token: null, secureUrl: null, publicUrl: getPublicShareUrl({ customSlug }, input.origin), customSlug, accessMode: "anyone_with_link", allowedModes: modes };
+    await db.update(shareLinks).set({ accessMode: "anyone_with_link", customSlug, passwordEnabled, passwordHash, passwordVersion, passwordChangedAt, allowedModes: JSON.stringify(modes), contentSelection: JSON.stringify(contentSelection), includeNewContent, contentSnapshot: JSON.stringify(contentSnapshot), updatedAt: new Date() }).where(eq(shareLinks.id, current.id));
+    return { id: current.id, token: null, secureUrl: null, publicUrl: getPublicShareUrl({ customSlug }, input.origin), customSlug, passwordEnabled, accessMode: "anyone_with_link", allowedModes: modes };
   }
   const token = randomBytes(32).toString("base64url");
-  const [created] = await db.insert(shareLinks).values({ tokenHash: hashToken(token), customSlug, targetType: input.targetType, targetId: input.targetId, createdByUserId: input.createdByUserId, accessMode: "anyone_with_link", allowedModes: JSON.stringify(modes), contentSelection: JSON.stringify(contentSelection), includeNewContent, contentSnapshot: JSON.stringify(contentSnapshot) }).returning({ id: shareLinks.id });
+  const [created] = await db.insert(shareLinks).values({ tokenHash: hashToken(token), customSlug, targetType: input.targetType, targetId: input.targetId, createdByUserId: input.createdByUserId, accessMode: "anyone_with_link", passwordEnabled, passwordHash, passwordVersion, passwordChangedAt, allowedModes: JSON.stringify(modes), contentSelection: JSON.stringify(contentSelection), includeNewContent, contentSnapshot: JSON.stringify(contentSnapshot) }).returning({ id: shareLinks.id });
   const secureUrl = getPublicShareUrl({ rawToken: token }, input.origin);
-  return { id: created.id, token, secureUrl, publicUrl: getPublicShareUrl({ customSlug, rawToken: token }, input.origin), customSlug, accessMode: "anyone_with_link", allowedModes: modes };
+  return { id: created.id, token, secureUrl, publicUrl: getPublicShareUrl({ customSlug, rawToken: token }, input.origin), customSlug, passwordEnabled, accessMode: "anyone_with_link", allowedModes: modes };
 }
 
 export async function revokeShare(id: number) {

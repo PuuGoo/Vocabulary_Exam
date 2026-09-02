@@ -4,6 +4,9 @@ import { buildShareUrl, CATEGORY_SHARE_MODES, defaultShareModes, getPublicShareU
 import { hashShareToken } from "./shareToken";
 import { questionCollectionForType, questionTypesForCollections } from "./questionCollections";
 import { normalizeShareSlug, RESERVED_SHARE_SLUGS, validateShareSlug } from "./shareSlug";
+import { shareAccessMatches, validateSharePassword } from "./sharePasswordPolicy";
+import { hashSharePassword, verifySharePassword } from "./sharePasswordHash";
+import { clearShareUnlockFailures, recordShareUnlockFailure, SHARE_UNLOCK_LOCK_MS, SHARE_UNLOCK_MAX_FAILURES, shareUnlockRateStatus } from "./shareUnlockRateLimit";
 
 test("share tokens are one-way hashed and URLs use the capability token", () => {
   const token = "AbCdEf1234567890-token";
@@ -45,4 +48,30 @@ test("share aliases enforce length and reserved names", () => {
 test("public URL prefers a custom alias without replacing the secure token", () => {
   assert.equal(getPublicShareUrl({ customSlug: "nha-cua", rawToken: "secure-token" }, "https://example.test"), "https://example.test/s/nha-cua");
   assert.equal(getPublicShareUrl({ rawToken: "secure-token" }, "https://example.test"), "https://example.test/s/secure-token");
+});
+
+test("share passwords are hashed, case-sensitive and support Unicode", async () => {
+  const raw = "ATTT-Đề-2026";
+  const hash = await hashSharePassword(raw);
+  assert.notEqual(hash, raw);
+  assert.equal(await verifySharePassword(raw, hash), true);
+  assert.equal(await verifySharePassword("attt-Đề-2026", hash), false);
+});
+
+test("share password policy and access proof binding are deterministic", () => {
+  assert.ok(validateSharePassword("12345"));
+  assert.equal(validateSharePassword("123456"), null);
+  assert.ok(validateSharePassword("x".repeat(129)));
+  assert.equal(shareAccessMatches({ shareId: 1, passwordVersion: 2 }, { id: 1, passwordVersion: 2 }), true);
+  assert.equal(shareAccessMatches({ shareId: 1, passwordVersion: 1 }, { id: 1, passwordVersion: 2 }), false);
+  assert.equal(shareAccessMatches({ shareId: 2, passwordVersion: 2 }, { id: 1, passwordVersion: 2 }), false);
+});
+
+test("share unlock limiter blocks repeated failures and expires deterministically", () => {
+  const key = "share-1:client"; const now = 1_000_000;
+  clearShareUnlockFailures(key);
+  for (let index = 0; index < SHARE_UNLOCK_MAX_FAILURES; index += 1) recordShareUnlockFailure(key, now + index);
+  assert.equal(shareUnlockRateStatus(key, now + 10).limited, true);
+  assert.equal(shareUnlockRateStatus(key, now + SHARE_UNLOCK_LOCK_MS + 10).limited, false);
+  clearShareUnlockFailures(key);
 });
