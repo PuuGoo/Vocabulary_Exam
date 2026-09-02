@@ -26,3 +26,7 @@ test("timed assignments only match timed fill attempts", () => {
   assert.equal(assignmentProgress(timed, [attempt({ mode: "fill", timed: true })], beforeDue).status, "completed");
   assert.equal(assignmentHref({ setId: 4, mode: "timed", timeLimitMinutes: 25 }), "/quiz/4?mode=fill&timed=1&minutes=25");
 });
+
+test("fill assignments open the first-attempt Test flow", () => {
+  assert.equal(assignmentHref({ setId: 42, mode: "fill", timeLimitMinutes: null }), "/quiz/42?mode=fill&session=test");
+});

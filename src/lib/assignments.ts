@@ -73,5 +73,5 @@ export function assignmentHref(input: { setId: number; mode: string; timeLimitMi
   if (input.mode === "pronunciation") return `/pronunciation/${setId}`;
   if (input.mode === "sentence") return `/sentence/${setId}`;
   if (input.mode === "timed") return `/quiz/${setId}?mode=fill&timed=1&minutes=${input.timeLimitMinutes || 15}`;
-  return `/quiz/${setId}?mode=fill`;
+  return `/quiz/${setId}?mode=fill&session=test`;
 }
