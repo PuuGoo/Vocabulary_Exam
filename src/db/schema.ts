@@ -275,6 +275,50 @@ export const wordProgress = pgTable(
     dueIdx: index("word_progress_user_due_idx").on(table.userId, table.nextReviewAt),
   })
 );
+
+// A row exists only after the user explicitly completes the set's first Learn
+// session. Existing catalogue sets therefore remain NOT_STARTED after rollout.
+export const setReviewProgress = pgTable(
+  "set_review_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    setId: integer("set_id").notNull().references(() => vocabSets.id, { onDelete: "cascade" }),
+    stage: integer("stage").notNull().default(1), // next checkpoint: 1..3; 4 = consolidated
+    initialCompletedAt: timestamp("initial_completed_at", { withTimezone: true }).notNull(),
+    review1CompletedAt: timestamp("review_1_completed_at", { withTimezone: true }),
+    review2CompletedAt: timestamp("review_2_completed_at", { withTimezone: true }),
+    review3CompletedAt: timestamp("review_3_completed_at", { withTimezone: true }),
+    lastReviewAt: timestamp("last_review_at", { withTimezone: true }),
+    nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
+    lastAccuracy: integer("last_accuracy"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("set_review_progress_user_set_idx").on(table.userId, table.setId),
+    dueIdx: index("set_review_progress_user_due_idx").on(table.userId, table.nextReviewAt),
+  }),
+);
+
+export const reviewSessions = pgTable(
+  "review_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    idempotencyKey: varchar("idempotency_key", { length: 96 }).notNull(),
+    sessionType: varchar("session_type", { length: 24 }).notNull(),
+    setId: integer("set_id").references(() => vocabSets.id, { onDelete: "set null" }),
+    setReviewStage: integer("set_review_stage"),
+    wordCount: integer("word_count").notNull(),
+    correctCount: integer("correct_count").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqRequest: uniqueIndex("review_sessions_user_key_idx").on(table.userId, table.idempotencyKey),
+    dailyIdx: index("review_sessions_user_completed_idx").on(table.userId, table.completedAt),
+  }),
+);
 export const quizProgress = pgTable(
   "quiz_progress",
   {
@@ -363,6 +407,7 @@ export const learningGoals = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     dailyWords: integer("daily_words").notNull().default(10),
+    dailyReviewWords: integer("daily_review_words").notNull().default(40),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
@@ -494,6 +539,8 @@ export type TeachBackNote = typeof teachBackNotes.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;
+export type SetReviewProgress = typeof setReviewProgress.$inferSelect;
+export type ReviewSession = typeof reviewSessions.$inferSelect;
 export type QuizProgress = typeof quizProgress.$inferSelect;
 export type WritingProgress = typeof writingProgress.$inferSelect;
 export type WordBookmark = typeof wordBookmarks.$inferSelect;

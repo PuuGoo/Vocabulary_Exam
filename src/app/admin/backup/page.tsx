@@ -24,6 +24,8 @@ const LABELS: Record<BackupCollection, string> = {
   teachBackNotes: "Ghi chú giảng lại",
   mistakes: "Từ hay sai",
   wordProgress: "Tiến độ từ",
+  setReviewProgress: "Tiến độ củng cố bộ",
+  reviewSessions: "Phiên ôn tập",
   wordBookmarks: "Từ đã lưu",
   studySessions: "Phiên học",
   learningGoals: "Mục tiêu",

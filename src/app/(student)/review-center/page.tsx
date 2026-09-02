@@ -17,26 +17,29 @@ type ReviewSummary = {
 export default function ReviewCenterPage() {
   const [summary, setSummary] = useState<ReviewSummary | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [dailyReviewWords, setDailyReviewWords] = useState(40);
 
   async function load() {
     setSummary(null);
     setLoadError(false);
     try {
-      const [smartRes, mistakeRes, bookmarkRes] = await Promise.all([
-        fetch("/api/smart-review?limit=0"),
+      const [smartRes, mistakeRes, bookmarkRes, settingsRes] = await Promise.all([
+        fetch("/api/review/plan"),
         fetch("/api/mistakes").catch(() => null),
         fetch("/api/bookmarks").catch(() => null),
+        fetch("/api/review/settings").catch(() => null),
       ]);
       if (!smartRes.ok) throw new Error("load failed");
       const smart = await smartRes.json();
       const mistakes = mistakeRes?.ok ? await mistakeRes.json() : null;
       const bookmarks = bookmarkRes?.ok ? await bookmarkRes.json() : null;
+      if (settingsRes?.ok) setDailyReviewWords((await settingsRes.json()).dailyReviewWords || 40);
       setSummary({
-        due: smart.summary?.due ?? 0,
-        difficult: smart.summary?.difficult ?? 0,
-        forgotten: smart.summary?.forgotten ?? 0,
-        stale: smart.summary?.stale ?? 0,
-        new: smart.summary?.new ?? 0,
+        due: smart.today?.totalDueWords ?? 0,
+        difficult: 0,
+        forgotten: 0,
+        stale: smart.today?.totalDueWords ?? 0,
+        new: 0,
         mistakes: mistakes ? (mistakes.mistakes || []).length : null,
         saved: bookmarks ? (bookmarks.bookmarks || []).length : null,
       });
@@ -62,7 +65,7 @@ export default function ReviewCenterPage() {
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-3">
-          <ReviewCard href="/smart-review" icon="↻" title="Đến hạn" detail={summary.due || 0} sub="Smart Review tự xếp lịch 1 · 3 · 7 · 14 · 28 ngày" cta="Mở ôn tập thông minh" />
+          <ReviewCard href="/review-today" icon="↻" title="Ôn tập hôm nay" detail={summary.due || 0} sub="Kế hoạch có giới hạn, ưu tiên từ quá hạn và từ hay sai." cta="Bắt đầu ôn hôm nay" />
           <ReviewCard href="/review" icon="✕" title="Từ sai" detail={summary.mistakes ?? 0} sub="Từ bạn từng làm sai, đánh dấu đã thuộc khi nhớ." cta="Ôn từ sai" />
           <ReviewCard href="/notebook/practice" icon="★" title="Đã lưu" detail={summary.saved ?? 0} sub="Luyện riêng các từ bạn đã lưu vào sổ tay." cta="Luyện từ đã lưu" />
         </div>
@@ -78,6 +81,12 @@ export default function ReviewCenterPage() {
       <div className="mt-8 rounded-xl border border-gold/40 bg-gold/5 p-4 text-sm text-muted">
         <b className="text-ink">Mẹo:</b> Smart Review tự đặt lịch nhắc lại theo mức độ nhớ. Nếu bạn làm sai trong bài kiểm tra, từ đó cũng xuất hiện ở “Từ sai” để bạn ôn lại có chủ đích.
       </div>
+      <label className="mt-5 flex flex-col gap-2 rounded-xl border border-line bg-white p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <span><b className="text-ink">Kế hoạch ôn mỗi ngày</b><small className="mt-1 block text-muted">Đây là mức đề xuất, không giới hạn bạn ôn thêm.</small></span>
+        <select className="min-h-11 rounded-xl border border-line bg-white px-3 font-bold text-ink" value={dailyReviewWords} onChange={async (event) => { const value = Number(event.target.value); setDailyReviewWords(value); const response = await fetch("/api/review/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dailyReviewWords: value }) }); if (!response.ok) void load(); }}>
+          {[20, 30, 40, 60, 80].map((value) => <option key={value} value={value}>{value} từ</option>)}
+        </select>
+      </label>
     </div>
   );
 }

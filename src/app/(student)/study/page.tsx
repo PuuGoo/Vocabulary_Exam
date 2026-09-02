@@ -14,6 +14,7 @@ import {
   searchCategorizedItems,
   setsDirectlyInFolder,
   splitCategoryPath,
+  countDescendantDueSets,
   UNCATEGORIZED_PATH,
 } from "@/lib/categoryPath";
 
@@ -24,7 +25,11 @@ type SetSummary = {
   type: string;
   count: number;
   className?: string | null;
+  reviewStage?: number | null;
+  nextSetReviewAt?: string | null;
+  reviewStatus?: "not_started" | "learning" | "due" | "consolidated";
 };
+type StudyFilter = "all" | "due" | "learning" | "consolidated";
 type GoalSummary = {
   dailyWords: number;
   todayWords: number;
@@ -45,15 +50,17 @@ export default function StudyPage() {
     Record<number, number>
   >({});
   const [goal, setGoal] = useState<GoalSummary | null>(null);
+  const [studyFilter, setStudyFilter] = useState<StudyFilter>("all");
 
-  const childFolders = useMemo(() => listChildCategoryFolders(currentFolderPath, categoryPaths, sets || []), [categoryPaths, currentFolderPath, sets]);
-  const directSets = useMemo(() => setsDirectlyInFolder(currentFolderPath, sets || []).sort((left, right) => categoryCollator.compare(left.name, right.name)), [currentFolderPath, sets]);
+  const filteredSets = useMemo(() => (sets || []).filter((set) => studyFilter === "all" || set.reviewStatus === studyFilter), [sets, studyFilter]);
+  const childFolders = useMemo(() => listChildCategoryFolders(currentFolderPath, categoryPaths, filteredSets).filter((folder) => folder.count > 0), [categoryPaths, currentFolderPath, filteredSets]);
+  const directSets = useMemo(() => setsDirectlyInFolder(currentFolderPath, filteredSets).sort((left, right) => categoryCollator.compare(left.name, right.name)), [currentFolderPath, filteredSets]);
   const breadcrumbs = useMemo(() => categoryBreadcrumbs(currentFolderPath), [currentFolderPath]);
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase("vi");
     if (!query) return [];
-    return searchCategorizedItems(query, sets || []).sort((left, right) => categoryCollator.compare(left.name, right.name));
-  }, [searchQuery, sets]);
+    return searchCategorizedItems(query, filteredSets).sort((left, right) => categoryCollator.compare(left.name, right.name));
+  }, [searchQuery, filteredSets]);
   const timedSet = sets?.find((set) => set.id === timedSetId) || null;
 
   async function loadSets() {
@@ -146,12 +153,12 @@ export default function StudyPage() {
 
       <section className="lexora-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <LaunchCard
-          href="/smart-review"
+          href="/review-today"
           icon="↻"
-          title="Ôn tập thông minh"
-          detail="Tự xếp lịch 1 · 3 · 7 · 14 · 28 ngày"
+          title="Ôn tập hôm nay"
+          detail="Lexora tự chọn những từ quan trọng nhất"
           tone="purple"
-          action="Bắt đầu ôn"
+          action="Bắt đầu ôn hôm nay"
         />
         <LaunchCard
           href="/daily-challenge"
@@ -265,6 +272,9 @@ export default function StudyPage() {
             </label>
           )}
         </div>
+        <div className="mb-4 flex flex-wrap gap-2" aria-label="Lọc bộ từ">
+          {([['all', 'Tất cả'], ['due', 'Cần ôn'], ['learning', 'Đang học'], ['consolidated', 'Đã củng cố']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setStudyFilter(value)} className={`min-h-10 rounded-xl px-3 text-xs font-bold ${studyFilter === value ? "bg-[#302A68] text-white" : "border border-line bg-white text-muted"}`}>{label}</button>)}
+        </div>
         {sets === null ? (
           <div className="grid gap-4 md:grid-cols-2">
             {[1, 2, 3, 4].map((item) => (
@@ -299,7 +309,7 @@ export default function StudyPage() {
               {breadcrumbs.map((crumb) => <span key={crumb.path} className="flex items-center gap-2"><span className="text-muted">›</span><button type="button" onClick={() => setCurrentFolderPath(crumb.path)} aria-current={crumb.path === currentFolderPath ? "page" : undefined} className={crumb.path === currentFolderPath ? "text-ink" : "text-gold hover:underline"}>{crumb.label}</button></span>)}
             </nav>
             {currentFolderPath && <button type="button" onClick={() => setCurrentFolderPath(currentFolderPath === UNCATEGORIZED_PATH ? "" : parentCategoryPath(currentFolderPath))} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line bg-white px-3 text-xs font-bold hover:border-[#CFC7FF] hover:text-gold">← Quay lại</button>}
-            {childFolders.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{childFolders.map((folder) => <button key={folder.path} type="button" onClick={() => setCurrentFolderPath(folder.path)} aria-label={`Mở thư mục ${folder.name}, ${folder.count} bộ`} className="lexora-card flex min-h-24 items-center gap-4 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EFECFF] text-xl" aria-hidden="true">📁</span><span className="min-w-0"><b className="line-clamp-2 text-sm leading-5">{folder.name}</b><span className="mt-1 block text-xs text-muted">{folder.count} bộ</span></span><span className="ml-auto text-muted" aria-hidden="true">›</span></button>)}</div>}
+            {childFolders.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{childFolders.map((folder) => { const dueCount = countDescendantDueSets(folder.path, sets || []); return <button key={folder.path} type="button" onClick={() => setCurrentFolderPath(folder.path)} aria-label={`Mở thư mục ${folder.name}, ${folder.count} bộ`} className="lexora-card flex min-h-24 items-center gap-4 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EFECFF] text-xl" aria-hidden="true">📁</span><span className="min-w-0"><b className="line-clamp-2 text-sm leading-5">{folder.name}</b><span className="mt-1 block text-xs text-muted">{folder.count} bộ</span>{dueCount > 0 ? <span className="mt-1 block text-xs font-bold text-[#D87855]">{dueCount} bài cần ôn</span> : null}</span><span className="ml-auto text-muted" aria-hidden="true">›</span></button>; })}</div>}
             {directSets.length > 0 && <div className="grid items-start gap-4 md:grid-cols-2">{directSets.map(renderSetCard)}</div>}
             {childFolders.length === 0 && directSets.length === 0 && <EmptyState title="Thư mục này chưa có bộ từ" detail="Hãy quay lại và chọn một thư mục khác." />}
           </div>
@@ -409,6 +419,8 @@ function CollectionCard({
   onTimed: () => void;
 }) {
   const empty = set.count === 0;
+  const reviewAt = set.nextSetReviewAt ? new Date(set.nextSetReviewAt) : null;
+  const reviewDays = reviewAt ? Math.ceil((reviewAt.getTime() - Date.now()) / 86_400_000) : null;
   const modeClass =
     "flex min-h-11 items-center rounded-[10px] border border-line bg-white px-3 py-2.5 text-left text-xs font-bold text-ink transition hover:border-[#CFC7FF] hover:bg-[#F8F7FC] disabled:cursor-not-allowed disabled:opacity-40";
   return (
@@ -438,6 +450,9 @@ function CollectionCard({
                 Tiếp tục từ thẻ {position}
               </p>
             )}
+            {set.reviewStatus === "consolidated" ? <p className="mt-2 text-xs font-bold text-[#398B73]">✓ Đã củng cố</p> : null}
+            {set.reviewStatus === "learning" && set.reviewStage ? <p className="mt-2 text-xs font-semibold text-muted">Đã ôn {Math.max(0, set.reviewStage - 1)}/3 · Ôn lần {set.reviewStage}: {reviewDays === 1 ? "Ngày mai" : `Còn ${Math.max(1, reviewDays || 1)} ngày`}</p> : null}
+            {set.reviewStatus === "due" && set.reviewStage ? <div className="mt-2"><p className="text-xs font-bold text-[#D87855]">{reviewDays !== null && reviewDays < 0 ? `🔴 Ôn lần ${set.reviewStage}/3 · Quá hạn ${Math.abs(reviewDays)} ngày` : `🟠 Ôn lần ${set.reviewStage}/3 · Đến hạn hôm nay`}</p><Link href="/review-today" className="mt-2 inline-flex min-h-9 items-center rounded-lg bg-[#FFF0E8] px-3 text-xs font-bold text-[#B75D3B]">Ôn ngay</Link></div> : null}
           </div>
         </div>
         <button

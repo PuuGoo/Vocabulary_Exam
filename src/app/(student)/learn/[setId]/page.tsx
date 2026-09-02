@@ -37,6 +37,7 @@ export default function LearnPage() {
   const [swipe, setSwipe] = useState(0); const swipeRef = useRef<{x:number;y:number;t:number}|null>(null); const suppressClick = useRef(false);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null); const savingRef = useRef(false);
   const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visitedInThisRun = useRef(new Set<number>()); const initialCompletionSent = useRef(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null); const menuRef = useRef<HTMLDivElement>(null); const jumpInputRef = useRef<HTMLInputElement>(null);
 
   async function loadSet() {
@@ -56,6 +57,7 @@ export default function LearnPage() {
       let found = savedWordId ? data.set.words.findIndex((x: Word) => x.id === savedWordId) : -1;
       if (found < 0 && serverWordId) found = data.set.words.findIndex((x: Word) => x.id === serverWordId);
       if (found > 0) resumeIndex = found;
+      visitedInThisRun.current = new Set(); initialCompletionSent.current = false;
       setSet(data.set); setOrder(data.set.words); setKnown(progress); setIndex(resumeIndex); setFlipped(false); setFinished(false);
       if (b?.ok) { const d = await b.json(); setBookmarks(Object.fromEntries((d.bookmarks || []).map((x: {wordId:number;id:number}) => [x.wordId,x.id]))); }
     } catch { setError(true); } finally { setLoading(false); }
@@ -74,6 +76,7 @@ export default function LearnPage() {
   const currentRatingClass = currentRating === true ? "bg-[#EEFBF3] text-[#277A4B]" : currentRating === false ? "bg-[#FFF1F1] text-[#B64242]" : "bg-[#F0EDFF] text-[#6550DB]";
   useEffect(() => {
     if (!set || !word) return;
+    if (mode === "all") visitedInThisRun.current.add(word.id);
     try { sessionStorage.setItem(`lexora-learn-position-${set.id}`, String(word.id)); } catch { /* Session storage is optional. */ }
     if (sessionTimer.current) clearTimeout(sessionTimer.current);
     const position = set.words.findIndex(x => x.id === word.id) + 1; if (position < 1) return;
@@ -81,7 +84,13 @@ export default function LearnPage() {
     return () => { if (sessionTimer.current) clearTimeout(sessionTimer.current); };
   }, [set, word]);
   const go = (n:number) => { if (!total) return; setFinished(false); setIndex(Math.min(Math.max(n,0), total-1)); setFlipped(false); };
-  const next = () => { if (index >= total - 1) { setFinished(true); setFlipped(false); } else go(index + 1); }; const prev = () => go(index - 1);
+  const completeInitialLearning = () => {
+    if (!set || mode !== "all" || visitedInThisRun.current.size < set.words.length || initialCompletionSent.current) return;
+    initialCompletionSent.current = true;
+    void fetch("/api/review/set-progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ setId: set.id, context: "initial_learn_complete" }), keepalive: true })
+      .then((response) => { if (!response.ok) initialCompletionSent.current = false; }).catch(() => { initialCompletionSent.current = false; });
+  };
+  const next = () => { if (index >= total - 1) { completeInitialLearning(); setFinished(true); setFlipped(false); } else go(index + 1); }; const prev = () => go(index - 1);
   const filtered = (m: ReviewMode) => set?.words.filter(w => m === "all" || (m === "unknown" ? known[w.id] === false : m === "known" ? known[w.id] === true : known[w.id] === undefined)) || [];
   const chooseMode = (m: ReviewMode) => { setMode(m); setOrder(m === "all" ? (set?.words || []) : filtered(m)); setIndex(0); setFlipped(false); setFinished(false); setMenuOpen(false); };
   const restart = () => { setOrder(filtered(mode)); setIndex(0); setFlipped(false); setFinished(false); setMenuOpen(false); };
@@ -102,7 +111,7 @@ export default function LearnPage() {
       setIndex(i => Math.min(i + 1, Math.max(0, total - 1)));
     }
     setFlipped(false);
-    if (wasLast) setFinished(true);
+    if (wasLast) { completeInitialLearning(); setFinished(true); }
     try {
       const res = await fetch("/api/mistakes", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({wordId:marked.id,setId:set.id,learned}) });
       if (!res.ok) throw new Error(); const data = await res.json();
