@@ -284,6 +284,23 @@ html.lexora-native-app :is(a, button, [role="button"]) {
   animation: lexora-undo-countdown 5s linear both;
 }
 
+/* Focus mode budgets vertical space by viewport height. The document stays
+   stable; only unusually long feedback may scroll inside the question card. */
+@media (min-width: 768px) and (max-height: 800px) {
+  .fill-focus-session {
+    display: flex;
+    min-height: 0;
+    max-height: calc(100dvh - 142px);
+    flex-direction: column;
+  }
+
+  .fill-focus-card {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .flashcard-flipper {
     transition: none;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import {
   canPlayTargetAudioBeforeAnswer,
   claimFillAction,
@@ -108,4 +109,18 @@ test("Focus keyboard state machine never submits while typing", () => {
   assert.equal(resolveFillFocusEnterAction({ state: "correcting", value: "pal" }), "confirm");
   assert.equal(resolveFillFocusEnterAction({ state: "corrected", value: "pale" }), "next");
   assert.equal(resolveFillFocusEnterAction({ state: "answering", value: "living room" }), "check");
+});
+
+test("Focus navigator is an overlay and no longer extends document flow", () => {
+  const source = readFileSync("src/components/FillFocusSession.tsx", "utf8");
+  assert.match(source, /aria-haspopup="dialog"/);
+  assert.match(source, /fixed inset-0 z-\[92\]/);
+  assert.doesNotMatch(source, /mx-auto w-full max-w-3xl rounded-xl border border-line bg-white p-3/);
+});
+
+test("Focus toolbar owns group, question and progress controls", () => {
+  const source = readFileSync("src/components/FillFocusSession.tsx", "utf8");
+  assert.match(source, /Câu \$\{Math\.min\(cursor \+ 1, originalWords\.length\)\}/);
+  assert.match(source, /fill-focus-session/);
+  assert.match(source, /fill-focus-card/);
 });
