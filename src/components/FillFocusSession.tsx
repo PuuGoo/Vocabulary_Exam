@@ -50,6 +50,7 @@ type Props = {
   onChooseSet: () => void;
   /** Guest share sessions use the same canonical UI without writing owner progress. */
   persist?: boolean;
+  chrome?: "full" | "compact";
 };
 
 const GROUP_SIZE = 10;
@@ -65,6 +66,7 @@ export default function FillFocusSession({
   set, userId, sessionKind, retest, quickMode, mistakeIdByWordId,
   totalWordCount, rangeFrom, rangeTo, hasRange, onApplyRange, onChooseSet,
   persist = true,
+  chrome = "full",
 }: Props) {
   const router = useRouter();
   const search = useSearchParams();
@@ -375,14 +377,14 @@ export default function FillFocusSession({
 
   return (
     <div className="lexora-page-enter space-y-4 pb-8">
-      <section className="flex flex-wrap items-start justify-between gap-3">
+      {chrome === "full" && <section className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Điền từ tiếng Anh</p><h1 className="mt-1 truncate text-xl font-extrabold sm:text-2xl">{set.name}</h1></div>
         <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
-      </section>
+      </section>}
 
       {!retest && !quickMode && <StudyModeNav setId={set.id} active="fill" isVerb={false} />}
 
-      <section className="rounded-xl border border-line bg-white p-2.5 sm:p-3">
+      <section className={`rounded-xl border border-line bg-white ${chrome === "compact" ? "p-2" : "p-2.5 sm:p-3"}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex rounded-lg bg-[#F4F2FA] p-1" aria-label="Mục tiêu phiên học">
             <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${sessionKind === "practice" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateWith({ session: null, view: "focus" })}>Luyện tập</button>
@@ -411,7 +413,7 @@ export default function FillFocusSession({
             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${progressPercent}%` }} /></div>
           </div>
 
-          <section className="mx-auto w-full max-w-3xl rounded-2xl border border-line bg-white p-4 shadow-sm sm:p-7" aria-live="polite">
+          <section className={`mx-auto w-full max-w-3xl rounded-2xl border border-line bg-white shadow-sm ${chrome === "compact" ? "p-3 sm:p-5" : "p-4 sm:p-7"}`} aria-live="polite">
             {isRetry && <div className="mb-3 inline-flex rounded-full border border-[#CFC7FF] bg-[#F7F5FF] px-3 py-1 text-xs font-bold text-[#6550DB]">↻ Từ yếu quay lại sau vài câu</div>}
             <div className="text-center"><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-3 font-serif text-2xl font-bold sm:text-3xl">{currentWord.meaning}</div>{currentWord.wtype && <div className="mt-2 text-sm text-muted"><span className="font-semibold">Loại từ:</span> {currentWord.wtype}</div>}</div>
 
