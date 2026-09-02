@@ -11,16 +11,23 @@ import {
 } from "@/lib/reviewPlanner";
 import { dateInVietnam } from "@/lib/activity";
 
-const wordSelection = {
+// Keep candidate scans lean: a user can have thousands of due words and the
+// planner only needs scheduling metadata to rank them. Full card content is
+// hydrated after the daily budget has selected the small final set.
+const wordCandidateSelection = {
   id: words.id, setId: words.setId, setName: vocabSets.name, setCategory: vocabSets.category,
-  setType: vocabSets.type, meaning: words.meaning, term: words.term, v1: words.v1, v2: words.v2,
-  v3: words.v3, example: words.example, wtype: words.wtype, ipa: words.ipa,
+  setType: vocabSets.type,
   known: wordProgress.known, nextReviewAt: wordProgress.nextReviewAt,
   reviewStreak: wordProgress.reviewStreak, correctCount: wordProgress.correctCount,
   wrongCount: wordProgress.wrongCount, timesWrong: mistakes.timesWrong,
 };
 
-function normalizeWord(row: typeof wordSelection extends never ? never : Record<string, unknown>): ReviewWord {
+const wordDetailSelection = {
+  id: words.id, meaning: words.meaning, term: words.term, v1: words.v1, v2: words.v2,
+  v3: words.v3, example: words.example, wtype: words.wtype, ipa: words.ipa,
+};
+
+function normalizeWord(row: Record<string, unknown>): ReviewWord {
   return {
     ...(row as unknown as Omit<ReviewWord, "reviewStreak" | "correctCount" | "wrongCount" | "timesWrong">),
     reviewStreak: Number(row.reviewStreak || 0), correctCount: Number(row.correctCount || 0),
@@ -42,7 +49,7 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
   const dueSetWhere = and(eq(setReviewProgress.userId, userId), lte(setReviewProgress.nextReviewAt, now), sql`${setReviewProgress.stage} between 1 and 3`, allowed);
 
   const [dueWordRows, dueSetRows, goalRows, completedRows] = await Promise.all([
-    db.select(wordSelection).from(wordProgress)
+    db.select(wordCandidateSelection).from(wordProgress)
       .innerJoin(words, eq(words.id, wordProgress.wordId)).innerJoin(vocabSets, eq(vocabSets.id, words.setId))
       .leftJoin(mistakes, and(eq(mistakes.userId, userId), eq(mistakes.wordId, words.id)))
       .where(dueWordWhere),
@@ -56,7 +63,7 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
   let dueSetReviews: DueSetReview[] = [];
   if (dueSetRows.length) {
     const setIds = dueSetRows.map((item) => item.setId);
-    const setWordRows = await db.select(wordSelection).from(words)
+    const setWordRows = await db.select(wordCandidateSelection).from(words)
       .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
       .leftJoin(wordProgress, and(eq(wordProgress.userId, userId), eq(wordProgress.wordId, words.id)))
       .leftJoin(mistakes, and(eq(mistakes.userId, userId), eq(mistakes.wordId, words.id)))
@@ -72,18 +79,29 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
     }));
   }
 
-  return buildDailyReviewPlan({
+  const plan = buildDailyReviewPlan({
     dueWords: dueWordRows.map((row) => normalizeWord(row as unknown as Record<string, unknown>)),
     dueSetReviews, wordBudget: goalRows[0]?.dailyReviewWords || DEFAULT_DAILY_REVIEW_WORDS,
     completedToday: completedRows[0]?.count || 0, now, extra: options?.extra,
   });
+  const selectedIds = plan.batches.flatMap((batch) => batch.words.map((word) => word.id));
+  if (!selectedIds.length) return plan;
+  const details = await db.select(wordDetailSelection).from(words).where(inArray(words.id, selectedIds));
+  const detailsById = new Map(details.map((item) => [item.id, item]));
+  return {
+    ...plan,
+    batches: plan.batches.map((batch) => ({
+      ...batch,
+      words: batch.words.map((word) => ({ ...word, ...detailsById.get(word.id) })),
+    })),
+  };
 }
 
 export async function getUpcomingReviewOverview(userId: number, role: string, todayCount: number, now = new Date()) {
   const allowed = await accessFilter(userId, role);
   const end = addDays(now, 7);
   const [futureWordRows, futureSetRows] = await Promise.all([
-    db.select(wordSelection).from(wordProgress)
+    db.select(wordCandidateSelection).from(wordProgress)
       .innerJoin(words, eq(words.id, wordProgress.wordId)).innerJoin(vocabSets, eq(vocabSets.id, words.setId))
       .leftJoin(mistakes, and(eq(mistakes.userId, userId), eq(mistakes.wordId, words.id)))
       .where(and(eq(wordProgress.userId, userId), gt(wordProgress.nextReviewAt, now), lte(wordProgress.nextReviewAt, end), allowed)),
@@ -91,7 +109,7 @@ export async function getUpcomingReviewOverview(userId: number, role: string, to
       .from(setReviewProgress).innerJoin(vocabSets, eq(vocabSets.id, setReviewProgress.setId))
       .where(and(eq(setReviewProgress.userId, userId), gt(setReviewProgress.nextReviewAt, now), lte(setReviewProgress.nextReviewAt, end), sql`${setReviewProgress.stage} between 1 and 3`, allowed)),
   ]);
-  const setWords = futureSetRows.length ? await db.select(wordSelection).from(words)
+  const setWords = futureSetRows.length ? await db.select(wordCandidateSelection).from(words)
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
     .leftJoin(wordProgress, and(eq(wordProgress.userId, userId), eq(wordProgress.wordId, words.id)))
     .leftJoin(mistakes, and(eq(mistakes.userId, userId), eq(mistakes.wordId, words.id)))
