@@ -19,6 +19,7 @@ import {
   maskAnswerInExample,
   scheduleDelayedRetry,
   summarizeFillAttempts,
+  resolveFillFocusEnterAction,
   type FillAttemptSummary,
   type FillDraft,
   type FillRecallOutcome,
@@ -52,7 +53,7 @@ type Props = {
 const GROUP_SIZE = 10;
 const MAX_RETRIES_PER_WORD = 2;
 
-type Feedback = { correct: boolean; nearMiss: boolean; answer: string; retry: boolean };
+type Feedback = { correct: boolean; nearMiss: boolean; answer: string; retry: boolean; corrected?: boolean };
 
 function buildQueues(groups: FillFocusWord[][]) {
   return Object.fromEntries(groups.map((group, index) => [index, group.map((word) => word.id)]));
@@ -90,6 +91,7 @@ export default function FillFocusSession({
   const hydratedRef = useRef(false);
   const actionLockRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const correctionInputRef = useRef<HTMLInputElement>(null);
 
   const queue = queues[group] || groups[group]?.map((word) => word.id) || [];
   const cursor = Math.min(cursors[group] || 0, Math.max(0, queue.length - 1));
@@ -148,16 +150,20 @@ export default function FillFocusSession({
 
   useEffect(() => {
     if (phase !== "questions" || feedback) return;
-    const timer = window.setTimeout(() => inputRef.current?.focus(), 30);
-    return () => window.clearTimeout(timer);
+    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
   }, [cursor, feedback, group, phase]);
 
+  // Restore feedback from a saved outcome, but never grade from answer changes.
   useEffect(() => {
     if (effectiveSessionKind !== "practice" || phase !== "questions" || feedback || !currentWord || !currentOutcome || !currentAnswer.trim()) return;
     const grade = gradeFillAnswer(currentAnswer, currentWord.term);
     setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentAnswer, retry: currentOutcome.retryCount > 0 });
     setNeedsCorrection(!currentOutcome.finalCorrect);
-  }, [currentAnswer, currentOutcome, currentWord, effectiveSessionKind, feedback, phase]);
+  // `currentOutcome`/question changes indicate a restore or transition. The
+  // answer itself is intentionally not a dependency: typing is state-only.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWord?.id, currentOutcome, effectiveSessionKind, phase]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -239,6 +245,7 @@ export default function FillFocusSession({
     if (!currentWord || !needsCorrection) return;
     if (!gradeFillAnswer(correction, currentWord.term).correct) {
       toast("Hãy gõ chính xác đáp án để hoàn tất bước sửa lỗi.");
+      correctionInputRef.current?.focus();
       return;
     }
     if (!claimFillAction(actionLockRef)) return;
@@ -249,6 +256,8 @@ export default function FillFocusSession({
       scheduleCurrentRetry(corrected);
     }
     setNeedsCorrection(false);
+    setFeedback((current) => current ? { ...current, corrected: true } : current);
+    requestAnimationFrame(() => correctionInputRef.current?.focus());
     window.setTimeout(() => { actionLockRef.current = false; }, 0);
   }
 
@@ -342,14 +351,17 @@ export default function FillFocusSession({
   }
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    if (event.key !== "Enter") return;
+    const state = effectiveSessionKind === "test" ? "test" : feedback ? (needsCorrection ? "correcting" : feedback.corrected ? "corrected" : feedback.correct ? "correct" : "correcting") : "answering";
+    const action = resolveFillFocusEnterAction({ state, value: needsCorrection ? correction : currentAnswer, repeat: event.repeat, isComposing: event.nativeEvent.isComposing });
+    if (action === "noop") return;
     event.preventDefault();
-    if (effectiveSessionKind === "test") {
+    if (action === "test-next") {
       if (cursor === originalWords.length - 1 && allTestAnswered) void submitTestGroup(); else advanceTest();
       return;
     }
-    if (!feedback) checkPracticeAnswer();
-    else if (needsCorrection) confirmCorrection();
+    if (action === "check") checkPracticeAnswer();
+    else if (action === "confirm") confirmCorrection();
     else advancePractice();
   }
 
@@ -406,11 +418,11 @@ export default function FillFocusSession({
 
             {!feedback && currentHint && <div className="mx-auto mt-4 max-w-xl rounded-xl border border-dashed border-gold bg-goldpale/25 px-4 py-3 text-sm"><div className="text-xs font-bold uppercase tracking-wide text-golddark">{currentHint.label}</div><div className={`mt-1 ${currentHint.revealed ? "font-bold text-ink" : "font-mono text-muted"}`}>{currentHint.value}</div></div>}
 
-            <div className="mx-auto mt-6 max-w-md"><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}`}>Từ tiếng Anh</label><input ref={inputRef} id={`fill-answer-${currentWord.id}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} className={`${cx.input} !mb-0 mt-2 min-h-12 text-base ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} disabled={Boolean(feedback)} onChange={(event) => setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value }))} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>
+            <div className="mx-auto mt-6 max-w-md"><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}`}>Từ tiếng Anh</label><input ref={inputRef} id={`fill-answer-${currentWord.id}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} className={`${cx.input} !mb-0 mt-2 min-h-12 text-base ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>
 
             {feedback && <AnswerFeedback word={currentWord} feedback={feedback} outcome={currentOutcome} />}
 
-            {feedback && needsCorrection && <div className="mx-auto mt-5 max-w-md rounded-xl border border-bad/25 bg-badbg/30 p-4"><label className="text-sm font-bold text-bad" htmlFor={`fill-correction-${currentWord.id}`}>Gõ lại đáp án đúng</label><input id={`fill-correction-${currentWord.id}`} autoFocus type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} className={`${cx.input} !mb-0 mt-2 min-h-12 text-base`} value={correction} onChange={(event) => setCorrection(event.target.value)} onKeyDown={onInputKeyDown} /></div>}
+            {feedback && (needsCorrection || feedback.corrected) && <div className="mx-auto mt-5 max-w-md rounded-xl border border-bad/25 bg-badbg/30 p-4"><label className={`text-sm font-bold ${feedback.corrected ? "text-ok" : "text-bad"}`} htmlFor={`fill-correction-${currentWord.id}`}>{feedback.corrected ? "✓ Đã sửa đúng" : "Gõ lại đáp án đúng"}</label><input ref={correctionInputRef} id={`fill-correction-${currentWord.id}`} autoFocus type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} className={`${cx.input} !mb-0 mt-2 min-h-12 text-base`} value={correction} onChange={(event) => { if (!feedback.corrected) setCorrection(event.target.value); }} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>}
 
             <div className="mx-auto mt-5 max-w-md">
               {effectiveSessionKind === "test" ? (cursor === originalWords.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!allTestAnswered || saving} onClick={() => void submitTestGroup()}>{saving ? "Đang lưu…" : allTestAnswered ? "Nộp nhóm" : `Còn ${originalWords.length - totalAnsweredInTest} câu chưa làm`}</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentAnswer.trim()} onClick={advanceTest}>Câu tiếp theo →</button>) : !feedback ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentAnswer.trim()} onClick={checkPracticeAnswer}>Kiểm tra</button> : needsCorrection ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!correction.trim()} onClick={confirmCorrection}>Xác nhận sửa</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} onClick={advancePractice}>Câu tiếp theo →</button>}
@@ -426,6 +438,7 @@ export default function FillFocusSession({
 
 function AnswerFeedback({ word, feedback, outcome }: { word: FillFocusWord; feedback: Feedback; outcome?: FillRecallOutcome }) {
   const accepted = getAcceptedAnswers(word.term);
+  if (feedback.corrected) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ Đã sửa đúng</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-serif text-xl font-bold">{accepted.join(" / ")}</span>{word.ipa && <span className="text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
   if (feedback.correct) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ {outcome?.firstTryCorrect ? "Chính xác" : "Đúng sau hỗ trợ"}</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-serif text-xl font-bold">{accepted.join(" / ")}</span>{word.ipa && <span className="text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
   return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className="font-bold text-bad">✕ {feedback.nearMiss ? "Gần đúng — sai chính tả" : "Chưa chính xác"}</div><div className="mt-2 grid gap-1 text-sm"><div><span className="text-muted">Bạn nhập:</span> <span className="font-semibold line-through decoration-bad">{feedback.answer}</span></div><div><span className="text-muted">Đáp án:</span> <span className="font-bold">{accepted.join(" / ")}</span> {word.ipa && <span className="text-golddark">{word.ipa}</span>}</div></div><div className="mt-2 flex items-center gap-2"><SpeakButton text={word.term || ""} /><span className="text-xs text-muted">Nghe và gõ lại chính xác để tiếp tục.</span></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
 }

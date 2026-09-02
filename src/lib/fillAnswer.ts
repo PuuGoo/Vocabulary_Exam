@@ -1,4 +1,6 @@
 export type FillSessionKind = "practice" | "test";
+export type FillFocusKeyboardState = "answering" | "correct" | "correcting" | "corrected" | "test";
+export type FillFocusEnterAction = "check" | "next" | "confirm" | "test-next" | "noop";
 
 export type FillRecallOutcome = {
   wordId: number;
@@ -125,6 +127,20 @@ export function claimFillAction(lock: { current: boolean }) {
   if (lock.current) return false;
   lock.current = true;
   return true;
+}
+
+/** One deterministic Enter pathway for the Focus keyboard state machine. */
+export function resolveFillFocusEnterAction(input: {
+  state: FillFocusKeyboardState;
+  value: string;
+  isComposing?: boolean;
+  repeat?: boolean;
+}) : FillFocusEnterAction {
+  if (input.isComposing || input.repeat || !input.value.trim()) return "noop";
+  if (input.state === "answering") return "check";
+  if (input.state === "correcting") return "confirm";
+  if (input.state === "test") return "test-next";
+  return "next";
 }
 
 export function createFirstRecallOutcome(input: {

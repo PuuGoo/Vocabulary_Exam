@@ -10,6 +10,7 @@ import {
   gradeFillAnswer,
   isValidFillDraft,
   maskAnswerInExample,
+  resolveFillFocusEnterAction,
   scheduleDelayedRetry,
   summarizeFillAttempts,
   visibleFillItems,
@@ -96,4 +97,15 @@ test("draft validation restores compatible sessions and rejects stale or changed
   assert.equal(isValidFillDraft(draft, [1, 2], 2_000), true);
   assert.equal(isValidFillDraft(draft, [1, 3], 2_000), false);
   assert.equal(isValidFillDraft({ ...draft, version: 1 }, [1, 2], 2_000), false);
+});
+
+test("Focus keyboard state machine never submits while typing", () => {
+  assert.equal(resolveFillFocusEnterAction({ state: "answering", value: "" }), "noop");
+  assert.equal(resolveFillFocusEnterAction({ state: "answering", value: "pale" }), "check");
+  assert.equal(resolveFillFocusEnterAction({ state: "answering", value: "pale", repeat: true }), "noop");
+  assert.equal(resolveFillFocusEnterAction({ state: "answering", value: "pale", isComposing: true }), "noop");
+  assert.equal(resolveFillFocusEnterAction({ state: "correct", value: "pale" }), "next");
+  assert.equal(resolveFillFocusEnterAction({ state: "correcting", value: "pal" }), "confirm");
+  assert.equal(resolveFillFocusEnterAction({ state: "corrected", value: "pale" }), "next");
+  assert.equal(resolveFillFocusEnterAction({ state: "answering", value: "living room" }), "check");
 });
