@@ -5,6 +5,7 @@ import { gradeFillAnswer, getAcceptedAnswers } from "@/lib/fillAnswer";
 import FillFocusSession from "@/components/FillFocusSession";
 import LearningQuickDock from "@/components/LearningQuickDock";
 import StudyModeNav from "@/components/StudyModeNav";
+import LearnExperience from "@/components/learning/LearnExperience";
 
 type Word = { id: number; meaning: string; term: string | null; example: string | null; wtype: string | null; ipa: string | null; v1: string | null; v2: string | null; v3: string | null };
 type Question = { id: number; question: string; answer: string; vnMeaning: string | null; phonetic: string | null; questionType: string; options: string[]; correctOptions: string[]; explanation: string };
@@ -19,6 +20,16 @@ export default function ShareGuestExperience({ token, initialMode, payload }: { 
   const questions = payload.questions || [];
   const modeItems = useMemo(() => payload.allowedModes.filter((item) => labels[item]), [payload.allowedModes]);
   function selectMode(next: string) { setMode(next); setIndex(0); window.history.replaceState(null, "", `/s/${encodeURIComponent(token)}?mode=${encodeURIComponent(next)}`); }
+  if (payload.targetType === "vocab_set" && mode === "learn") {
+    return <LearnExperience
+      initialSet={{ name: payload.title, type: payload.setType === "irregular_verb" ? "irregular_verb" : "ielts_vocab", words }}
+      sourceKey={`share:${payload.targetType}:${payload.title}:${payload.count}`}
+      allowedModes={modeItems}
+      onSelectMode={selectMode}
+      onExit={() => window.history.length > 1 ? window.history.back() : location.assign("/")}
+      onLoginRequest={() => location.assign(`/login?next=/s/${encodeURIComponent(token)}?mode=learn`)}
+    />;
+  }
   return <main className="min-h-screen bg-[#FAF9FD] text-ink"><header className="border-b border-line bg-white px-4 py-2"><div className="mx-auto flex max-w-5xl items-center justify-between gap-3"><div className="min-w-0"><div className="text-sm font-extrabold tracking-wide">Lexora</div><h1 className="max-w-[70vw] truncate text-base font-extrabold">{payload.title}</h1></div><a className="min-h-10 shrink-0 rounded-lg border border-line px-3 py-2 text-xs font-bold" href={`/login?next=/s/${encodeURIComponent(token)}`}>Đăng nhập</a></div></header><div className="mx-auto max-w-5xl px-4 py-2"><StudyModeNav setId={0} active={mode as any} availableModes={modeItems} onSelectMode={selectMode} /><LearningQuickDock availableModes={modeItems} currentMode={mode} onSelect={selectMode} guest />{payload.targetType === "vocab_set" ? mode === "fill" ? <FillFocusSession set={{ id: 0, name: payload.title, words }} userId={0} sessionKind="practice" retest={false} quickMode={true} mistakeIdByWordId={{}} totalWordCount={words.length} rangeFrom={1} rangeTo={words.length} hasRange={false} onApplyRange={() => undefined} onChooseSet={() => selectMode("learn")} persist={false} chrome="compact" /> : <SharedWordMode mode={mode} words={words} index={index} setIndex={setIndex} /> : <SharedQuestionMode mode={mode} questions={questions} index={index} setIndex={setIndex} />}<p className="mt-4 text-center text-xs text-muted">Bạn có thể học mà không cần tài khoản. <a className="font-bold text-golddark" href={`/login?next=/s/${encodeURIComponent(token)}`}>Đăng nhập để lưu tiến độ</a></p></div></main>;
 }
 

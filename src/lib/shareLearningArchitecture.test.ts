@@ -19,3 +19,18 @@ test("shared shell uses canonical mode navigation", () => {
   const source = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
   assert.match(source, /<StudyModeNav/);
 });
+
+test("authenticated and shared Learn both render the canonical LearnExperience", () => {
+  const authenticated = readFileSync("src/app/(student)/learn/[setId]/page.tsx", "utf8");
+  const shared = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
+  assert.match(authenticated, /<LearnExperience/);
+  assert.match(shared, /mode === "learn"/);
+  assert.match(shared, /<LearnExperience/);
+});
+
+test("shared Learn exits before generic StudyModeNav and SharedWordMode routing", () => {
+  const shared = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
+  const canonicalLearn = shared.indexOf('mode === "learn"');
+  const genericNav = shared.indexOf("<StudyModeNav");
+  assert.ok(canonicalLearn >= 0 && genericNav > canonicalLearn);
+});
