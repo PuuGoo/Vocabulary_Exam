@@ -97,6 +97,7 @@ export const shareLinks = pgTable(
   {
     id: serial("id").primaryKey(),
     tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    customSlug: varchar("custom_slug", { length: 64 }),
     targetType: varchar("target_type", { length: 32 }).notNull(),
     targetId: integer("target_id").notNull(),
     createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
@@ -112,6 +113,7 @@ export const shareLinks = pgTable(
   },
   (table) => ({
       tokenIdx: uniqueIndex("share_links_token_hash_idx").on(table.tokenHash),
+      customSlugIdx: uniqueIndex("share_links_custom_slug_idx").on(table.customSlug),
       targetIdx: index("share_links_target_idx").on(table.targetType, table.targetId),
       creatorIdx: index("share_links_creator_idx").on(table.createdByUserId),
   }),

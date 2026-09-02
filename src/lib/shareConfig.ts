@@ -14,6 +14,11 @@ export function buildShareUrl(token: string, origin?: string) {
   return `${base.replace(/\/$/, "")}/s/${encodeURIComponent(token)}`;
 }
 
+export function getPublicShareUrl(input: { customSlug?: string | null; rawToken?: string | null }, origin?: string) {
+  const identifier = input.customSlug || input.rawToken;
+  return identifier ? buildShareUrl(identifier, origin) : null;
+}
+
 export function modesForSetType(type: string): readonly string[] {
   return type === "irregular_verb" ? ["learn", "fill", "mc", "match", "dictation", "timed"] : VOCAB_SHARE_MODES;
 }
