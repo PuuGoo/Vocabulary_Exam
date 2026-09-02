@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { nextSpacedProgress } from "./spacedRepetition";
 import "./reviewPlanner.test";
+import "./fillAnswer.test";
 
 const now = new Date("2026-07-20T00:00:00.000Z");
 

@@ -11,6 +11,8 @@ import { groupIndexForQuestion, circleStatus, wordIdsNeedingRetry } from "@/lib/
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
+import FillFocusSession from "@/components/FillFocusSession";
+import { getAcceptedAnswers, gradeFillAnswer, maskAnswerInExample } from "@/lib/fillAnswer";
 
 type Word = {
   id: number;
@@ -41,52 +43,11 @@ type QuizDraft = {
 
 const GROUP_SIZE = 10;
 
-function norm(s: string | undefined | null) {
-  return (s || "").toString().trim().toLowerCase().replace(/\s+/g, " ");
-}
 function expandAnswerVariants(text: string): string[] {
-  // "in an/the outfit" -> ["in an outfit", "in the outfit"]
-  const tokens = text.trim().split(/\s+/);
-  let results = [""];
-  for (const token of tokens) {
-    const alternatives = token.split("/");
-    if (alternatives.length > 1) {
-      results = results.flatMap((r) => alternatives.map((a) => r + " " + a));
-    } else {
-      results = results.map((r) => r + " " + token);
-    }
-  }
-  return results.map((s) => s.trim()).filter(Boolean);
+  return getAcceptedAnswers(text);
 }
 function checkMatch(userVal: string | undefined, answerKey: string | null | undefined) {
-  const u = norm(userVal);
-  if (!u) return false;
-  const ak = (answerKey || "").trim();
-  if (!ak) return false;
-  return expandAnswerVariants(ak).map(norm).includes(u);
-}
-
-function maskAnswerInExample(example: string, answer: string): string {
-  if (!example) return "";
-  const trimmed = (answer || "").trim();
-  if (!trimmed) return example;
-  const variants = expandAnswerVariants(trimmed).filter(Boolean);
-  let result = example;
-  for (const variant of variants) {
-    const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`\\b${escaped}\\b`, "gi");
-    result = result.replace(re, "...");
-  }
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
-  if (tokens.length > 1) {
-    for (const token of tokens) {
-      if (token.includes("/")) continue;
-      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp(`\\b${escaped}\\b`, "gi");
-      result = result.replace(re, "...");
-    }
-  }
-  return result;
+  return gradeFillAnswer(userVal || "", answerKey).correct;
 }
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -119,6 +80,9 @@ function QuizPlayerInner() {
   const timedMode = search.get("timed") === "1";
   const minutes = Math.min(120, Math.max(1, Number(search.get("minutes")) || 15));
   const retest = search.get("retest") === "1";
+  const fillView = search.get("view") === "list" ? "list" : "focus";
+  const fillSessionKind = timedMode || search.get("session") === "test" ? "test" : "practice";
+  const isTestSession = fillSessionKind === "test";
   const quickMode = search.get("quick") === "1";
   const quickCount = [5, 10, 20].includes(Number(search.get("count"))) ? Number(search.get("count")) : 10;
   const draftEnabled = !quickMode;
@@ -295,6 +259,7 @@ function QuizPlayerInner() {
   const start = group * GROUP_SIZE;
   const end = set ? Math.min(start + GROUP_SIZE, set.words.length) : 0;
   const isVerb = set?.type === "irregular_verb";
+  const focusEngineActive = mode === "fill" && !isVerb && !timedMode && fillView === "focus";
   const retryWordIds = retryWordIdsByGroup[group];
   const retryActive = retryWordIds !== undefined;
   const effectiveChecked = timedMode ? timedSubmitted : checkedGroups[group] !== undefined && !retryActive;
@@ -323,7 +288,7 @@ function QuizPlayerInner() {
     [set, answers]
   );
   const hasUnsubmittedAnswers = useMemo(() => {
-    if (!set || timedSubmitted) return false;
+    if (!set || timedSubmitted || focusEngineActive) return false;
     return set.words.some((word, index) => {
       const answer = answers[word.id];
       const answered = answer && Object.values(answer).some((value) => value.trim() !== "");
@@ -331,7 +296,7 @@ function QuizPlayerInner() {
       const answerGroup = groupIndexForQuestion(index + 1, GROUP_SIZE);
       return timedMode || checkedGroups[answerGroup] === undefined || retryWordIdsByGroup[answerGroup] !== undefined;
     });
-  }, [set, answers, checkedGroups, retryWordIdsByGroup, timedMode, timedSubmitted]);
+  }, [set, answers, checkedGroups, retryWordIdsByGroup, timedMode, timedSubmitted, focusEngineActive]);
 
   const leaveWarning = draftEnabled
     ? "Bạn còn câu chưa nộp. Tiến độ đã được lưu trên thiết bị để bạn có thể quay lại sau. Bạn vẫn muốn rời đi?"
@@ -400,6 +365,12 @@ function QuizPlayerInner() {
     if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;
     setMenuOpen(false);
     router.push(url);
+  }
+
+  function quizUrl(updates: Record<string, string | null>) {
+    const query = new URLSearchParams(Array.from(search.entries()));
+    for (const [key, value] of Object.entries(updates)) value === null ? query.delete(key) : query.set(key, value);
+    return `/quiz/${set?.id}?${query.toString()}`;
   }
 
   function leaveQuiz() {
@@ -844,6 +815,25 @@ function submitJumpQuestion() {
     );
   }
 
+  if (mode === "fill" && !isVerb && !timedMode && fillView === "focus") {
+    return (
+      <FillFocusSession
+        set={set}
+        userId={userId}
+        sessionKind={fillSessionKind}
+        retest={retest}
+        quickMode={quickMode}
+        mistakeIdByWordId={mistakeIdByWordId}
+        totalWordCount={totalWordCountRef.current || set.words.length}
+        rangeFrom={rangeFromParam || 1}
+        rangeTo={rangeToParam || totalWordCountRef.current || set.words.length}
+        hasRange={hasRangeParam}
+        onApplyRange={applyRange}
+        onChooseSet={leaveQuiz}
+      />
+    );
+  }
+
   return (
     <div className={cx.panel}>
       <button type="button" aria-label="Mở menu chế độ học" aria-haspopup="menu" aria-expanded={menuOpen} aria-keyshortcuts="M ." onClick={() => setMenuOpen((open) => !open)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 text-[0.65rem] sm:inline">M</kbd></button>
@@ -891,6 +881,19 @@ function submitJumpQuestion() {
           active={timedMode ? "timed" : mode}
           isVerb={isVerb}
         />
+      )}
+
+      {mode === "fill" && !isVerb && !timedMode && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-white p-2.5">
+          <div className="inline-flex rounded-lg bg-[#F4F2FA] p-1" aria-label="Mục tiêu phiên học">
+            <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${!isTestSession ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateQuiz(quizUrl({ session: null, view: "list" }))}>Luyện tập</button>
+            <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${isTestSession ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateQuiz(quizUrl({ session: "test", view: "list" }))}>Kiểm tra</button>
+          </div>
+          <div className="inline-flex rounded-lg border border-line p-1" aria-label="Cách hiển thị câu hỏi">
+            <button className="min-h-10 rounded-md px-3 text-sm font-bold text-muted" onClick={() => navigateQuiz(quizUrl({ view: "focus" }))}>Focus</button>
+            <button className="min-h-10 rounded-md bg-ink px-3 text-sm font-bold text-white">Xem cả nhóm</button>
+          </div>
+        </div>
       )}
 
       {quickMode && quickRecommendation && (
@@ -1165,17 +1168,17 @@ function submitJumpQuestion() {
                 <>
                   <div className="flex items-center gap-2 flex-wrap mb-2">
                     <div className="font-bold">{w.meaning}</div>
-                    <SpeakButton text={w.term || ""} />
-                    <button
+                    {(!isTestSession || effectiveChecked) && <SpeakButton text={w.term || ""} />}
+                    {!isTestSession && <button
                       type="button"
                       onClick={() => toggleHint(w.id)}
                       className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-white hover:bg-[#F0EDFF] transition"
                       title={hintIds.has(w.id) ? "Ẩn gợi ý" : "Xem gợi ý"}
                     >
                       {hintIds.has(w.id) ? "Ẩn gợi ý" : "Gợi ý"}
-                    </button>
+                    </button>}
                   </div>
-                  {hintIds.has(w.id) && w.term && (
+                  {!isTestSession && hintIds.has(w.id) && w.term && (
                     <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
                       <span className="text-xs font-bold text-muted">Gợi ý: </span>
                       <span className="font-mono">
@@ -1195,7 +1198,7 @@ function submitJumpQuestion() {
                       <span className="font-semibold">Loại từ:</span> {w.wtype}
                     </div>
                   )}
-                  {w.example && !effectiveChecked && (
+                  {w.example && !effectiveChecked && !isTestSession && (
                     <div className="mb-2 text-xs text-muted italic">
                       <span className="font-semibold not-italic">VD:</span> {maskAnswerInExample(w.example || "", w.term || "")}
                     </div>
@@ -1328,7 +1331,7 @@ function submitJumpQuestion() {
           )}
         </div>
       )}
-      <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : "mt-6 flex justify-center border-t border-line pt-4"}>
+      <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : mode === "fill" && fillView === "list" ? "sticky bottom-3 z-20 mt-6 flex justify-center rounded-2xl border border-line bg-white/95 p-2 shadow-lg backdrop-blur" : "mt-6 flex justify-center border-t border-line pt-4"}>
         <div className={timedMode ? "contents" : "flex w-full max-w-xl items-center gap-2 rounded-[18px] border border-line bg-white p-2 shadow-sm"}>
           <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-12 !shrink-0 !px-3`} disabled={group === 0} onClick={() => goGroup(group - 1)} aria-label="Về nhóm trước" title="Phím tắt: Alt + ←">
             ◀ <span className="hidden sm:inline">Nhóm trước</span> <kbd className="hidden lg:inline rounded border border-line bg-[#F8F8FC] px-1.5 py-0.5 text-[0.62rem] font-bold text-muted">Alt+←</kbd>

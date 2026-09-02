@@ -48,17 +48,16 @@ export async function POST(req: NextRequest) {
     .values({ userId: session.userId, ...attemptData })
     .returning();
 
-  const mistakesToSave = wrongWords || (parsed.data.setId !== null ? (wrongWordIds || []).map((wordId) => ({ wordId, setId: parsed.data.setId as number })) : []);
+  const submittedMistakes = wrongWords || (parsed.data.setId !== null ? (wrongWordIds || []).map((wordId) => ({ wordId, setId: parsed.data.setId as number })) : []);
+  const mistakesToSave = [...new Map(submittedMistakes.map((item) => [item.wordId, item])).values()];
   if (mistakesToSave.length > 0) {
-    for (const item of mistakesToSave) {
-      await db
-        .insert(mistakes)
-        .values({ userId: session.userId, wordId: item.wordId, setId: item.setId, timesWrong: 1, lastWrongAt: new Date() })
-        .onConflictDoUpdate({
-          target: [mistakes.userId, mistakes.wordId],
-          set: { timesWrong: sql`${mistakes.timesWrong} + 1`, lastWrongAt: new Date() },
-        });
-    }
+    const lastWrongAt = new Date();
+    await db.insert(mistakes).values(mistakesToSave.map((item) => ({
+      userId: session.userId, wordId: item.wordId, setId: item.setId, timesWrong: 1, lastWrongAt,
+    }))).onConflictDoUpdate({
+      target: [mistakes.userId, mistakes.wordId],
+      set: { timesWrong: sql`${mistakes.timesWrong} + 1`, setId: sql`excluded.set_id`, lastWrongAt },
+    });
   }
 
   const practiced = practicedWords || (parsed.data.setId !== null
