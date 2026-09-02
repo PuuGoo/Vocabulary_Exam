@@ -48,6 +48,8 @@ type Props = {
   hasRange: boolean;
   onApplyRange: (from: number, to: number) => void;
   onChooseSet: () => void;
+  /** Guest share sessions use the same canonical UI without writing owner progress. */
+  persist?: boolean;
 };
 
 const GROUP_SIZE = 10;
@@ -62,6 +64,7 @@ function buildQueues(groups: FillFocusWord[][]) {
 export default function FillFocusSession({
   set, userId, sessionKind, retest, quickMode, mistakeIdByWordId,
   totalWordCount, rangeFrom, rangeTo, hasRange, onApplyRange, onChooseSet,
+  persist = true,
 }: Props) {
   const router = useRouter();
   const search = useSearchParams();
@@ -262,6 +265,7 @@ export default function FillFocusSession({
   }
 
   async function persistGroupResult(summary: FillAttemptSummary, groupWords: FillFocusWord[]) {
+    if (!persist) return;
     if (saving) return;
     setSaving(true);
     try {
