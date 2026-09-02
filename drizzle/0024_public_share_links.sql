@@ -13,3 +13,4 @@ CREATE TABLE IF NOT EXISTS "share_links" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "share_links_token_hash_idx" ON "share_links" ("token_hash");
 CREATE INDEX IF NOT EXISTS "share_links_target_idx" ON "share_links" ("target_type", "target_id");
+CREATE INDEX IF NOT EXISTS "share_links_creator_idx" ON "share_links" ("created_by_user_id");

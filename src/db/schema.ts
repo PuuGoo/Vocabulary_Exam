@@ -108,8 +108,9 @@ export const shareLinks = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    tokenIdx: uniqueIndex("share_links_token_hash_idx").on(table.tokenHash),
-    targetIdx: index("share_links_target_idx").on(table.targetType, table.targetId),
+      tokenIdx: uniqueIndex("share_links_token_hash_idx").on(table.tokenHash),
+      targetIdx: index("share_links_target_idx").on(table.targetType, table.targetId),
+      creatorIdx: index("share_links_creator_idx").on(table.createdByUserId),
   }),
 );
 

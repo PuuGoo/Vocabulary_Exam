@@ -10,9 +10,14 @@ export async function GET(request: NextRequest) {
   if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const targetType = request.nextUrl.searchParams.get("targetType") as ShareTargetType | null;
   const targetId = Number(request.nextUrl.searchParams.get("targetId"));
-  if (!targetType || !Number.isInteger(targetId)) return NextResponse.json({ error: "Invalid target" }, { status: 400 });
-  const share = await getActiveShare(targetType, targetId);
-  return NextResponse.json({ share: share ? { id: share.id, accessMode: share.accessMode, allowedModes: share.allowedModesList } : null });
+  if (!targetType || !["vocab_set", "question_collection"].includes(targetType) || !Number.isInteger(targetId) || targetId <= 0) return NextResponse.json({ error: "Dữ liệu chia sẻ không hợp lệ.", code: "INVALID_SHARE_REQUEST" }, { status: 400 });
+  try {
+    const share = await getActiveShare(targetType, targetId);
+    return NextResponse.json({ share: share ? { id: share.id, accessMode: share.accessMode, allowedModes: share.allowedModesList } : null });
+  } catch (error) {
+    console.error("[share:get]", { targetType, targetId, error: error instanceof Error ? { name: error.name, message: error.message } : error });
+    return NextResponse.json({ error: "Không thể tải cấu hình liên kết chia sẻ.", code: "SHARE_LOAD_FAILED" }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -21,6 +26,11 @@ export async function POST(request: NextRequest) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu chia sẻ không hợp lệ." }, { status: 400 });
   const origin = request.nextUrl.origin;
-  const result = await createOrUpdateShare({ ...parsed.data, createdByUserId: session.userId, origin });
-  return NextResponse.json({ share: result });
+  try {
+    const result = await createOrUpdateShare({ ...parsed.data, createdByUserId: session.userId, origin });
+    return NextResponse.json({ share: result }, { status: result.url ? 201 : 200 });
+  } catch (error) {
+    console.error("[share:create]", { targetType: parsed.data.targetType, targetId: parsed.data.targetId, error: error instanceof Error ? { name: error.name, message: error.message } : error });
+    return NextResponse.json({ error: "Không thể lưu liên kết chia sẻ.", code: "SHARE_SAVE_FAILED" }, { status: 500 });
+  }
 }
