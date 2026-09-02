@@ -3,7 +3,7 @@ import { db } from "@/db";
 import {
   appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
-  wordBookmarks, wordProgress, words,
+  wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
 } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
@@ -241,6 +241,22 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       await tx.insert(wordProgress).values({ userId, wordId, known: bool(row, "known"), intervalDays: number(row, "intervalDays"), reviewStreak: number(row, "reviewStreak"), correctCount: number(row, "correctCount"), wrongCount: number(row, "wrongCount"), lastMode: nullableText(row, "lastMode"), lastReviewedAt: nullableDate(row, "lastReviewedAt"), nextReviewAt: nullableDate(row, "nextReviewAt"), updatedAt: date(row, "updatedAt") }); progressKeys.add(key); report.added.wordProgress++;
     }
 
+    const setReviewRows = await tx.select().from(setReviewProgress); const setReviewKeys = new Set(setReviewRows.map((item) => pair(item.userId, item.setId)));
+    for (const row of backup.data.setReviewProgress) {
+      const userId = userMap.get(number(row, "userId", -1)); const setId = setMap.get(number(row, "setId", -1)); const key = pair(userId ?? -1, setId ?? -1);
+      if (userId == null || setId == null || setReviewKeys.has(key)) { report.skipped.setReviewProgress++; continue; }
+      await tx.insert(setReviewProgress).values({ userId, setId, stage: number(row, "stage", 1), initialCompletedAt: date(row, "initialCompletedAt"), review1CompletedAt: nullableDate(row, "review1CompletedAt"), review2CompletedAt: nullableDate(row, "review2CompletedAt"), review3CompletedAt: nullableDate(row, "review3CompletedAt"), lastReviewAt: nullableDate(row, "lastReviewAt"), nextReviewAt: nullableDate(row, "nextReviewAt"), lastAccuracy: nullableNumber(row, "lastAccuracy"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      setReviewKeys.add(key); report.added.setReviewProgress++;
+    }
+
+    const reviewSessionRows = await tx.select().from(reviewSessions); const reviewSessionKeys = new Set(reviewSessionRows.map((item) => `${item.userId}:${item.idempotencyKey}`));
+    for (const row of backup.data.reviewSessions) {
+      const userId = userMap.get(number(row, "userId", -1)); const oldSetId = nullableNumber(row, "setId"); const setId = oldSetId == null ? null : setMap.get(oldSetId) ?? null; const idempotencyKey = text(row, "idempotencyKey"); const key = `${userId}:${idempotencyKey}`;
+      if (userId == null || !idempotencyKey || reviewSessionKeys.has(key)) { report.skipped.reviewSessions++; continue; }
+      await tx.insert(reviewSessions).values({ userId, idempotencyKey, sessionType: text(row, "sessionType", "word_srs"), setId, setReviewStage: nullableNumber(row, "setReviewStage"), wordCount: number(row, "wordCount"), correctCount: number(row, "correctCount"), completedAt: date(row, "completedAt") });
+      reviewSessionKeys.add(key); report.added.reviewSessions++;
+    }
+
     const bookmarkRows = await tx.select().from(wordBookmarks); const bookmarkKeys = new Set(bookmarkRows.map((item) => pair(item.userId, item.wordId)));
     for (const row of backup.data.wordBookmarks) {
       const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const key = pair(userId ?? -1, wordId ?? -1);
@@ -258,7 +274,7 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
     const goalRows = await tx.select().from(learningGoals); const goalUsers = new Set(goalRows.map((item) => item.userId));
     for (const row of backup.data.learningGoals) {
       const userId = userMap.get(number(row, "userId", -1)); if (userId == null || goalUsers.has(userId)) { report.skipped.learningGoals++; continue; }
-      await tx.insert(learningGoals).values({ userId, dailyWords: number(row, "dailyWords", 10), updatedAt: date(row, "updatedAt") }); goalUsers.add(userId); report.added.learningGoals++;
+      await tx.insert(learningGoals).values({ userId, dailyWords: number(row, "dailyWords", 10), dailyReviewWords: number(row, "dailyReviewWords", 40), updatedAt: date(row, "updatedAt") }); goalUsers.add(userId); report.added.learningGoals++;
     }
 
     const activityRows = await tx.select().from(dailyActivities); const activityKeys = new Set(activityRows.map((item) => `${item.userId}:${item.activityDate}`));

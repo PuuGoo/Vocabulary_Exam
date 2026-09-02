@@ -84,3 +84,13 @@ export function categoryBreadcrumbs(path: string) {
   const parts = splitCategoryPath(path);
   return parts.map((label, index) => ({ label, path: joinCategoryPath(parts.slice(0, index + 1)) }));
 }
+
+export function countDescendantDueSets<T extends CategorizedItem & { reviewStatus?: string }>(folder: string, items: T[]) {
+  return items.filter((item) => {
+    if (item.reviewStatus !== "due") return false;
+    const itemPath = normalizeCategoryPath(item.category);
+    if (folder === UNCATEGORIZED_PATH) return !itemPath;
+    const normalizedFolder = normalizeCategoryPath(folder);
+    return itemPath === normalizedFolder || isDescendant(normalizedFolder, itemPath);
+  }).length;
+}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, eq, or, isNull, inArray } from "drizzle-orm";
+import { sql, eq, or, isNull, inArray, and } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words, classMembers, classes } from "@/db/schema";
+import { vocabCategories, vocabSets, words, classMembers, classes, setReviewProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
@@ -31,17 +31,25 @@ export async function GET() {
       className: classes.name,
       createdAt: vocabSets.createdAt,
       count: sql<number>`count(distinct ${words.id})::int`,
+      reviewStage: setReviewProgress.stage,
+      nextSetReviewAt: setReviewProgress.nextReviewAt,
+      initialCompletedAt: setReviewProgress.initialCompletedAt,
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
     .leftJoin(classes, eq(classes.id, vocabSets.classId))
-    .groupBy(vocabSets.id, classes.name)
+    .leftJoin(setReviewProgress, and(eq(setReviewProgress.setId, vocabSets.id), eq(setReviewProgress.userId, session.userId)))
+    .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt)
     .orderBy(vocabSets.createdAt);
 
   const rows = classFilter ? await query.where(classFilter) : await query;
 
   const categories = await db.select({ name: vocabCategories.name }).from(vocabCategories);
-  return NextResponse.json({ sets: rows, categories: categories.map((category) => category.name) });
+  const now = Date.now();
+  return NextResponse.json({ sets: rows.map((row) => ({
+    ...row,
+    reviewStatus: !row.initialCompletedAt ? "not_started" : row.reviewStage === 4 ? "consolidated" : row.nextSetReviewAt && row.nextSetReviewAt.getTime() <= now ? "due" : "learning",
+  })), categories: categories.map((category) => category.name) });
 }
 
 const createSchema = z.object({

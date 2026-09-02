@@ -13,6 +13,7 @@ export const ROUTE_META: Record<string, RouteMeta> = {
   notebook: { label: "Đã lưu" },
   review: { label: "Cần ôn" },
   "review-center": { label: "Ôn tập" },
+  "review-today": { label: "Ôn tập hôm nay" },
   "smart-review": { label: "Ôn tập thông minh" },
   "daily-challenge": { label: "Thử thách hôm nay" },
   "mixed-practice": { label: "Luyện tập tổng hợp" },
