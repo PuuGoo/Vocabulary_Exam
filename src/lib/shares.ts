@@ -49,7 +49,7 @@ export async function getShareByToken(token: string) {
   return { ...share, allowedModesList: parseModes(share.allowedModes), contentSelectionList: parseContentSelection(share.contentSelection), contentSnapshotValue: parseContentSnapshot(share.contentSnapshot) };
 }
 
-export async function getPublicSharePayload(token: string, requestedMode?: string) {
+export async function getPublicSharePayload(token: string, requestedMode?: string, requestedSetId?: number, requestedCollection?: string) {
   const share = await getShareByToken(token);
   if (!share) return { share: null, error: "not_found" as const };
   if (requestedMode && !share.allowedModesList.includes(requestedMode)) return { share, error: "mode_not_allowed" as const };
@@ -61,11 +61,30 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
   }
   const [category] = await db.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(eq(vocabCategories.id, share.targetId)).limit(1);
   if (!category) return { share, error: "target_missing" as const };
+  const categoryContent = await getCategoryShareContent(share.targetId);
+  if (!categoryContent) return { share, error: "target_missing" as const };
+  const allowedSets = share.contentSelectionList.includes("vocab") ? categoryContent.sets.filter((item) => share.includeNewContent || share.contentSnapshotValue.setIds.includes(item.id)) : [];
+  const allowedDocuments = share.contentSelectionList.includes("documents") ? categoryContent.documents.filter((item) => share.includeNewContent || share.contentSnapshotValue.documentIds.includes(item.id)) : [];
   const selectedTypes = questionTypesForCollections(share.contentSelectionList);
+  const activeQuestionMeta = categoryContent.questions.filter((item) => selectedTypes.includes(item.questionType) && (share.includeNewContent || share.contentSnapshotValue.questionIds.includes(item.id)));
+  const collectionKeys = ["quiz", "essay", "speaking"].filter((key) => share.contentSelectionList.includes(key as ShareContentKey));
+  if (!requestedMode && !requestedSetId && !requestedCollection) {
+    const collections = collectionKeys.map((key) => ({ key, count: activeQuestionMeta.filter((item) => questionCollectionForType(item.questionType) === key).length })).filter((item) => item.count > 0);
+    return { share, payload: { targetType: "category_hub", title: category.name, count: allowedSets.length + activeQuestionMeta.length + allowedDocuments.length, allowedModes: share.allowedModesList, sets: allowedSets, documents: allowedDocuments, collections } };
+  }
+  if (requestedSetId) {
+    const selectedSet = allowedSets.find((item) => item.id === requestedSetId);
+    if (!selectedSet) return { share, error: "target_missing" as const };
+    const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type }).from(vocabSets).where(eq(vocabSets.id, selectedSet.id)).limit(1);
+    if (!set) return { share, error: "target_missing" as const };
+    const publicWords = await db.select({ id: words.id, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(words.id);
+    return { share, payload: { targetType: "vocab_set", title: set.name, count: publicWords.length, setType: set.type, allowedModes: share.allowedModesList.filter((mode) => modesForSetType(set.type).includes(mode)), words: publicWords } };
+  }
+  const requestedTypes = requestedCollection && collectionKeys.includes(requestedCollection) ? questionTypesForCollections([requestedCollection]) : selectedTypes;
   const questionScope = share.includeNewContent
-    ? and(or(eq(categoryQuestions.category, category.name), like(categoryQuestions.category, `${category.name} / %`)), inArray(categoryQuestions.questionType, selectedTypes))
-    : share.contentSnapshotValue.questionIds.length ? inArray(categoryQuestions.id, share.contentSnapshotValue.questionIds) : null;
-  const questions = selectedTypes.length && questionScope ? await db.select({ id: categoryQuestions.id, question: categoryQuestions.question, answer: categoryQuestions.answer, vnMeaning: categoryQuestions.vnMeaning, phonetic: categoryQuestions.phonetic, questionType: categoryQuestions.questionType, options: categoryQuestions.options, correctOption: categoryQuestions.correctOption, correctOptions: categoryQuestions.correctOptions, explanation: categoryQuestions.explanation }).from(categoryQuestions).where(questionScope).orderBy(categoryQuestions.order, categoryQuestions.id) : [];
+    ? and(or(eq(categoryQuestions.category, category.name), like(categoryQuestions.category, `${category.name} / %`)), inArray(categoryQuestions.questionType, requestedTypes))
+    : share.contentSnapshotValue.questionIds.length ? and(inArray(categoryQuestions.id, share.contentSnapshotValue.questionIds), inArray(categoryQuestions.questionType, requestedTypes)) : null;
+  const questions = requestedTypes.length && questionScope ? await db.select({ id: categoryQuestions.id, question: categoryQuestions.question, answer: categoryQuestions.answer, vnMeaning: categoryQuestions.vnMeaning, phonetic: categoryQuestions.phonetic, questionType: categoryQuestions.questionType, options: categoryQuestions.options, correctOption: categoryQuestions.correctOption, correctOptions: categoryQuestions.correctOptions, explanation: categoryQuestions.explanation }).from(categoryQuestions).where(questionScope).orderBy(categoryQuestions.order, categoryQuestions.id) : [];
   return { share, payload: { targetType: share.targetType, title: category.name, count: questions.length, allowedModes: share.allowedModesList, questions: questions.map((question) => ({ ...question, options: (() => { try { const parsed = JSON.parse(question.options || "[]"); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })(), correctOptions: parseModes(question.correctOptions).length ? parseModes(question.correctOptions) : question.correctOption ? [question.correctOption] : [] })) } };
 }
 

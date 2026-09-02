@@ -4,6 +4,7 @@ export const SHARE_ACCESS_MODES = ["restricted", "anyone_with_link"] as const;
 export type ShareAccessMode = (typeof SHARE_ACCESS_MODES)[number];
 export const VOCAB_SHARE_MODES = ["learn", "fill", "mc", "match", "dictation", "pronunciation", "sentence", "timed"] as const;
 export const QUESTION_SHARE_MODES = ["practice", "multiple_choice", "speaking", "shuffle"] as const;
+export const CATEGORY_SHARE_MODES = [...VOCAB_SHARE_MODES, ...QUESTION_SHARE_MODES] as const;
 export type ShareLearningMode = (typeof VOCAB_SHARE_MODES)[number] | (typeof QUESTION_SHARE_MODES)[number];
 export const SHARE_CONTENT_KEYS = ["vocab", "quiz", "essay", "speaking", "documents"] as const;
 export type ShareContentKey = (typeof SHARE_CONTENT_KEYS)[number];
@@ -18,5 +19,5 @@ export function modesForSetType(type: string): readonly string[] {
 }
 
 export function defaultShareModes(targetType: ShareTargetType, setType?: string) {
-  return [...(targetType === "vocab_set" ? modesForSetType(setType || "ielts_vocab") : QUESTION_SHARE_MODES)];
+  return [...(targetType === "vocab_set" ? modesForSetType(setType || "ielts_vocab") : CATEGORY_SHARE_MODES)];
 }

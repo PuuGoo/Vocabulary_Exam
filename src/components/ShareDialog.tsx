@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/Modal";
 import { cx } from "@/components/ui";
-import { QUESTION_SHARE_MODES, SHARE_CONTENT_KEYS, modesForSetType, type ShareContentKey, type ShareTargetType } from "@/lib/shareConfig";
+import { CATEGORY_SHARE_MODES, SHARE_CONTENT_KEYS, modesForSetType, type ShareContentKey, type ShareTargetType } from "@/lib/shareConfig";
 
 const modeLabels: Record<string, string> = { learn: "Học bài", fill: "Điền từ", mc: "Trắc nghiệm", match: "Ghép cặp", dictation: "Nghe & viết", pronunciation: "Luyện phát âm", sentence: "Xếp câu", timed: "Thi thử tính giờ", practice: "Luyện câu hỏi", multiple_choice: "Trắc nghiệm", speaking: "Speaking", shuffle: "Xáo trộn câu hỏi" };
 type ContentSummary = { sets: Array<{ id: number; name: string }>; documents: Array<{ id: number; title: string; fileName: string }>; counts: { quiz: number; essay: number; speaking: number } };
@@ -11,7 +11,7 @@ type ContentSummary = { sets: Array<{ id: number; name: string }>; documents: Ar
 async function safeJson(response: Response): Promise<Record<string, any>> { const text = await response.text(); if (!text) return {}; try { const parsed = JSON.parse(text); return parsed && typeof parsed === "object" ? parsed : {}; } catch { return {}; } }
 
 export default function ShareDialog({ targetType, targetId, title, setType, onClose }: { targetType: ShareTargetType; targetId: number; title: string; setType?: string; onClose: () => void }) {
-  const modes = useMemo(() => targetType === "vocab_set" ? [...modesForSetType(setType || "ielts_vocab")] : [...QUESTION_SHARE_MODES], [setType, targetType]);
+  const modes = useMemo(() => targetType === "vocab_set" ? [...modesForSetType(setType || "ielts_vocab")] : [...CATEGORY_SHARE_MODES], [setType, targetType]);
   const [accessMode, setAccessMode] = useState<"restricted" | "anyone_with_link">("restricted");
   const [allowedModes, setAllowedModes] = useState<string[]>(modes);
   const [contentSelection, setContentSelection] = useState<ShareContentKey[]>([...SHARE_CONTENT_KEYS]);
