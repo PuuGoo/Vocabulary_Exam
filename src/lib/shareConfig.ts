@@ -5,6 +5,8 @@ export type ShareAccessMode = (typeof SHARE_ACCESS_MODES)[number];
 export const VOCAB_SHARE_MODES = ["learn", "fill", "mc", "match", "dictation", "pronunciation", "sentence", "timed"] as const;
 export const QUESTION_SHARE_MODES = ["practice", "multiple_choice", "speaking", "shuffle"] as const;
 export type ShareLearningMode = (typeof VOCAB_SHARE_MODES)[number] | (typeof QUESTION_SHARE_MODES)[number];
+export const SHARE_CONTENT_KEYS = ["vocab", "quiz", "essay", "speaking", "documents"] as const;
+export type ShareContentKey = (typeof SHARE_CONTENT_KEYS)[number];
 
 export function buildShareUrl(token: string, origin?: string) {
   const base = origin || process.env.NEXT_PUBLIC_APP_URL || "";

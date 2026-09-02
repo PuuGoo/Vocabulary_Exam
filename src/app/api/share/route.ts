@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
-import { createOrUpdateShare, defaultShareModes, getActiveShare, type ShareTargetType } from "@/lib/shares";
+import { createOrUpdateShare, getActiveShare, getCategoryShareContent, type ShareTargetType } from "@/lib/shares";
 
-const schema = z.object({ targetType: z.enum(["vocab_set", "question_collection"]), targetId: z.number().int().positive(), accessMode: z.enum(["restricted", "anyone_with_link"]), allowedModes: z.array(z.string()).max(20).default([]) });
+const schema = z.object({ targetType: z.enum(["vocab_set", "question_collection"]), targetId: z.number().int().positive(), accessMode: z.enum(["restricted", "anyone_with_link"]), allowedModes: z.array(z.string()).max(20).default([]), contentSelection: z.array(z.enum(["vocab", "quiz", "essay", "speaking", "documents"])).max(5).optional(), includeNewContent: z.boolean().optional() });
 
 export async function GET(request: NextRequest) {
   const session = await getSession();
@@ -13,7 +13,8 @@ export async function GET(request: NextRequest) {
   if (!targetType || !["vocab_set", "question_collection"].includes(targetType) || !Number.isInteger(targetId) || targetId <= 0) return NextResponse.json({ error: "Dữ liệu chia sẻ không hợp lệ.", code: "INVALID_SHARE_REQUEST" }, { status: 400 });
   try {
     const share = await getActiveShare(targetType, targetId);
-    return NextResponse.json({ share: share ? { id: share.id, accessMode: share.accessMode, allowedModes: share.allowedModesList } : null });
+    const content = targetType === "question_collection" ? await getCategoryShareContent(targetId) : null;
+    return NextResponse.json({ share: share ? { id: share.id, accessMode: share.accessMode, allowedModes: share.allowedModesList, contentSelection: share.contentSelectionList, includeNewContent: share.includeNewContent } : null, content: content ? { sets: content.sets, documents: content.documents, counts: content.counts } : null });
   } catch (error) {
     console.error("[share:get]", { targetType, targetId, error: error instanceof Error ? { name: error.name, message: error.message } : error });
     return NextResponse.json({ error: "Không thể tải cấu hình liên kết chia sẻ.", code: "SHARE_LOAD_FAILED" }, { status: 500 });
