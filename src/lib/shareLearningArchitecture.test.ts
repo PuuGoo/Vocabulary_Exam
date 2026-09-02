@@ -14,3 +14,8 @@ test("guest Fill sessions explicitly disable persistence", () => {
   const source = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
   assert.match(source, /persist=\{false\}/);
 });
+
+test("shared shell uses canonical mode navigation", () => {
+  const source = readFileSync("src/components/ShareGuestExperience.tsx", "utf8");
+  assert.match(source, /<StudyModeNav/);
+});
