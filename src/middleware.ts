@@ -29,8 +29,9 @@ export async function middleware(req: NextRequest) {
   const session = token ? await verifySessionToken(token) : null;
 
   const isPublic = PUBLIC_PATHS.includes(pathname);
+  const isSharePath = pathname === "/s" || pathname.startsWith("/s/") || pathname === "/api/share" || pathname.startsWith("/api/share/");
 
-  if (!session && !isPublic) {
+  if (!session && !isPublic && !isSharePath) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);

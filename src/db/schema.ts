@@ -16,6 +16,8 @@ import { relations } from "drizzle-orm";
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab"] as const;
 export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily", "writing"] as const;
+export const shareTargetTypeEnum = ["vocab_set", "question_collection"] as const;
+export const shareAccessModeEnum = ["restricted", "anyone_with_link"] as const;
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable(
@@ -89,6 +91,27 @@ export const vocabSets = pgTable("vocab_sets", {
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
+
+export const shareLinks = pgTable(
+  "share_links",
+  {
+    id: serial("id").primaryKey(),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    targetType: varchar("target_type", { length: 32 }).notNull(),
+    targetId: integer("target_id").notNull(),
+    createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    accessMode: varchar("access_mode", { length: 32 }).notNull().default("restricted"),
+    allowedModes: text("allowed_modes").notNull().default("[]"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    tokenIdx: uniqueIndex("share_links_token_hash_idx").on(table.tokenHash),
+    targetIdx: index("share_links_target_idx").on(table.targetType, table.targetId),
+  }),
+);
 
 export const categoryDocuments = pgTable(
   "category_documents",

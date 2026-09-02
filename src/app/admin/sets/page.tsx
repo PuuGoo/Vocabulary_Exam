@@ -10,6 +10,7 @@ import DocumentPreview from "@/components/DocumentPreview";
 import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "@/lib/documentDisplay";
 import { SUPPORTED_DOCUMENT_ACCEPT, documentKind, isSupportedDocument } from "@/lib/categoryDocumentFile";
 import QuestionImportExportTools from "@/components/QuestionImportExportTools";
+import ShareDialog from "@/components/ShareDialog";
 import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
 import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLetter, planPermanentOptionShuffle, type PermanentShufflePlan, type QuestionShuffleMode, type QuestionShuffleSettings, type ShuffleQuestion } from "@/lib/questionShuffle";
 
@@ -110,6 +111,7 @@ export default function AdminSetsPage() {
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
   const [detailWordQuery, setDetailWordQuery] = useState("");
   const [previewSetId, setPreviewSetId] = useState<number | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ targetType: "vocab_set" | "question_collection"; targetId: number; title: string; setType?: string } | null>(null);
   const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
   const [dragOverSetId, setDragOverSetId] = useState<number | null>(null);
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
@@ -1622,7 +1624,8 @@ export default function AdminSetsPage() {
                       <span className="text-xs text-muted">{category.count} bộ từ</span>
                     </div>
                     <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} disabled={categorySubmitting} onClick={() => { setEditingCategoryId(category.id); setEditingCategoryName(category.name.split(" / ").pop() || category.name); }}>Đổi tên</button>
-                    <button className="min-h-9 rounded-[9px] border border-[#F2D6D6] bg-white px-3 text-xs font-bold text-[#B65353] transition hover:bg-[#FFF5F5]" disabled={categorySubmitting} onClick={() => void deleteCategory(category)}>Xóa</button>
+                    <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} onClick={() => setShareTarget({ targetType: "question_collection", targetId: category.id, title: category.name })}>Chia sẻ</button>
+                    <button type="button" className="min-h-9 rounded-[9px] border border-[#F2D6D6] bg-white px-3 text-xs font-bold text-[#B65353] transition hover:bg-[#FFF5F5]" disabled={categorySubmitting} onClick={() => void deleteCategory(category)}>Xóa</button>
                   </div>
                 )}
               </div>
@@ -1680,6 +1683,7 @@ export default function AdminSetsPage() {
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
+              <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type })}>Chia sẻ</button>
               <div className="relative" data-preview-menu>
                 <button
                   type="button"
@@ -2134,6 +2138,8 @@ export default function AdminSetsPage() {
           </div>
         </Modal>
       )}
+
+      {shareTarget && <ShareDialog {...shareTarget} onClose={() => setShareTarget(null)} />}
     </div>
   );
 }

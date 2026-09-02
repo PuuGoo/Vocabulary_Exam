@@ -37,3 +37,12 @@ test("only the exact backup cron path receives the session exemption", async () 
   assert.equal(response.status, 307);
   assert.equal(new URL(response.headers.get("location")!).pathname, "/login");
 });
+
+test("anonymous share pages and share APIs bypass the session redirect only", async () => {
+  const { middleware } = await middlewareModule;
+  for (const pathname of ["/s/AbCdEf1234567890", "/api/share/AbCdEf1234567890"]) {
+    const response = await middleware(anonymous(pathname));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("x-middleware-next"), "1");
+  }
+});
