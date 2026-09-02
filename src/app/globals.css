@@ -287,6 +287,10 @@ html.lexora-native-app :is(a, button, [role="button"]) {
 /* Focus mode budgets vertical space by viewport height. The document stays
    stable; only unusually long feedback may scroll inside the question card. */
 @media (min-width: 768px) and (max-height: 800px) {
+  main:has(.fill-focus-session) > div > p:last-child {
+    display: none;
+  }
+
   .fill-focus-session {
     display: flex;
     min-height: 0;
