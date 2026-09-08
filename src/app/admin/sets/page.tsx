@@ -13,6 +13,7 @@ import QuestionImportExportTools from "@/components/QuestionImportExportTools";
 import ShareDialog from "@/components/ShareDialog";
 import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
 import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLetter, planPermanentOptionShuffle, type PermanentShufflePlan, type QuestionShuffleMode, type QuestionShuffleSettings, type ShuffleQuestion } from "@/lib/questionShuffle";
+import { getFillPatternValidationError, parseFillAnswerGroups } from "@/lib/fillAnswer";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -1963,6 +1964,7 @@ export default function AdminSetsPage() {
                     <div>
                       <label className={cx.label}>Loại từ (không bắt buộc)</label>
                       <input className={cx.input} placeholder="noun / verb / adj..." value={wForm.wtype} onChange={(e) => setWForm({ ...wForm, wtype: e.target.value })} />
+                      {wForm.wtype.trim().toLowerCase() === "pattern" && <div className="-mt-2 mb-3 rounded-lg border border-[#DCD8F3] bg-[#F8F7FF] p-3 text-xs leading-5 text-muted"><b className="text-[#6550DB]">Cú pháp pattern:</b> Dùng dấu <code>;</code> để tách các cấu trúc đều bắt buộc phải nhớ. Dùng <code>/</code> cho các biến thể trong cùng một cấu trúc.{wForm.term.trim() && <span className="mt-1 block font-semibold text-ink">{parseFillAnswerGroups(wForm.term, wForm.wtype).groups.length} cấu trúc bắt buộc</span>}{getFillPatternValidationError(wForm.term, wForm.wtype) && <span className="mt-1 block font-semibold text-bad">{getFillPatternValidationError(wForm.term, wForm.wtype)}</span>}</div>}
                     </div>
                     <div>
                       <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
@@ -2116,6 +2118,7 @@ export default function AdminSetsPage() {
                     <div>
                       <label className={cx.label}>Loại từ</label>
                       <input className={`${cx.input} !mb-0`} value={editForm.wtype} onChange={(e) => setEditForm({ ...editForm, wtype: e.target.value })} />
+                      {editForm.wtype.trim().toLowerCase() === "pattern" && <div className="mt-2 rounded-lg border border-[#DCD8F3] bg-[#F8F7FF] p-3 text-xs leading-5 text-muted">Dùng <code>;</code> cho các cấu trúc bắt buộc và <code>/</code> cho biến thể trong cùng cấu trúc. <b className="ml-1 text-[#6550DB]">{parseFillAnswerGroups(editForm.term, editForm.wtype).groups.length} cấu trúc bắt buộc</b>{getFillPatternValidationError(editForm.term, editForm.wtype) && <span className="mt-1 block font-semibold text-bad">{getFillPatternValidationError(editForm.term, editForm.wtype)}</span>}</div>}
                     </div>
                     <div>
                       <label className={cx.label}>Phiên âm IPA</label>

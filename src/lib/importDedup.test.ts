@@ -21,3 +21,14 @@ test("irregular verb imports use all three forms as the identity", () => {
   assert.equal(result.rows.length, 2);
   assert.equal(result.duplicateCount, 1);
 });
+
+test("pattern imports remain one vocabulary row", () => {
+  const row = {
+    term: "sth/sb frustrates sb; sb is frustrated with sth/sb",
+    meaning: "điều gì/ai làm ai bực; ai bực với điều gì/ai",
+    wtype: "pattern",
+  };
+  const result = dedupeImportRows([row], "ielts_vocab", []);
+  assert.equal(result.rows.length, 1);
+  assert.deepEqual(result.rows[0], row);
+});

@@ -1,5 +1,13 @@
 # IELTS Vocab Check
 
+## Vocabulary pattern syntax
+
+Với hàng từ vựng có `wtype=pattern`, dùng dấu `;` để tách các cấu trúc đều bắt
+buộc trong bài Điền từ, và dùng `/` cho các biến thể trong cùng một cấu trúc.
+Ví dụ: `sth/sb frustrates sb; sb is frustrated with sth/sb`. Dữ liệu này vẫn là
+một word row, một flashcard và một điểm. Với mọi `wtype` khác, dấu `;` tiếp tục
+giữ semantics Điền từ cũ.
+
 Hệ thống kiểm tra từ vựng luyện thi IELTS — có đăng nhập phân quyền (admin/học sinh),
 trang quản trị, import từ vựng bằng CSV/Excel, và giao diện làm bài cho học sinh.
 

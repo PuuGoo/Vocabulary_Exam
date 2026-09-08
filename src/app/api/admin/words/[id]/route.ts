@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
+import { getFillPatternValidationError } from "@/lib/fillAnswer";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -38,12 +39,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
   if (Object.keys(parsed.data).length === 0) return NextResponse.json({ error: "Không có thay đổi." }, { status: 400 });
+  const wordId = Number(params.id);
+  const existing = await db.query.words.findFirst({ where: eq(words.id, wordId) });
+  if (!existing) return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
+  const patternError = getFillPatternValidationError(parsed.data.term ?? existing.term, parsed.data.wtype ?? existing.wtype);
+  if (patternError) return NextResponse.json({ error: patternError }, { status: 400 });
 
   const patch: Record<string, string> = {};
   for (const [k, v] of Object.entries(parsed.data)) {
     if (v !== undefined) patch[k] = normalizeText(v);
   }
 
-  const [updated] = await db.update(words).set(patch).where(eq(words.id, Number(params.id))).returning();
+  const [updated] = await db.update(words).set(patch).where(eq(words.id, wordId)).returning();
   return NextResponse.json({ word: updated });
 }

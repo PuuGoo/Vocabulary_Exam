@@ -7,10 +7,14 @@ import {
   chunkFillItems,
   createFirstRecallOutcome,
   getAcceptedAnswers,
+  getFillPatternValidationError,
   getProgressiveHint,
   gradeFillAnswer,
+  gradeFillAnswerGroups,
+  gradeFillResponse,
   isValidFillDraft,
   maskAnswerInExample,
+  parseFillAnswerGroups,
   resolveFillFocusEnterAction,
   scheduleDelayedRetry,
   summarizeFillAttempts,
@@ -64,6 +68,63 @@ test("accepted answers preserve token and whole-answer slash conventions", () =>
   assert.deepEqual(getAcceptedAnswers("in an/the outfit"), ["in an outfit", "in the outfit"]);
 });
 
+test("ordinary words and legacy alternatives remain one answer group", () => {
+  assert.equal(parseFillAnswerGroups("oven", "noun").kind, "single");
+  assert.deepEqual(parseFillAnswerGroups("burned/burnt", "verb").groups[0].acceptedAnswers, ["burned", "burnt"]);
+  assert.deepEqual(parseFillAnswerGroups("refrigerator / fridge", "noun").groups[0].acceptedAnswers, ["refrigerator", "fridge"]);
+  assert.deepEqual(parseFillAnswerGroups("in an/the outfit", "PATTERN").groups[0].acceptedAnswers, ["in an outfit", "in the outfit"]);
+  assert.equal(parseFillAnswerGroups("foo; bar", "noun").kind, "single");
+});
+
+test("pattern semicolons create required groups with slash alternatives and shorthand", () => {
+  const parsed = parseFillAnswerGroups("sth/sb frustrates sb; sb is frustrated with sth/sb", " Pattern ");
+  assert.equal(parsed.kind, "multi_group");
+  assert.equal(parsed.groups.length, 2);
+  assert.deepEqual(parsed.groups[0].acceptedAnswers, ["sth/sb frustrates sb", "sth frustrates sb", "sb frustrates sb"]);
+  assert.deepEqual(parsed.groups[1].acceptedAnswers, ["sb is frustrated with sth/sb", "sb is frustrated with sth", "sb is frustrated with sb"]);
+});
+
+test("all required pattern groups must match once, independent of input order", () => {
+  const parsed = parseFillAnswerGroups("sth/sb frustrates sb; sb is frustrated with sth/sb", "pattern");
+  assert.equal(gradeFillAnswerGroups(["sth frustrates sb", "sb is frustrated with sth"], parsed).correct, true);
+  assert.equal(gradeFillAnswerGroups(["sb frustrates sb", "sb is frustrated with sb"], parsed).correct, true);
+  assert.equal(gradeFillAnswerGroups(["sth/sb frustrates sb", "sb is frustrated with sth/sb"], parsed).correct, true);
+  assert.equal(gradeFillAnswerGroups(["sb is frustrated with sth", "sth frustrates sb"], parsed).correct, true);
+  assert.equal(gradeFillAnswerGroups(["sth frustrates sb", ""], parsed).correct, false);
+  assert.equal(gradeFillAnswerGroups(["sth frustrates sb", "wrong"], parsed).correct, false);
+});
+
+test("one response cannot satisfy two groups and three groups are all required", () => {
+  const overlap = parseFillAnswerGroups("foo; foo bar", "pattern");
+  assert.equal(gradeFillAnswerGroups(["foo", ""], overlap).correct, false);
+  const three = parseFillAnswerGroups("active; passive; causative", "pattern");
+  assert.equal(gradeFillAnswerGroups(["causative", "active", "passive"], three).correct, true);
+  assert.equal(gradeFillAnswerGroups(["active", "passive", ""], three).correct, false);
+});
+
+test("empty and duplicate pattern groups are normalized safely", () => {
+  const parsed = parseFillAnswerGroups("foo;; foo ; bar;", "pattern");
+  assert.equal(parsed.kind, "multi_group");
+  assert.deepEqual(parsed.groups.map((group) => group.source), ["foo", "bar"]);
+  assert.match(getFillPatternValidationError("foo;;bar", "pattern") || "", /nhóm rỗng/);
+  assert.equal(getFillPatternValidationError("foo;;bar", "noun"), null);
+});
+
+test("multi-group outcome is one immutable first-attempt point", () => {
+  const wrong = createFirstRecallOutcome({
+    wordId: 41,
+    answer: ["sth frustrates sb", "wrong"],
+    answerKey: "sth/sb frustrates sb; sb is frustrated with sth/sb",
+    wtype: "pattern",
+    hintLevelUsed: 0,
+    audioBeforeAnswer: false,
+  });
+  assert.equal(wrong.firstTryCorrect, false);
+  assert.equal(gradeFillResponse(["sth frustrates sb", "sb is frustrated with sth"], "sth/sb frustrates sb; sb is frustrated with sth/sb", "pattern").correct, true);
+  const summary = summarizeFillAttempts([{ ...wrong, corrected: true, finalCorrect: true }], [41]);
+  assert.deepEqual({ score: summary.firstTryCorrect, final: summary.finalCorrect, weak: summary.weakWordIds }, { score: 0, final: 1, weak: [41] });
+});
+
 test("focus exposes one current item while list exposes the group", () => {
   const words = [1, 2, 3, 4];
   assert.deepEqual(visibleFillItems(words, "focus", 2), [3]);
@@ -98,6 +159,7 @@ test("draft validation restores compatible sessions and rejects stale or changed
   assert.equal(isValidFillDraft(draft, [1, 2], 2_000), true);
   assert.equal(isValidFillDraft(draft, [1, 3], 2_000), false);
   assert.equal(isValidFillDraft({ ...draft, version: 1 }, [1, 2], 2_000), false);
+  assert.equal(isValidFillDraft({ ...draft, version: 3, answers: { 1: ["active", "passive"] } }, [1, 2], 2_000), true);
 });
 
 test("Focus keyboard state machine never submits while typing", () => {

@@ -2,9 +2,36 @@ export type FillSessionKind = "practice" | "test";
 export type FillFocusKeyboardState = "answering" | "correct" | "correcting" | "corrected" | "test";
 export type FillFocusEnterAction = "check" | "next" | "confirm" | "test-next" | "noop";
 
+export type FillResponse = string | string[];
+export type FillAnswerGroup = {
+  id: string;
+  source: string;
+  acceptedAnswers: string[];
+  required: true;
+};
+export type ParsedFillAnswer = {
+  kind: "single" | "multi_group";
+  groups: FillAnswerGroup[];
+};
+export type FillAnswerGroupResult = {
+  groupId: string;
+  source: string;
+  correct: boolean;
+  nearMiss: boolean;
+  matchedResponseIndex: number | null;
+};
+export type FillAnswerGroupsGrade = {
+  correct: boolean;
+  nearMiss: boolean;
+  groupResults: FillAnswerGroupResult[];
+  unmatchedGroups: string[];
+  unmatchedResponses: number[];
+};
+
 export type FillRecallOutcome = {
   wordId: number;
   firstAnswer: string;
+  firstAnswers?: string[];
   firstTryCorrect: boolean;
   correctAfterHint: boolean;
   hintLevelUsed: number;
@@ -15,13 +42,13 @@ export type FillRecallOutcome = {
 };
 
 export type FillDraft = {
-  version: 2;
+  version: 2 | 3;
   savedAt: number;
   wordIds: number[];
   group: number;
   queues: Record<number, number[]>;
   cursors: Record<number, number>;
-  answers: Record<number, string>;
+  answers: Record<number, FillResponse>;
   outcomes: Record<number, FillRecallOutcome>;
   hintLevels: Record<number, number>;
   audioBeforeAnswer: Record<number, boolean>;
@@ -62,6 +89,116 @@ export function getAcceptedAnswers(answerKey: string | null | undefined): string
     return results;
   });
   return [...new Set(expanded.map(normalizeFillAnswer).filter(Boolean))];
+}
+
+function isPatternType(wtype: string | null | undefined) {
+  return normalizeFillAnswer(wtype) === "pattern";
+}
+
+export function getFillPatternValidationError(term: string | null | undefined, wtype: string | null | undefined) {
+  if (!isPatternType(wtype) || !(term || "").includes(";")) return null;
+  if ((term || "").split(";").some((group) => !group.trim())) {
+    return "Pattern có nhóm rỗng. Hãy xóa dấu ; thừa hoặc điền đầy đủ cấu trúc.";
+  }
+  return null;
+}
+
+/**
+ * A vocabulary row remains one concept. Only pattern rows use semicolons as
+ * required (AND) group separators; every other row keeps the legacy parser.
+ */
+export function parseFillAnswerGroups(
+  term: string | null | undefined,
+  wtype: string | null | undefined,
+): ParsedFillAnswer {
+  const raw = (term || "").trim();
+  const sources = isPatternType(wtype)
+    ? raw.split(";").map((part) => part.trim()).filter(Boolean)
+    : [raw];
+  const uniqueSources = sources.filter((source, index) =>
+    sources.findIndex((candidate) => normalizeFillAnswer(candidate) === normalizeFillAnswer(source)) === index,
+  );
+  const effectiveSources = uniqueSources.length ? uniqueSources : [raw];
+  const multiGroup = isPatternType(wtype) && effectiveSources.length > 1;
+  const selectedSources = multiGroup ? effectiveSources : [raw];
+  return {
+    kind: multiGroup ? "multi_group" : "single",
+    groups: selectedSources.map((source, index) => ({
+      id: `group-${index + 1}`,
+      source,
+      // Pattern shorthand (for example sth/sb) is accepted alongside its
+      // expanded alternatives because it is the canonical learned form.
+      acceptedAnswers: [...new Set([
+        ...(multiGroup ? [normalizeFillAnswer(source)] : []),
+        ...getAcceptedAnswers(source),
+      ].filter(Boolean))],
+      required: true,
+    })),
+  };
+}
+
+function gradeResponseForGroup(response: string, group: FillAnswerGroup) {
+  const normalized = normalizeFillAnswer(response);
+  const correct = Boolean(normalized) && group.acceptedAnswers.includes(normalized);
+  const nearestDistance = group.acceptedAnswers.length
+    ? Math.min(...group.acceptedAnswers.map((answer) => getTypoDistance(normalized, answer)))
+    : Number.POSITIVE_INFINITY;
+  const nearestLength = group.acceptedAnswers.reduce((length, answer) => Math.max(length, answer.length), 0);
+  return {
+    correct,
+    nearMiss: !correct && Boolean(normalized) && nearestDistance <= (nearestLength >= 6 ? 2 : 1),
+  };
+}
+
+/** Maximum one-to-one response/group matching; input order is irrelevant. */
+export function gradeFillAnswerGroups(
+  responses: readonly string[],
+  parsed: ParsedFillAnswer,
+): FillAnswerGroupsGrade {
+  const groupToResponse = Array<number>(parsed.groups.length).fill(-1);
+  const edges = responses.map((response) => parsed.groups
+    .map((group, groupIndex) => gradeResponseForGroup(response, group).correct ? groupIndex : -1)
+    .filter((groupIndex) => groupIndex >= 0));
+
+  function assign(responseIndex: number, seen: Set<number>): boolean {
+    for (const groupIndex of edges[responseIndex]) {
+      if (seen.has(groupIndex)) continue;
+      seen.add(groupIndex);
+      const previousResponse = groupToResponse[groupIndex];
+      if (previousResponse < 0 || assign(previousResponse, seen)) {
+        groupToResponse[groupIndex] = responseIndex;
+        return true;
+      }
+    }
+    return false;
+  }
+  responses.forEach((_, responseIndex) => assign(responseIndex, new Set()));
+  const matchedResponses = new Set(groupToResponse.filter((index) => index >= 0));
+  const groupResults = parsed.groups.map((group, groupIndex): FillAnswerGroupResult => {
+    const responseIndex = groupToResponse[groupIndex];
+    const nearMiss = responseIndex < 0 && responses.some((response) => gradeResponseForGroup(response, group).nearMiss);
+    return { groupId: group.id, source: group.source, correct: responseIndex >= 0, nearMiss, matchedResponseIndex: responseIndex >= 0 ? responseIndex : null };
+  });
+  const unmatchedGroups = groupResults.filter((result) => !result.correct).map((result) => result.groupId);
+  return {
+    correct: unmatchedGroups.length === 0,
+    nearMiss: groupResults.some((result) => result.nearMiss),
+    groupResults,
+    unmatchedGroups,
+    unmatchedResponses: responses.map((_, index) => index).filter((index) => !matchedResponses.has(index)),
+  };
+}
+
+export function responseValues(response: FillResponse | undefined, groupCount: number): string[] {
+  if (Array.isArray(response)) return Array.from({ length: groupCount }, (_, index) => response[index] || "");
+  return groupCount > 1
+    ? [response || "", ...Array.from({ length: groupCount - 1 }, () => "")]
+    : [response || ""];
+}
+
+export function gradeFillResponse(response: FillResponse | undefined, term: string | null | undefined, wtype?: string | null) {
+  const parsed = parseFillAnswerGroups(term, wtype);
+  return gradeFillAnswerGroups(responseValues(response, parsed.groups.length), parsed);
 }
 
 export function getTypoDistance(left: string, right: string) {
@@ -145,16 +282,20 @@ export function resolveFillFocusEnterAction(input: {
 
 export function createFirstRecallOutcome(input: {
   wordId: number;
-  answer: string;
+  answer: FillResponse;
   answerKey: string | null | undefined;
+  wtype?: string | null;
   hintLevelUsed: number;
   audioBeforeAnswer: boolean;
 }): FillRecallOutcome {
-  const grade = gradeFillAnswer(input.answer, input.answerKey);
+  const parsed = parseFillAnswerGroups(input.answerKey, input.wtype);
+  const values = responseValues(input.answer, parsed.groups.length);
+  const grade = gradeFillAnswerGroups(values, parsed);
   const assisted = input.hintLevelUsed > 0 || input.audioBeforeAnswer;
   return {
     wordId: input.wordId,
-    firstAnswer: input.answer,
+    firstAnswer: Array.isArray(input.answer) ? input.answer.join(" ; ") : input.answer,
+    firstAnswers: Array.isArray(input.answer) ? [...input.answer] : undefined,
     firstTryCorrect: grade.correct && !assisted,
     correctAfterHint: grade.correct && assisted,
     hintLevelUsed: input.hintLevelUsed,
@@ -198,7 +339,7 @@ export function visibleFillItems<T>(items: T[], view: "focus" | "list", currentI
 export function isValidFillDraft(value: unknown, wordIds: number[], now = Date.now()): value is FillDraft {
   if (!value || typeof value !== "object") return false;
   const draft = value as Partial<FillDraft>;
-  return draft.version === 2
+  return (draft.version === 2 || draft.version === 3)
     && Number.isFinite(draft.savedAt)
     && Number(draft.savedAt) <= now
     && now - Number(draft.savedAt) < 24 * 60 * 60 * 1000

@@ -7,6 +7,7 @@ import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import SetPicker from "@/components/SetPicker";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
+import { gradeFillResponse, parseFillAnswerGroups, responseValues, type FillResponse } from "@/lib/fillAnswer";
 
 type SetSummary = { id: number; name: string; type: string; count: number; className: string | null; category?: string | null };
 type MixedWord = { id: number; setId: number; setName: string; meaning: string; term: string; ipa: string | null; example: string | null; wtype: string | null };
@@ -45,7 +46,7 @@ export default function MixedPracticePage() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [started, setStarted] = useState(false);
   const [index, setIndex] = useState(0);
-  const [answer, setAnswer] = useState("");
+  const [answer, setAnswer] = useState<FillResponse>("");
   const [checked, setChecked] = useState(false);
   const [score, setScore] = useState(0);
   const [wrongWords, setWrongWords] = useState<WrongWord[]>([]);
@@ -77,7 +78,10 @@ export default function MixedPracticePage() {
 
   const question = questions[index];
   const activeMode = question?.questionMode || "mc";
-  const answerCorrect = checked && !!question && matches(answer, question.term);
+  const activeParsed = parseFillAnswerGroups(question?.term, question?.wtype);
+  const activeResponses = responseValues(answer, activeParsed.groups.length);
+  const fillAnswerComplete = activeResponses.every((value) => value.trim());
+  const answerCorrect = checked && !!question && (activeMode === "fill" ? gradeFillResponse(answer, question.term, question.wtype).correct : matches(typeof answer === "string" ? answer : "", question.term));
 
   async function startPractice() {
     if (selectedSetIds.length === 0) { toast("Hãy chọn ít nhất một bộ từ."); return; }
@@ -113,9 +117,12 @@ export default function MixedPracticePage() {
     }
   }
 
-  function grade(value = answer) {
-    if (!question || checked || !value.trim()) return;
-    const correct = matches(value, question.term);
+  function grade(value: FillResponse = answer) {
+    if (!question || checked) return;
+    const parsed = parseFillAnswerGroups(question.term, question.wtype);
+    const complete = responseValues(value, parsed.groups.length).every((item) => item.trim());
+    if (!complete) return;
+    const correct = question.questionMode === "fill" ? gradeFillResponse(value, question.term, question.wtype).correct : matches(typeof value === "string" ? value : "", question.term);
     setAnswer(value);
     setChecked(true);
     if (correct) setScore((current) => current + 1);
@@ -213,9 +220,9 @@ export default function MixedPracticePage() {
       <div className="mb-5 mt-3 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(index + (checked ? 1 : 0)) / questions.length * 100}%` }} /></div>
       <section className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-5 text-center sm:p-8">
         <span className={cx.badgeGold}>{question.setName}</span><div className="mt-3 text-xs font-medium uppercase tracking-wider text-golddark">{activeMode === "fill" ? "Điền từ" : "Trắc nghiệm"}</div><div className="mt-5 text-xs uppercase tracking-widest text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold">{question.meaning}</div>
-        {activeMode === "fill" ? <div className="mt-6"><label className="sr-only" htmlFor="mixed-answer">Nhập từ tiếng Anh</label><input ref={inputRef} id="mixed-answer" className={`${cx.input} mx-auto max-w-sm text-center text-lg ${checked ? answerCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} disabled={checked} autoComplete="off" spellCheck={false} placeholder="Nhập từ tiếng Anh..." value={answer} onChange={(event) => setAnswer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !checked) grade(); }} /></div> : <div className="mt-6 grid gap-2 sm:grid-cols-2">{question.choices.map((choice, choiceIndex) => { const chosen = checked && answer === choice; const correct = checked && matches(choice, question.term); return <button key={choice} className={`rounded-xl border p-3 text-left text-sm ${correct ? "border-ok bg-okbg text-ok" : chosen ? "border-bad bg-badbg text-bad" : "border-line hover:border-gold hover:bg-goldpale/30"}`} disabled={checked} onClick={() => grade(choice)}><span className="mr-2 text-xs text-muted">{choiceIndex + 1}</span>{choice}</button>; })}</div>}
+        {activeMode === "fill" ? <div className="mx-auto mt-6 grid max-w-sm gap-3">{activeParsed.kind === "multi_group" && <div className="text-sm font-bold text-[#6550DB]">{activeParsed.groups.length} cấu trúc cần nhớ</div>}{activeParsed.groups.map((groupItem, groupIndex) => <div key={groupItem.id}><label className="mb-1 block text-left text-xs font-bold text-muted" htmlFor={`mixed-answer-${groupIndex}`}>{activeParsed.kind === "multi_group" ? `Cấu trúc ${groupIndex + 1}` : "Từ tiếng Anh"}</label><input ref={groupIndex === 0 ? inputRef : undefined} id={`mixed-answer-${groupIndex}`} className={`${cx.input} text-center text-lg ${checked ? answerCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} disabled={checked} autoComplete="off" spellCheck={false} placeholder={activeParsed.kind === "multi_group" ? `Nhập cấu trúc ${groupIndex + 1}` : "Nhập từ tiếng Anh..."} value={activeResponses[groupIndex]} onChange={(event) => setAnswer(activeParsed.kind === "multi_group" ? activeResponses.map((item, index) => index === groupIndex ? event.target.value : item) : event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && !checked) { if (groupIndex < activeParsed.groups.length - 1) { event.preventDefault(); document.getElementById(`mixed-answer-${groupIndex + 1}`)?.focus(); } else grade(); } }} /></div>)}</div> : <div className="mt-6 grid gap-2 sm:grid-cols-2">{question.choices.map((choice, choiceIndex) => { const chosen = checked && answer === choice; const correct = checked && matches(choice, question.term); return <button key={choice} className={`rounded-xl border p-3 text-left text-sm ${correct ? "border-ok bg-okbg text-ok" : chosen ? "border-bad bg-badbg text-bad" : "border-line hover:border-gold hover:bg-goldpale/30"}`} disabled={checked} onClick={() => grade(choice)}><span className="mr-2 text-xs text-muted">{choiceIndex + 1}</span>{choice}</button>; })}</div>}
         {checked && <div className={`mt-5 rounded-lg p-3 text-sm ${answerCorrect ? "bg-okbg text-ok" : "bg-badbg text-bad"}`}>{answerCorrect ? "✓ Chính xác!" : <>Chưa đúng. Đáp án: <b>{question.term}</b></>}{question.ipa && <span className="ml-2 text-golddark">{question.ipa}</span>}<span className="ml-2 inline-block"><SpeakButton text={question.term} /></span>{question.example && <div className="mt-2 text-xs italic text-muted">VD: {question.example}</div>}</div>}
-        {!checked ? activeMode === "fill" && <button className={`${cx.btn} ${cx.btnGold}`} disabled={!answer.trim()} onClick={() => grade()}>Kiểm tra</button> : <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold} mt-5`} onClick={next}>{index === questions.length - 1 ? "Xem kết quả" : "Câu tiếp theo →"}<kbd className="ml-2 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>}
+        {!checked ? activeMode === "fill" && <button className={`${cx.btn} ${cx.btnGold}`} disabled={!fillAnswerComplete} onClick={() => grade()}>Kiểm tra</button> : <button ref={nextButtonRef} className={`${cx.btn} ${cx.btnGold} mt-5`} onClick={next}>{index === questions.length - 1 ? "Xem kết quả" : "Câu tiếp theo →"}<kbd className="ml-2 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>}
       </section>
     </div>
   ) : null;

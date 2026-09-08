@@ -12,7 +12,7 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
 import FillFocusSession from "@/components/FillFocusSession";
-import { getAcceptedAnswers, gradeFillAnswer, maskAnswerInExample } from "@/lib/fillAnswer";
+import { getAcceptedAnswers, gradeFillAnswer, gradeFillAnswerGroups, maskAnswerInExample, parseFillAnswerGroups } from "@/lib/fillAnswer";
 import { fillScopeDraftSegment, filterWordsByFillScope, quizProgressMode, resolveFillWordScope } from "@/lib/unknownFill";
 
 type Word = {
@@ -62,6 +62,17 @@ function fmtClock(totalSeconds: number) {
   const m = Math.floor(totalSeconds / 60);
   const s = totalSeconds % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function fillHintSource(word: Word) {
+  return parseFillAnswerGroups(word.term, word.wtype).groups[0]?.source || word.term || "";
+}
+
+function listFillResponses(word: Word, values: Record<string, string>) {
+  const parsed = parseFillAnswerGroups(word.term, word.wtype);
+  return parsed.kind === "multi_group"
+    ? parsed.groups.map((_, index) => values[`group-${index}`] || "")
+    : [values.term || ""];
 }
 
 export default function QuizPlayerPage() {
@@ -602,7 +613,11 @@ function submitJumpQuestion() {
       const a = answers[w.id] || {};
       return checkMatch(a.v1, w.v1) && checkMatch(a.v2, w.v2) && checkMatch(a.v3, w.v3);
     } else if (mode === "fill") {
-      return checkMatch(answers[w.id]?.term, w.term);
+      const parsed = parseFillAnswerGroups(w.term, w.wtype);
+      const responses = parsed.kind === "multi_group"
+        ? parsed.groups.map((_, index) => answers[w.id]?.[`group-${index}`] || "")
+        : [answers[w.id]?.term || ""];
+      return gradeFillAnswerGroups(responses, parsed).correct;
     } else {
       return answers[w.id]?.mc === w.meaning;
     }
@@ -612,7 +627,13 @@ function submitJumpQuestion() {
     const a = answers[w.id];
     if (!a) return false;
     if (isVerb) return Boolean(a.v1 || a.v2 || a.v3);
-    return Boolean(a.term || a.mc);
+    if (mode === "fill") {
+      const parsed = parseFillAnswerGroups(w.term, w.wtype);
+      return parsed.kind === "multi_group"
+        ? parsed.groups.every((_, index) => Boolean(a[`group-${index}`]?.trim()))
+        : Boolean(a.term?.trim());
+    }
+    return Boolean(a.mc);
   }
 
   const wrongWordIdsInGroup = wordIdsNeedingRetry(groupWords, isWordCorrect);
@@ -704,7 +725,7 @@ function submitJumpQuestion() {
         correct += (checkMatch(a.v1, w.v1) ? 1 : 0) + (checkMatch(a.v2, w.v2) ? 1 : 0) + (checkMatch(a.v3, w.v3) ? 1 : 0);
       } else if (mode === "fill") {
         total += 1;
-        correct += checkMatch(answers[w.id]?.term, w.term) ? 1 : 0;
+        correct += isWordCorrect(w) ? 1 : 0;
       } else {
         total += 1;
         correct += answers[w.id]?.mc === w.meaning ? 1 : 0;
@@ -752,7 +773,7 @@ function submitJumpQuestion() {
         correct += (checkMatch(a.v1, w.v1) ? 1 : 0) + (checkMatch(a.v2, w.v2) ? 1 : 0) + (checkMatch(a.v3, w.v3) ? 1 : 0);
       } else if (mode === "fill") {
         total += 1;
-        correct += checkMatch(answers[w.id]?.term, w.term) ? 1 : 0;
+        correct += isWordCorrect(w) ? 1 : 0;
       } else {
         total += 1;
         correct += answers[w.id]?.mc === w.meaning ? 1 : 0;
@@ -1138,12 +1159,12 @@ function submitJumpQuestion() {
                     <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
                       <span className="text-xs font-bold text-muted">Gợi ý: </span>
                       <span className="font-mono">
-                        {w.term.split("").map((ch, ci) => (
+                        {fillHintSource(w).split("").map((ch, ci) => (
                           <span key={ci} className={ch === " " ? "mx-1" : ""}>
                             {ch === " " ? "·" : ci === 0 ? ch : "_"}
                           </span>
                         ))}
-                        <span className="ml-2 text-muted text-xs">({w.term.length} ký tự)</span>
+                        <span className="ml-2 text-muted text-xs">({fillHintSource(w).length} ký tự)</span>
                       </span>
                     </div>
                   )}
@@ -1212,12 +1233,12 @@ function submitJumpQuestion() {
                     <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
                       <span className="text-xs font-bold text-muted">Gợi ý: </span>
                       <span className="font-mono">
-                        {w.term.split("").map((ch, ci) => (
+                        {fillHintSource(w).split("").map((ch, ci) => (
                           <span key={ci} className={ch === " " ? "mx-1" : ""}>
                             {ch === " " ? "·" : ci === 0 ? ch : "_"}
                           </span>
                         ))}
-                        <span className="ml-2 text-muted text-xs">({w.term.length} ký tự)</span>
+                        <span className="ml-2 text-muted text-xs">({fillHintSource(w).length} ký tự)</span>
                       </span>
                     </div>
                   )}
@@ -1233,55 +1254,19 @@ function submitJumpQuestion() {
                       <span className="font-semibold not-italic">VD:</span> {maskAnswerInExample(w.example || "", w.term || "")}
                     </div>
                   )}
-                  <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">TỪ TIẾNG ANH</span>
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      spellCheck={false}
-                      disabled={effectiveChecked}
-                      value={answers[w.id]?.term || ""}
-                      onChange={(e) => setAnswer(w.id, "term", e.target.value)}
-                      onKeyDown={(event) => handleFillEnter(event, idx)}
-                      enterKeyHint={idx === currentWords.length - 1 ? "done" : "next"}
-                      ref={(el) => {
-                        if (el) inputRefs.set(w.id, el);
-                        else inputRefs.delete(w.id);
-                      }}
-                      className={`${cx.input} !mb-0 ${
-                        effectiveChecked ? (checkMatch(answers[w.id]?.term, w.term) ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg") : ""
-                      }`}
-                    />
+                  <ListFillInputs
+                    word={w}
+                    values={answers[w.id] || {}}
+                    checked={effectiveChecked}
+                    onChange={(part, value) => setAnswer(w.id, part, value)}
+                    onFinalEnter={(event) => handleFillEnter(event, idx)}
+                    registerPrimary={(element) => { if (element) inputRefs.set(w.id, element); else inputRefs.delete(w.id); }}
+                    finalWord={idx === currentWords.length - 1}
+                  />
                   </div>
                   {effectiveChecked && (
                     <div className="mt-2 text-[0.84rem] flex items-center gap-2">
-                      {checkMatch(answers[w.id]?.term, w.term) ? (
-                        <span className="text-ok font-semibold">✔ Chính xác.</span>
-                      ) : (
-                        <div className="rounded-lg border border-bad/30 bg-badbg/50 p-3">
-                          <div className="flex items-center gap-2 mb-1.5">
-                            <span className="text-bad font-bold">✘</span>
-                            <span className="text-xs font-bold text-bad uppercase tracking-wider">Đáp án đúng</span>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            {expandAnswerVariants(w.term || "").length > 1 ? (
-                              <div className="flex flex-wrap gap-1.5">
-                                {expandAnswerVariants(w.term || "").map((variant, vi) => (
-                                  <span key={vi} className="rounded-md bg-white border border-green-300 px-2.5 py-1 text-sm font-medium text-green-800">
-                                    {variant}
-                                  </span>
-                                ))}
-                                <div className="w-full mt-1 text-xs text-muted italic">
-                                  (Các đáp án đều được chấp nhận)
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-sm font-semibold text-ink">{w.term}</span>
-                            )}
-                            {w.ipa && <span className="text-golddark text-sm">{w.ipa}</span>}
-                            <SpeakButton text={w.term || ""} />
-                          </div>
-                        </div>
-                      )}
+                      <ListFillFeedback word={w} values={answers[w.id] || {}} />
                       {w.example && <span className="text-muted italic">VD: {w.example}</span>}
                     </div>
                   )}
@@ -1386,6 +1371,33 @@ function submitJumpQuestion() {
       </div>
     </div>
   );
+}
+
+function ListFillInputs({ word, values, checked, onChange, onFinalEnter, registerPrimary, finalWord }: {
+  word: Word;
+  values: Record<string, string>;
+  checked: boolean;
+  onChange: (part: string, value: string) => void;
+  onFinalEnter: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  registerPrimary: (element: HTMLInputElement | null) => void;
+  finalWord: boolean;
+}) {
+  const parsed = parseFillAnswerGroups(word.term, word.wtype);
+  const responses = listFillResponses(word, values);
+  const grade = gradeFillAnswerGroups(responses, parsed);
+  return <div className="grid gap-2">{parsed.kind === "multi_group" && <div className="text-xs font-bold text-[#6550DB]">{parsed.groups.length} cấu trúc cần nhớ</div>}{parsed.groups.map((groupItem, index) => { const part = parsed.kind === "multi_group" ? `group-${index}` : "term"; const responseCorrect = grade.groupResults.some((result) => result.matchedResponseIndex === index); return <div key={groupItem.id}><label className="mb-0.5 block text-[0.66rem] tracking-wide text-muted" htmlFor={`list-fill-${word.id}-${index}`}>{parsed.kind === "multi_group" ? `CẤU TRÚC ${index + 1}` : "TỪ TIẾNG ANH"}</label><input id={`list-fill-${word.id}-${index}`} ref={index === 0 ? registerPrimary : undefined} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={checked} placeholder={parsed.kind === "multi_group" ? `Nhập cấu trúc ${index + 1}` : undefined} value={responses[index]} onChange={(event) => onChange(part, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && index < parsed.groups.length - 1) { event.preventDefault(); document.getElementById(`list-fill-${word.id}-${index + 1}`)?.focus(); return; } onFinalEnter(event); }} enterKeyHint={index === parsed.groups.length - 1 && finalWord ? "done" : "next"} className={`${cx.input} !mb-0 ${checked ? responseCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} /></div>; })}</div>;
+}
+
+function ListFillFeedback({ word, values }: { word: Word; values: Record<string, string> }) {
+  const parsed = parseFillAnswerGroups(word.term, word.wtype);
+  const grade = gradeFillAnswerGroups(listFillResponses(word, values), parsed);
+  if (parsed.kind === "multi_group") {
+    const correctCount = grade.groupResults.filter((result) => result.correct).length;
+    return <div className={`rounded-lg border p-3 ${grade.correct ? "border-ok/30 bg-okbg/50" : "border-bad/30 bg-badbg/50"}`}><div className={`font-bold ${grade.correct ? "text-ok" : "text-bad"}`}>{grade.correct ? "✔ Chính xác toàn bộ cấu trúc." : `✘ Đúng ${correctCount}/${parsed.groups.length} cấu trúc`}</div><ol className="mt-2 grid gap-1 text-sm">{grade.groupResults.map((result, index) => <li key={result.groupId}><span className={result.correct ? "text-ok" : "text-bad"}>{result.correct ? "✓" : "×"}</span> <b>Cấu trúc {index + 1}:</b> {result.source}</li>)}</ol><div className="mt-2"><SpeakButton text={word.term || ""} /></div></div>;
+  }
+  if (grade.correct) return <span className="font-semibold text-ok">✔ Chính xác.</span>;
+  const variants = expandAnswerVariants(word.term || "");
+  return <div className="rounded-lg border border-bad/30 bg-badbg/50 p-3"><div className="mb-1.5 flex items-center gap-2"><span className="font-bold text-bad">✘</span><span className="text-xs font-bold uppercase tracking-wider text-bad">Đáp án đúng</span></div><div className="flex flex-wrap items-center gap-2">{variants.length > 1 ? <div className="flex flex-wrap gap-1.5">{variants.map((variant) => <span key={variant} className="rounded-md border border-green-300 bg-white px-2.5 py-1 text-sm font-medium text-green-800">{variant}</span>)}<div className="mt-1 w-full text-xs italic text-muted">(Các đáp án đều được chấp nhận)</div></div> : <span className="text-sm font-semibold text-ink">{word.term}</span>}{word.ipa && <span className="text-sm text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div></div>;
 }
 
 function QuizMenuItem({ children, shortcut, danger = false, onClick }: { children: React.ReactNode; shortcut: string; danger?: boolean; onClick: () => void }) {

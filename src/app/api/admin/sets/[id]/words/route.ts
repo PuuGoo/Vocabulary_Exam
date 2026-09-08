@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
+import { getFillPatternValidationError } from "@/lib/fillAnswer";
 
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
@@ -54,6 +55,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   } else {
     const parsed = vocabSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Vui lòng điền từ và nghĩa." }, { status: 400 });
+    const patternError = getFillPatternValidationError(parsed.data.term, parsed.data.wtype);
+    if (patternError) return NextResponse.json({ error: patternError }, { status: 400 });
     const [w] = await db
       .insert(words)
       .values({

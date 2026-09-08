@@ -12,16 +12,21 @@ import {
   claimFillAction,
   chunkFillItems,
   createFirstRecallOutcome,
+  gradeFillAnswerGroups,
+  gradeFillResponse,
   getAcceptedAnswers,
   getProgressiveHint,
-  gradeFillAnswer,
   isValidFillDraft,
   maskAnswerInExample,
   scheduleDelayedRetry,
   summarizeFillAttempts,
   resolveFillFocusEnterAction,
+  parseFillAnswerGroups,
+  responseValues,
   type FillAttemptSummary,
+  type FillAnswerGroupsGrade,
   type FillDraft,
+  type FillResponse,
   type FillRecallOutcome,
   type FillSessionKind,
 } from "@/lib/fillAnswer";
@@ -57,10 +62,14 @@ type Props = {
 const GROUP_SIZE = 10;
 const MAX_RETRIES_PER_WORD = 2;
 
-type Feedback = { correct: boolean; nearMiss: boolean; answer: string; retry: boolean; corrected?: boolean };
+type Feedback = { correct: boolean; nearMiss: boolean; answer: string; retry: boolean; corrected?: boolean; groupGrade?: FillAnswerGroupsGrade };
 
 function buildQueues(groups: FillFocusWord[][]) {
   return Object.fromEntries(groups.map((group, index) => [index, group.map((word) => word.id)]));
+}
+
+function hasResponseValue(response: FillResponse | undefined) {
+  return Array.isArray(response) ? response.some((value) => value.trim()) : Boolean(response?.trim());
 }
 
 export default function FillFocusSession({
@@ -80,7 +89,7 @@ export default function FillFocusSession({
   const [group, setGroup] = useState(0);
   const [queues, setQueues] = useState<Record<number, number[]>>(() => buildQueues(groups));
   const [cursors, setCursors] = useState<Record<number, number>>({ 0: 0 });
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, FillResponse>>({});
   const [outcomes, setOutcomes] = useState<Record<number, FillRecallOutcome>>({});
   const [hintLevels, setHintLevels] = useState<Record<number, number>>({});
   const [audioBeforeAnswer, setAudioBeforeAnswer] = useState<Record<number, boolean>>({});
@@ -88,7 +97,7 @@ export default function FillFocusSession({
   const [phase, setPhase] = useState<"questions" | "group_result" | "complete">("questions");
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [needsCorrection, setNeedsCorrection] = useState(false);
-  const [correction, setCorrection] = useState("");
+  const [correction, setCorrection] = useState<string[]>([]);
   const [activeHintLevel, setActiveHintLevel] = useState(0);
   const [saving, setSaving] = useState(false);
   const [navigatorOpen, setNavigatorOpen] = useState(false);
@@ -98,22 +107,33 @@ export default function FillFocusSession({
   const hydratedRef = useRef(false);
   const actionLockRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
-  const correctionInputRef = useRef<HTMLInputElement>(null);
+  const groupInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const correctionInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   const queue = queues[group] || groups[group]?.map((word) => word.id) || [];
   const cursor = Math.min(cursors[group] || 0, Math.max(0, queue.length - 1));
   const currentWord = wordById.get(queue[cursor]);
   const originalWords = groups[group] || [];
   const isRetry = Boolean(currentWord && outcomes[currentWord.id]);
-  const currentAnswer = currentWord ? answers[currentWord.id] || "" : "";
+  const currentParsed = parseFillAnswerGroups(currentWord?.term, currentWord?.wtype);
+  const currentResponses = responseValues(currentWord ? answers[currentWord.id] : undefined, currentParsed.groups.length);
+  const currentAnswer = currentResponses[0] || "";
+  const multiGroup = currentParsed.kind === "multi_group";
+  const currentResponseComplete = currentResponses.every((value) => value.trim());
   const currentOutcome = currentWord ? outcomes[currentWord.id] : undefined;
-  const currentHint = currentWord ? getProgressiveHint(currentWord.term, activeHintLevel, currentWord.example) : null;
+  const partialGrade = gradeFillAnswerGroups(currentResponses, currentParsed);
+  const hintGroupIndex = Math.max(0, currentParsed.groups.findIndex((group) => partialGrade.unmatchedGroups.includes(group.id)));
+  const hintGroup = currentParsed.groups[hintGroupIndex] || currentParsed.groups[0];
+  const currentHint = currentWord ? getProgressiveHint(hintGroup?.source, activeHintLevel, currentWord.example) : null;
   const hasActivity = Object.keys(answers).length > 0 || Object.keys(outcomes).length > 0 || Object.keys(groupResults).length > 0;
   // After a Test result is persisted, "Sửa từ sai" is deliberately a learning
   // round. It may reveal feedback and audio, but cannot mutate the first score.
   const correctionRound = phase === "questions" && Boolean(groupResults[group]);
   const effectiveSessionKind: FillSessionKind = correctionRound ? "practice" : sessionKind;
-  const totalAnsweredInTest = originalWords.filter((word) => Boolean(answers[word.id]?.trim())).length;
+  const totalAnsweredInTest = originalWords.filter((word) => {
+    const parsed = parseFillAnswerGroups(word.term, word.wtype);
+    return responseValues(answers[word.id], parsed.groups.length).every((value) => value.trim());
+  }).length;
   const allTestAnswered = originalWords.length > 0 && totalAnsweredInTest === originalWords.length;
 
   useUnsavedChangesWarning(hasActivity && phase !== "complete", "Tiến độ đã được tự động lưu trên thiết bị. Bạn vẫn muốn rời bài luyện này?");
@@ -123,7 +143,7 @@ export default function FillFocusSession({
     const initialQueues = buildQueues(groups);
     setGroup(0); setQueues(initialQueues); setCursors({ 0: 0 }); setAnswers({}); setOutcomes({});
     setHintLevels({}); setAudioBeforeAnswer({}); setGroupResults({}); setPhase("questions");
-    setFeedback(null); setNeedsCorrection(false); setCorrection(""); setActiveHintLevel(0);
+    setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0);
     try {
       const parsed = JSON.parse(localStorage.getItem(draftKey) || "null") as unknown;
       if (isValidFillDraft(parsed, wordIds)) {
@@ -146,7 +166,7 @@ export default function FillFocusSession({
     }
     if (!hasActivity) return;
     const draft: FillDraft = {
-      version: 2, savedAt: Date.now(), wordIds, group, queues, cursors, answers, outcomes,
+      version: 3, savedAt: Date.now(), wordIds, group, queues, cursors, answers, outcomes,
       hintLevels, audioBeforeAnswer, groupResults, phase,
     };
     const timer = window.setTimeout(() => {
@@ -157,15 +177,15 @@ export default function FillFocusSession({
 
   useEffect(() => {
     if (phase !== "questions" || feedback) return;
-    const frame = window.requestAnimationFrame(() => inputRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => (multiGroup ? groupInputRefs.current[0] : inputRef.current)?.focus());
     return () => window.cancelAnimationFrame(frame);
-  }, [cursor, feedback, group, phase]);
+  }, [cursor, feedback, group, multiGroup, phase]);
 
   // Restore feedback from a saved outcome, but never grade from answer changes.
   useEffect(() => {
-    if (effectiveSessionKind !== "practice" || phase !== "questions" || feedback || !currentWord || !currentOutcome || !currentAnswer.trim()) return;
-    const grade = gradeFillAnswer(currentAnswer, currentWord.term);
-    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentAnswer, retry: currentOutcome.retryCount > 0 });
+    if (effectiveSessionKind !== "practice" || phase !== "questions" || feedback || !currentWord || !currentOutcome || !currentResponseComplete) return;
+    const grade = gradeFillResponse(answers[currentWord.id], currentWord.term, currentWord.wtype);
+    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentResponses.join(" ; "), retry: currentOutcome.retryCount > 0, groupGrade: grade });
     setNeedsCorrection(!currentOutcome.finalCorrect);
   // `currentOutcome`/question changes indicate a restore or transition. The
   // answer itself is intentionally not a dependency: typing is state-only.
@@ -206,7 +226,7 @@ export default function FillFocusSession({
     setGroup(nextGroup);
     setCursors((current) => ({ ...current, [nextGroup]: current[nextGroup] || 0 }));
     setPhase(groupResults[nextGroup] ? "group_result" : "questions");
-    setFeedback(null); setNeedsCorrection(false); setCorrection(""); setActiveHintLevel(0); setNavigatorOpen(false);
+    setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0); setNavigatorOpen(false);
   }
 
   function advanceHint() {
@@ -227,32 +247,34 @@ export default function FillFocusSession({
   }
 
   function checkPracticeAnswer() {
-    if (!currentWord || feedback || !currentAnswer.trim() || !claimFillAction(actionLockRef)) return;
-    const grade = gradeFillAnswer(currentAnswer, currentWord.term);
+    if (!currentWord || feedback || !currentResponseComplete || !claimFillAction(actionLockRef)) return;
+    const grade = gradeFillResponse(answers[currentWord.id], currentWord.term, currentWord.wtype);
     const existing = outcomes[currentWord.id];
     let outcome: FillRecallOutcome;
     if (existing) {
       outcome = { ...existing, retryCount: existing.retryCount + 1, finalCorrect: grade.correct };
     } else {
       outcome = createFirstRecallOutcome({
-        wordId: currentWord.id, answer: currentAnswer, answerKey: currentWord.term,
+        wordId: currentWord.id, answer: multiGroup ? currentResponses : currentAnswer, answerKey: currentWord.term, wtype: currentWord.wtype,
         hintLevelUsed: hintLevels[currentWord.id] || activeHintLevel,
         audioBeforeAnswer: Boolean(audioBeforeAnswer[currentWord.id]),
       });
     }
     setOutcomes((current) => ({ ...current, [currentWord.id]: outcome }));
-    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentAnswer, retry: Boolean(existing) });
+    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentResponses.join(" ; "), retry: Boolean(existing), groupGrade: grade });
     setNeedsCorrection(!grade.correct);
-    setCorrection("");
+    setCorrection(Array.from({ length: grade.unmatchedGroups.length }, () => ""));
     if (grade.correct && !existing && !outcome.firstTryCorrect) scheduleCurrentRetry(outcome);
     window.setTimeout(() => { actionLockRef.current = false; }, 0);
   }
 
   function confirmCorrection() {
-    if (!currentWord || !needsCorrection) return;
-    if (!gradeFillAnswer(correction, currentWord.term).correct) {
+    if (!currentWord || !needsCorrection || !feedback?.groupGrade) return;
+    const missingGroups = currentParsed.groups.filter((group) => feedback.groupGrade?.unmatchedGroups.includes(group.id));
+    const correctionGrade = gradeFillAnswerGroups(correction, { kind: missingGroups.length > 1 ? "multi_group" : "single", groups: missingGroups });
+    if (!correctionGrade.correct) {
       toast("Hãy gõ chính xác đáp án để hoàn tất bước sửa lỗi.");
-      correctionInputRef.current?.focus();
+      correctionInputRefs.current[0]?.focus();
       return;
     }
     if (!claimFillAction(actionLockRef)) return;
@@ -264,7 +286,7 @@ export default function FillFocusSession({
     }
     setNeedsCorrection(false);
     setFeedback((current) => current ? { ...current, corrected: true } : current);
-    requestAnimationFrame(() => correctionInputRef.current?.focus());
+    requestAnimationFrame(() => correctionInputRefs.current[0]?.focus());
     window.setTimeout(() => { actionLockRef.current = false; }, 0);
   }
 
@@ -298,7 +320,7 @@ export default function FillFocusSession({
     const alreadySaved = Boolean(groupResults[group]);
     setGroupResults((current) => ({ ...current, [group]: summary }));
     setPhase("group_result");
-    setFeedback(null); setNeedsCorrection(false); setCorrection("");
+    setFeedback(null); setNeedsCorrection(false); setCorrection([]);
     if (!alreadySaved) await persistGroupResult(summary, originalWords);
   }
 
@@ -312,14 +334,16 @@ export default function FillFocusSession({
     const nextWordId = queue[nextIndex];
     if (outcomes[nextWordId]) setAnswers((current) => ({ ...current, [nextWordId]: "" }));
     setCursors((current) => ({ ...current, [group]: nextIndex }));
-    setFeedback(null); setNeedsCorrection(false); setCorrection(""); setActiveHintLevel(0);
+    setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0);
   }
 
   async function submitTestGroup() {
     if (!allTestAnswered || saving || !claimFillAction(actionLockRef)) return;
     const nextOutcomes = { ...outcomes };
     for (const word of originalWords) {
-      nextOutcomes[word.id] = createFirstRecallOutcome({ wordId: word.id, answer: answers[word.id] || "", answerKey: word.term, hintLevelUsed: 0, audioBeforeAnswer: false });
+      const parsed = parseFillAnswerGroups(word.term, word.wtype);
+      const values = responseValues(answers[word.id], parsed.groups.length);
+      nextOutcomes[word.id] = createFirstRecallOutcome({ wordId: word.id, answer: parsed.kind === "multi_group" ? values : values[0], answerKey: word.term, wtype: word.wtype, hintLevelUsed: 0, audioBeforeAnswer: false });
     }
     setOutcomes(nextOutcomes);
     await finishCurrentQueue(nextOutcomes);
@@ -327,7 +351,7 @@ export default function FillFocusSession({
   }
 
   function advanceTest() {
-    if (!currentAnswer.trim()) return;
+    if (!currentResponseComplete) return;
     const nextIndex = Math.min(originalWords.length - 1, cursor + 1);
     setCursors((current) => ({ ...current, [group]: nextIndex }));
   }
@@ -338,7 +362,7 @@ export default function FillFocusSession({
     setQueues((current) => ({ ...current, [group]: weak }));
     setCursors((current) => ({ ...current, [group]: 0 }));
     setAnswers((current) => ({ ...current, ...Object.fromEntries(weak.map((id) => [id, ""])) }));
-    setPhase("questions"); setFeedback(null); setNeedsCorrection(false); setCorrection(""); setActiveHintLevel(0);
+    setPhase("questions"); setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0);
   }
 
   function nextGroup() {
@@ -355,13 +379,13 @@ export default function FillFocusSession({
     try { localStorage.removeItem(draftKey); } catch {}
     setGroup(0); setQueues(buildQueues(groups)); setCursors({ 0: 0 }); setAnswers({}); setOutcomes({});
     setHintLevels({}); setAudioBeforeAnswer({}); setGroupResults({}); setPhase("questions");
-    setFeedback(null); setNeedsCorrection(false); setCorrection(""); setActiveHintLevel(0);
+    setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0);
   }
 
   function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
     const state = effectiveSessionKind === "test" ? "test" : feedback ? (needsCorrection ? "correcting" : feedback.corrected ? "corrected" : feedback.correct ? "correct" : "correcting") : "answering";
-    const action = resolveFillFocusEnterAction({ state, value: needsCorrection ? correction : currentAnswer, repeat: event.repeat, isComposing: event.nativeEvent.isComposing });
+    const action = resolveFillFocusEnterAction({ state, value: needsCorrection ? correction.join(" ") : currentResponseComplete ? currentResponses.join(" ") : "", repeat: event.repeat, isComposing: event.nativeEvent.isComposing });
     if (action === "noop") return;
     event.preventDefault();
     if (action === "test-next") {
@@ -425,20 +449,20 @@ export default function FillFocusSession({
               <button className="min-h-11 rounded-lg border border-[#CFC7FF] bg-[#F7F5FF] px-3 text-sm font-bold text-[#6550DB]" onClick={advanceHint}>💡 Gợi ý {activeHintLevel ? `${activeHintLevel}/4` : ""}<span className="ml-1 hidden text-[0.65rem] sm:inline">(H)</span></button>
             </div>}
 
-            {!feedback && currentHint && <div className="mx-auto mt-4 max-w-xl rounded-xl border border-dashed border-gold bg-goldpale/25 px-4 py-3 text-sm"><div className="text-xs font-bold uppercase tracking-wide text-golddark">{currentHint.label}</div><div className={`mt-1 ${currentHint.revealed ? "font-bold text-ink" : "font-mono text-muted"}`}>{currentHint.value}</div></div>}
+            {!feedback && currentHint && <div className="mx-auto mt-4 max-w-xl rounded-xl border border-dashed border-gold bg-goldpale/25 px-4 py-3 text-sm"><div className="text-xs font-bold uppercase tracking-wide text-golddark">{multiGroup ? `Gợi ý cấu trúc ${hintGroupIndex + 1} · ` : ""}{currentHint.label}</div><div className={`mt-1 ${currentHint.revealed ? "font-bold text-ink" : "font-mono text-muted"}`}>{currentHint.value}</div></div>}
 
-            <div className="mx-auto mt-4 max-w-md"><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}`}>Từ tiếng Anh</label><input ref={inputRef} id={`fill-answer-${currentWord.id}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} className={`${cx.input} !mb-0 mt-1.5 min-h-12 text-base ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>
+            {multiGroup ? <div className="mx-auto mt-4 grid max-w-xl gap-3"><div className="text-center text-sm font-bold text-[#6550DB]">{currentParsed.groups.length} cấu trúc cần nhớ</div>{currentParsed.groups.map((groupItem, groupIndex) => { const responseCorrect = feedback?.corrected || feedback?.groupGrade?.groupResults.some((result) => result.matchedResponseIndex === groupIndex); return <div key={groupItem.id}><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}-${groupIndex}`}>Cấu trúc {groupIndex + 1}</label><input ref={(element) => { groupInputRefs.current[groupIndex] = element; }} id={`fill-answer-${currentWord.id}-${groupIndex}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={`Nhập cấu trúc ${groupIndex + 1}`} className={`${cx.input} !mb-0 mt-1 min-h-12 text-base ${feedback ? responseCorrect ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentResponses[groupIndex]} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: currentResponses.map((value, index) => index === groupIndex ? event.target.value : value) })); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && !feedback && groupIndex < currentParsed.groups.length - 1) { event.preventDefault(); groupInputRefs.current[groupIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={groupIndex === currentParsed.groups.length - 1 ? "done" : "next"} /></div>; })}</div> : <div className="mx-auto mt-4 max-w-md"><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}`}>Từ tiếng Anh</label><input ref={inputRef} id={`fill-answer-${currentWord.id}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} className={`${cx.input} !mb-0 mt-1.5 min-h-12 text-base ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>}
 
             {feedback && <AnswerFeedback word={currentWord} feedback={feedback} outcome={currentOutcome} />}
 
-            {feedback && (needsCorrection || feedback.corrected) && <div className="mx-auto mt-5 max-w-md rounded-xl border border-bad/25 bg-badbg/30 p-4"><label className={`text-sm font-bold ${feedback.corrected ? "text-ok" : "text-bad"}`} htmlFor={`fill-correction-${currentWord.id}`}>{feedback.corrected ? "✓ Đã sửa đúng" : "Gõ lại đáp án đúng"}</label><input ref={correctionInputRef} id={`fill-correction-${currentWord.id}`} autoFocus type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} className={`${cx.input} !mb-0 mt-2 min-h-12 text-base`} value={correction} onChange={(event) => { if (!feedback.corrected) setCorrection(event.target.value); }} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>}
+            {feedback && (needsCorrection || feedback.corrected) && <div className="mx-auto mt-5 max-w-md rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className={`text-sm font-bold ${feedback.corrected ? "text-ok" : "text-bad"}`}>{feedback.corrected ? "✓ Đã sửa đúng" : `Gõ lại ${correction.length} cấu trúc còn thiếu hoặc sai`}</div>{correction.map((value, correctionIndex) => <div key={correctionIndex} className="mt-2"><label className="text-xs font-semibold text-muted" htmlFor={`fill-correction-${currentWord.id}-${correctionIndex}`}>Cấu trúc cần sửa {correctionIndex + 1}</label><input ref={(element) => { correctionInputRefs.current[correctionIndex] = element; }} id={`fill-correction-${currentWord.id}-${correctionIndex}`} autoFocus={correctionIndex === 0} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} className={`${cx.input} !mb-0 mt-1 min-h-12 text-base`} value={value} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === correctionIndex ? event.target.value : item)); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && correctionIndex < correction.length - 1) { event.preventDefault(); correctionInputRefs.current[correctionIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={correctionIndex === correction.length - 1 ? "done" : "next"} /></div>)}</div>}
 
             <div className="mx-auto mt-3 max-w-md">
-              {effectiveSessionKind === "test" ? (cursor === originalWords.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!allTestAnswered || saving} onClick={() => void submitTestGroup()}>{saving ? "Đang lưu…" : allTestAnswered ? "Nộp nhóm" : `Còn ${originalWords.length - totalAnsweredInTest} câu chưa làm`}</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentAnswer.trim()} onClick={advanceTest}>Câu tiếp theo →</button>) : !feedback ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentAnswer.trim()} onClick={checkPracticeAnswer}>Kiểm tra</button> : needsCorrection ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!correction.trim()} onClick={confirmCorrection}>Xác nhận sửa</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} onClick={advancePractice}>Câu tiếp theo →</button>}
+              {effectiveSessionKind === "test" ? (cursor === originalWords.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!allTestAnswered || saving} onClick={() => void submitTestGroup()}>{saving ? "Đang lưu…" : allTestAnswered ? "Nộp nhóm" : `Còn ${originalWords.length - totalAnsweredInTest} câu chưa làm`}</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentResponseComplete} onClick={advanceTest}>Câu tiếp theo →</button>) : !feedback ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentResponseComplete} onClick={checkPracticeAnswer}>Kiểm tra</button> : needsCorrection ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} onClick={advancePractice}>Câu tiếp theo →</button>}
             </div>
           </section>
 
-          <QuestionNavigator open={navigatorOpen} onToggle={() => setNavigatorOpen((open) => !open)} words={originalWords} currentWordId={currentWord.id} answers={answers} outcomes={outcomes} hintLevels={hintLevels} queue={queue} cursor={cursor} onSelect={(wordId) => { const index = queue.indexOf(wordId); if (index >= 0) { setCursors((current) => ({ ...current, [group]: index })); setFeedback(null); setNeedsCorrection(false); setCorrection(""); setActiveHintLevel(0); } }} />
+          <QuestionNavigator open={navigatorOpen} onToggle={() => setNavigatorOpen((open) => !open)} words={originalWords} currentWordId={currentWord.id} answers={answers} outcomes={outcomes} hintLevels={hintLevels} queue={queue} cursor={cursor} onSelect={(wordId) => { const index = queue.indexOf(wordId); if (index >= 0) { setCursors((current) => ({ ...current, [group]: index })); setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0); } }} />
         </>
       ) : null}
     </div>
@@ -446,13 +470,19 @@ export default function FillFocusSession({
 }
 
 function AnswerFeedback({ word, feedback, outcome }: { word: FillFocusWord; feedback: Feedback; outcome?: FillRecallOutcome }) {
+  const parsed = parseFillAnswerGroups(word.term, word.wtype);
+  if (parsed.kind === "multi_group" && feedback.groupGrade) {
+    const correctCount = feedback.groupGrade.groupResults.filter((result) => result.correct).length;
+    const tone = feedback.correct || feedback.corrected ? "border-ok/30 bg-okbg/35" : "border-bad/25 bg-badbg/30";
+    return <div className={`mx-auto mt-5 max-w-xl rounded-xl border p-4 ${tone}`}><div className={`font-bold ${feedback.correct || feedback.corrected ? "text-ok" : "text-bad"}`}>{feedback.corrected ? "✓ Đã sửa đúng toàn bộ cấu trúc" : feedback.correct ? `✓ ${outcome?.firstTryCorrect ? "Chính xác" : "Đúng sau hỗ trợ"}` : `Đúng ${correctCount}/${parsed.groups.length} cấu trúc`}</div><ol className="mt-3 grid gap-2 text-left text-sm">{feedback.groupGrade.groupResults.map((result, index) => <li key={result.groupId} className="flex items-start gap-2"><span className={result.correct || feedback.corrected ? "text-ok" : "text-bad"}>{result.correct || feedback.corrected ? "✓" : "×"}</span><span><b>Cấu trúc {index + 1}:</b> {result.source}</span></li>)}</ol><div className="mt-3"><SpeakButton text={word.term || ""} /></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
+  }
   const accepted = getAcceptedAnswers(word.term);
   if (feedback.corrected) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ Đã sửa đúng</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-serif text-xl font-bold">{accepted.join(" / ")}</span>{word.ipa && <span className="text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
   if (feedback.correct) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ {outcome?.firstTryCorrect ? "Chính xác" : "Đúng sau hỗ trợ"}</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-serif text-xl font-bold">{accepted.join(" / ")}</span>{word.ipa && <span className="text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
   return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className="font-bold text-bad">✕ {feedback.nearMiss ? "Gần đúng — sai chính tả" : "Chưa chính xác"}</div><div className="mt-2 grid gap-1 text-sm"><div><span className="text-muted">Bạn nhập:</span> <span className="font-semibold line-through decoration-bad">{feedback.answer}</span></div><div><span className="text-muted">Đáp án:</span> <span className="font-bold">{accepted.join(" / ")}</span> {word.ipa && <span className="text-golddark">{word.ipa}</span>}</div></div><div className="mt-2 flex items-center gap-2"><SpeakButton text={word.term || ""} /><span className="text-xs text-muted">Nghe và gõ lại chính xác để tiếp tục.</span></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
 }
 
-function QuestionNavigator({ open, onToggle, words, currentWordId, answers, outcomes, hintLevels, queue, cursor, onSelect }: { open: boolean; onToggle: () => void; words: FillFocusWord[]; currentWordId: number; answers: Record<number, string>; outcomes: Record<number, FillRecallOutcome>; hintLevels: Record<number, number>; queue: number[]; cursor: number; onSelect: (wordId: number) => void }) {
+function QuestionNavigator({ open, onToggle, words, currentWordId, answers, outcomes, hintLevels, queue, cursor, onSelect }: { open: boolean; onToggle: () => void; words: FillFocusWord[]; currentWordId: number; answers: Record<number, FillResponse>; outcomes: Record<number, FillRecallOutcome>; hintLevels: Record<number, number>; queue: number[]; cursor: number; onSelect: (wordId: number) => void }) {
   useEffect(() => {
     if (!open) return;
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onToggle(); };
@@ -460,7 +490,7 @@ function QuestionNavigator({ open, onToggle, words, currentWordId, answers, outc
     return () => window.removeEventListener("keydown", close);
   }, [open, onToggle]);
   if (!open) return null;
-  return <div className="fixed inset-0 z-[92] grid items-end bg-ink/30 p-3 sm:place-items-center" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onToggle(); }}><section role="dialog" aria-modal="true" aria-label="Câu trong nhóm" className="w-full max-w-xl rounded-2xl border border-line bg-white p-4 shadow-2xl"><div className="flex items-center justify-between"><h2 className="font-bold">Câu trong nhóm</h2><button type="button" className="min-h-10 rounded-lg px-3 text-sm font-bold text-muted hover:bg-[#F4F2FA]" onClick={onToggle}>Đóng</button></div><div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-10">{words.map((word, index) => { const outcome = outcomes[word.id]; const pendingRetry = queue.slice(cursor + 1).includes(word.id); const current = word.id === currentWordId; const assisted = Boolean(hintLevels[word.id] || outcome?.audioBeforeAnswer); const state = current ? "hiện tại" : pendingRetry ? "đang chờ ôn lại" : outcome?.firstTryCorrect ? "đúng lần đầu" : outcome ? "đã trả lời sai" : answers[word.id]?.trim() ? "đã trả lời" : "chưa làm"; const icon = pendingRetry ? "↻" : assisted ? "?" : outcome?.firstTryCorrect ? "✓" : outcome ? "×" : index + 1; const tone = current ? "border-ink bg-ink text-white" : pendingRetry ? "border-[#8C78E8] bg-[#F7F5FF] text-[#6550DB]" : outcome?.firstTryCorrect ? "border-ok bg-okbg text-ok" : outcome ? "border-bad bg-badbg text-bad" : answers[word.id]?.trim() ? "border-gold bg-goldpale text-golddark" : "border-line bg-white text-muted"; return <button key={word.id} type="button" aria-label={`Câu ${index + 1}, ${state}`} aria-current={current ? "step" : undefined} title={`Câu ${index + 1}: ${state}`} onClick={() => { onSelect(word.id); onToggle(); }} className={`min-h-11 rounded-lg border text-sm font-bold ${tone}`}><span aria-hidden="true">{icon}</span><span className="sr-only">Câu {index + 1}</span></button>; })}</div><div className="mt-3 flex flex-wrap gap-3 text-[0.68rem] text-muted"><span>✓ đúng lần đầu</span><span>? dùng hỗ trợ</span><span>× sai</span><span>↻ ôn lại</span></div></section></div>;
+  return <div className="fixed inset-0 z-[92] grid items-end bg-ink/30 p-3 sm:place-items-center" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onToggle(); }}><section role="dialog" aria-modal="true" aria-label="Câu trong nhóm" className="w-full max-w-xl rounded-2xl border border-line bg-white p-4 shadow-2xl"><div className="flex items-center justify-between"><h2 className="font-bold">Câu trong nhóm</h2><button type="button" className="min-h-10 rounded-lg px-3 text-sm font-bold text-muted hover:bg-[#F4F2FA]" onClick={onToggle}>Đóng</button></div><div className="mt-3 grid grid-cols-5 gap-2 sm:grid-cols-10">{words.map((word, index) => { const outcome = outcomes[word.id]; const pendingRetry = queue.slice(cursor + 1).includes(word.id); const current = word.id === currentWordId; const assisted = Boolean(hintLevels[word.id] || outcome?.audioBeforeAnswer); const answered = hasResponseValue(answers[word.id]); const state = current ? "hiện tại" : pendingRetry ? "đang chờ ôn lại" : outcome?.firstTryCorrect ? "đúng lần đầu" : outcome ? "đã trả lời sai" : answered ? "đã trả lời" : "chưa làm"; const icon = pendingRetry ? "↻" : assisted ? "?" : outcome?.firstTryCorrect ? "✓" : outcome ? "×" : index + 1; const tone = current ? "border-ink bg-ink text-white" : pendingRetry ? "border-[#8C78E8] bg-[#F7F5FF] text-[#6550DB]" : outcome?.firstTryCorrect ? "border-ok bg-okbg text-ok" : outcome ? "border-bad bg-badbg text-bad" : answered ? "border-gold bg-goldpale text-golddark" : "border-line bg-white text-muted"; return <button key={word.id} type="button" aria-label={`Câu ${index + 1}, ${state}`} aria-current={current ? "step" : undefined} title={`Câu ${index + 1}: ${state}`} onClick={() => { onSelect(word.id); onToggle(); }} className={`min-h-11 rounded-lg border text-sm font-bold ${tone}`}><span aria-hidden="true">{icon}</span><span className="sr-only">Câu {index + 1}</span></button>; })}</div><div className="mt-3 flex flex-wrap gap-3 text-[0.68rem] text-muted"><span>✓ đúng lần đầu</span><span>? dùng hỗ trợ</span><span>× sai</span><span>↻ ôn lại</span></div></section></div>;
 }
 
 function GroupSummary({ summary, words, onCorrect, onNext, lastGroup }: { summary: FillAttemptSummary; words: FillFocusWord[]; onCorrect: () => void; onNext: () => void; lastGroup: boolean }) {
