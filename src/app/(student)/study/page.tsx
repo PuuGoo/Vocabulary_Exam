@@ -24,6 +24,7 @@ type SetSummary = {
   category?: string | null;
   type: string;
   count: number;
+  unknownCount: number;
   className?: string | null;
   reviewStage?: number | null;
   nextSetReviewAt?: string | null;
@@ -126,6 +127,7 @@ export default function StudyPage() {
     return <CollectionCard key={set.id} set={set} position={sessionPositionBySetId[set.id] || 0}
       onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }}
       onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")}
+      onUnknownFill={() => router.push(`/quiz/${set.id}?mode=fill&scope=unknown`)}
       onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }}
       onTimed={() => setTimedSetId(set.id)} />;
   }
@@ -406,6 +408,7 @@ function CollectionCard({
   position,
   onLearn,
   onFill,
+  onUnknownFill,
   onMc,
   onRoute,
   onTimed,
@@ -414,6 +417,7 @@ function CollectionCard({
   position: number;
   onLearn: () => void;
   onFill: () => void;
+  onUnknownFill: () => void;
   onMc: () => void;
   onRoute: (route: string) => void;
   onTimed: () => void;
@@ -473,6 +477,15 @@ function CollectionCard({
             {set.type === "irregular_verb"
               ? "Điền V1 / V2 / V3"
               : "Điền từ tiếng Anh"}
+          </button>
+          <button
+            disabled={set.unknownCount === 0}
+            onClick={onUnknownFill}
+            className={modeClass}
+            title={set.unknownCount === 0 ? "Bạn chưa có từ nào được đánh dấu Chưa nhớ." : undefined}
+            aria-label={`${set.type === "irregular_verb" ? "Điền V1/V2/V3 chưa nhớ" : "Điền từ chưa nhớ"} (${set.unknownCount})`}
+          >
+            {set.type === "irregular_verb" ? "Điền V1/V2/V3 chưa nhớ" : "Điền từ chưa nhớ"} ({set.unknownCount})
           </button>
           {set.type !== "irregular_verb" && (
             <button disabled={empty} onClick={onMc} className={modeClass}>

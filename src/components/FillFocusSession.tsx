@@ -51,6 +51,7 @@ type Props = {
   /** Guest share sessions use the same canonical UI without writing owner progress. */
   persist?: boolean;
   chrome?: "full" | "compact";
+  wordScope?: "all" | "unknown";
 };
 
 const GROUP_SIZE = 10;
@@ -67,13 +68,14 @@ export default function FillFocusSession({
   totalWordCount, rangeFrom, rangeTo, hasRange, onApplyRange, onChooseSet,
   persist = true,
   chrome = "full",
+  wordScope = "all",
 }: Props) {
   const router = useRouter();
   const search = useSearchParams();
   const groups = useMemo(() => chunkFillItems(set.words, GROUP_SIZE), [set.words]);
   const wordById = useMemo(() => new Map(set.words.map((word) => [word.id, word])), [set.words]);
   const wordIds = useMemo(() => set.words.map((word) => word.id), [set.words]);
-  const draftKey = `lexora-fill-focus-v2-u${userId}-set-${set.id}-${sessionKind}-${retest ? "retest" : "normal"}-${wordIds.join("-")}`;
+  const draftKey = `lexora-fill-focus-v2-u${userId}-set-${set.id}-${sessionKind}-${retest ? "retest" : "normal"}${wordScope === "unknown" ? "-scope-unknown" : ""}-${wordIds.join("-")}`;
 
   const [group, setGroup] = useState(0);
   const [queues, setQueues] = useState<Record<number, number[]>>(() => buildQueues(groups));
@@ -378,7 +380,7 @@ export default function FillFocusSession({
   return (
     <div className={`fill-focus-session lexora-page-enter ${chrome === "compact" ? "space-y-2 pb-2" : "space-y-3 pb-4"}`}>
       {chrome === "full" && <section className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Điền từ tiếng Anh</p><h1 className="mt-1 truncate text-xl font-extrabold sm:text-2xl">{set.name}</h1></div>
+        <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Điền từ tiếng Anh{wordScope === "unknown" ? " · Từ chưa nhớ" : ""}</p><h1 className="mt-1 truncate text-xl font-extrabold sm:text-2xl">{set.name}</h1></div>
         <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
       </section>}
 
@@ -406,7 +408,10 @@ export default function FillFocusSession({
       </section>
 
       {phase === "complete" ? (
-        <CompletionSummary summary={overall} setId={set.id} onRestart={restart} onChooseSet={onChooseSet} />
+        <div>
+          {wordScope === "unknown" && <p className="mb-2 text-center text-sm font-semibold text-[#6550DB]">Bạn đã hoàn thành {overall.total} từ chưa nhớ.</p>}
+          <CompletionSummary summary={overall} setId={set.id} onRestart={restart} onChooseSet={onChooseSet} />
+        </div>
       ) : phase === "group_result" && result ? (
         <GroupSummary summary={result} words={originalWords} onCorrect={beginWeakCorrection} onNext={nextGroup} lastGroup={group === groups.length - 1} />
       ) : currentWord ? (

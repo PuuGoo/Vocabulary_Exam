@@ -13,6 +13,7 @@ import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
 import FillFocusSession from "@/components/FillFocusSession";
 import { getAcceptedAnswers, gradeFillAnswer, maskAnswerInExample } from "@/lib/fillAnswer";
+import { fillScopeDraftSegment, filterWordsByFillScope, quizProgressMode, resolveFillWordScope } from "@/lib/unknownFill";
 
 type Word = {
   id: number;
@@ -84,13 +85,15 @@ function QuizPlayerInner() {
   const fillSessionKind = timedMode || search.get("session") === "test" ? "test" : "practice";
   const isTestSession = fillSessionKind === "test";
   const quickMode = search.get("quick") === "1";
+  const fillScope = resolveFillWordScope({ mode, scope: search.get("scope"), retest, quickMode });
+  const progressMode = quizProgressMode(mode, fillScope);
   const quickCount = [5, 10, 20].includes(Number(search.get("count"))) ? Number(search.get("count")) : 10;
   const draftEnabled = !quickMode;
   const rangeFromParam = Math.max(1, Number(search.get("from")) || 0);
   const rangeToParam = Math.max(0, Number(search.get("to")) || 0);
   const hasRangeParam = rangeFromParam > 0 && rangeToParam > 0 && rangeFromParam <= rangeToParam;
 
-  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}${hasRangeParam ? `-range-${rangeFromParam}-${rangeToParam}` : ""}`;
+  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}${fillScopeDraftSegment(fillScope)}${hasRangeParam ? `-range-${rangeFromParam}-${rangeToParam}` : ""}`;
 
   const [set, setSet] = useState<SetDetail | null>(null);
   const totalWordCountRef = useRef<number>(0);
@@ -141,7 +144,7 @@ function QuizPlayerInner() {
       setSet(null);
       try {
         const res = await fetch(quickMode ? `/api/quick-practice?count=${quickCount}` : `/api/sets/${params.setId}`);
-        const serverProgressUrl = `/api/quiz-progress?setId=` + params.setId + `&mode=` + mode + `&timed=` + (timedMode ? `1` : `0`) + `&retest=` + (retest ? `1` : `0`) + (hasRangeParam ? `&rangeFrom=` + rangeFromParam + `&rangeTo=` + rangeToParam : ``);
+        const serverProgressUrl = `/api/quiz-progress?setId=` + params.setId + `&mode=` + progressMode + `&timed=` + (timedMode ? `1` : `0`) + `&retest=` + (retest ? `1` : `0`) + (hasRangeParam ? `&rangeFrom=` + rangeFromParam + `&rangeTo=` + rangeToParam : ``);
         let serverProgress = null;
         if (userId > 0) {
           try {
@@ -156,8 +159,8 @@ function QuizPlayerInner() {
         if (!res.ok) throw new Error("load failed");
         const data = await res.json();
         if (!data.set) throw new Error("missing set");
-        totalWordCountRef.current = data.set.words.length;
         let loadedSet: SetDetail = data.set;
+        const originalWordCount = loadedSet.words.length;
         
         if (data.recommendation) setQuickRecommendation(data.recommendation);
         let mistakeMap: Record<number, number> = data.mistakeIdByWordId || {};
@@ -169,6 +172,19 @@ function QuizPlayerInner() {
           const wordIds = new Set(relevant.map((m: { wordId: number }) => m.wordId));
           mistakeMap = Object.fromEntries(relevant.map((m: { wordId: number; id: number }) => [m.wordId, m.id]));
           loadedSet = { ...loadedSet, words: loadedSet.words.filter((w) => wordIds.has(w.id)) };
+        } else if (fillScope === "unknown") {
+          loadedSet = {
+            ...loadedSet,
+            words: filterWordsByFillScope(loadedSet.words, data.progress || {}, fillScope),
+          };
+        }
+        totalWordCountRef.current = fillScope === "unknown" ? loadedSet.words.length : originalWordCount;
+        // Ranges address the current scope, so 1..2 means the first two unknown
+        // words rather than the first two words in the original set.
+        if (hasRangeParam) {
+          const startIdx = Math.max(0, rangeFromParam - 1);
+          const endIdx = Math.max(startIdx + 1, rangeToParam);
+          loadedSet = { ...loadedSet, words: loadedSet.words.slice(startIdx, endIdx) };
         }
         if (!cancelled) {
           let restored = false;
@@ -234,12 +250,6 @@ function QuizPlayerInner() {
               }
             }
           }
-          if (hasRangeParam) {
-            const startIdx = Math.max(0, rangeFromParam - 1);
-            const endIdx = Math.max(startIdx + 1, rangeToParam);
-            const sliced = loadedSet.words.slice(startIdx, endIdx);
-            if (sliced.length > 0) loadedSet = { ...loadedSet, words: sliced };
-          }
           setSet(loadedSet);
           setMistakeIdByWordId(mistakeMap);
           draftHydratedRef.current = true;
@@ -253,7 +263,7 @@ function QuizPlayerInner() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.setId, retest, quickMode, quickCount, loadAttempt, draftEnabled, draftKey, minutes, timedMode, hasRangeParam, rangeFromParam, rangeToParam]);
+  }, [params.setId, retest, quickMode, quickCount, loadAttempt, draftEnabled, draftKey, minutes, timedMode, hasRangeParam, rangeFromParam, rangeToParam, fillScope, progressMode]);
 
   const totalGroups = set ? Math.ceil(set.words.length / GROUP_SIZE) : 0;
   const start = group * GROUP_SIZE;
@@ -332,12 +342,12 @@ function QuizPlayerInner() {
     if (!set || userId <= 0) return;
     const hasActivity = Object.keys(answers).length > 0 || Object.keys(checkedGroups).length > 0 || Object.keys(retryWordIdsByGroup).length > 0;
     if (timedSubmitted || allGroupsGraded || !hasActivity) {
-      void fetch(`/api/quiz-progress?setId=` + (set?.id ?? '') + `&mode=` + mode + `&timed=` + (timedMode ? `1` : `0`) + `&retest=` + (retest ? `1` : `0`) + (hasRangeParam ? `&rangeFrom=` + rangeFromParam + `&rangeTo=` + rangeToParam : ``), { method: `DELETE` }).catch(() => {});
+      void fetch(`/api/quiz-progress?setId=` + (set?.id ?? '') + `&mode=` + progressMode + `&timed=` + (timedMode ? `1` : `0`) + `&retest=` + (retest ? `1` : `0`) + (hasRangeParam ? `&rangeFrom=` + rangeFromParam + `&rangeTo=` + rangeToParam : ``), { method: `DELETE` }).catch(() => {});
       return;
     }
     const payload = {
       setId: set?.id ?? null,
-      mode,
+      mode: progressMode,
       timed: timedMode,
       timedMinutes: timedMode ? minutes : null,
       retest,
@@ -359,7 +369,7 @@ function QuizPlayerInner() {
       } catch { /* ignore */ }
     }, 1500);
     return () => window.clearTimeout(timer);
-  }, [allGroupsGraded, answers, checkedGroups, group, hintIds, hasRangeParam, mcOptions, minutes, mode, rangeFromParam, rangeToParam, retryWordIdsByGroup, retest, set, timedEndsAtRef, timedMode, timedSubmitted, userId]);
+  }, [allGroupsGraded, answers, checkedGroups, group, hintIds, hasRangeParam, mcOptions, minutes, progressMode, rangeFromParam, rangeToParam, retryWordIdsByGroup, retest, set, timedEndsAtRef, timedMode, timedSubmitted, userId]);
 
   function navigateQuiz(url: string) {
     if (hasUnsubmittedAnswers && !confirm(leaveWarning)) return;
@@ -802,6 +812,24 @@ function submitJumpQuestion() {
     );
   }
 
+  if (fillScope === "unknown" && set.words.length === 0) {
+    return (
+      <div className={cx.panel}>
+        <div className={cx.empty}>
+          Bạn chưa có từ nào cần luyện ở chế độ Chưa nhớ.
+          <div className="mt-3 flex flex-wrap justify-center gap-2">
+            <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/learn/${set.id}`)}>
+              ← Quay lại học bài
+            </button>
+            <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => router.push(`/quiz/${set.id}?mode=fill`)}>
+              Điền tất cả từ
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (set.words.length === 0) {
     return (
       <div className={cx.panel}>
@@ -828,6 +856,7 @@ function submitJumpQuestion() {
         rangeFrom={rangeFromParam || 1}
         rangeTo={rangeToParam || totalWordCountRef.current || set.words.length}
         hasRange={hasRangeParam}
+        wordScope={fillScope}
         onApplyRange={applyRange}
         onChooseSet={leaveQuiz}
       />
@@ -858,6 +887,7 @@ function submitJumpQuestion() {
           {set.name}{" "}
           {timedMode && <span className={cx.badgeGold}>Thi thử có tính giờ</span>}{" "}
           {retest && <span className={cx.badgeGold}>Làm lại từ sai</span>}{" "}
+          {fillScope === "unknown" && <span className={cx.badgeGold}>Từ chưa nhớ · {set.words.length} từ</span>}{" "}
           {quickMode && <span className={cx.badgeGold}>Luyện nhanh</span>}
         </h2>
         <div className="flex gap-2 flex-wrap">

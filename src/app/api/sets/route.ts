@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, eq, or, isNull, inArray, and } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words, classMembers, classes, setReviewProgress } from "@/db/schema";
+import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
@@ -31,12 +31,14 @@ export async function GET() {
       className: classes.name,
       createdAt: vocabSets.createdAt,
       count: sql<number>`count(distinct ${words.id})::int`,
+      unknownCount: sql<number>`count(distinct ${wordProgress.wordId}) filter (where ${wordProgress.known} = false)::int`,
       reviewStage: setReviewProgress.stage,
       nextSetReviewAt: setReviewProgress.nextReviewAt,
       initialCompletedAt: setReviewProgress.initialCompletedAt,
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
+    .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
     .leftJoin(classes, eq(classes.id, vocabSets.classId))
     .leftJoin(setReviewProgress, and(eq(setReviewProgress.setId, vocabSets.id), eq(setReviewProgress.userId, session.userId)))
     .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt)
