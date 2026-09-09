@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryDocuments, categoryQuestions, vocabCategories, vocabSets, words, shareLinks } from "@/db/schema";
 import { buildShareUrl, defaultShareModes, getPublicShareUrl, modesForSetType, QUESTION_SHARE_MODES, SHARE_CONTENT_KEYS, SHARE_TARGET_TYPES, SHARE_ACCESS_MODES, VOCAB_SHARE_MODES, type ShareAccessMode, type ShareContentKey, type ShareTargetType, type ShareLearningMode } from "@/lib/shareConfig";
@@ -77,7 +77,7 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
   if (share.targetType === "vocab_set") {
     const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type }).from(vocabSets).where(eq(vocabSets.id, share.targetId)).limit(1);
     if (!set) return { share, error: "target_missing" as const };
-    const publicWords = await db.select({ id: words.id, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(words.id);
+    const publicWords = await db.select({ id: words.id, position: words.position, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id));
     return { share, payload: { targetType: share.targetType, title: set.name, count: publicWords.length, setType: set.type, allowedModes: share.allowedModesList, words: publicWords } };
   }
   const [category] = await db.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(eq(vocabCategories.id, share.targetId)).limit(1);
@@ -100,7 +100,7 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
     if (!selectedSet) return { share, error: "target_missing" as const };
     const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type }).from(vocabSets).where(eq(vocabSets.id, selectedSet.id)).limit(1);
     if (!set) return { share, error: "target_missing" as const };
-    const publicWords = await db.select({ id: words.id, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(words.id);
+    const publicWords = await db.select({ id: words.id, position: words.position, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id));
     return { share, payload: { targetType: "vocab_set", title: set.name, count: publicWords.length, setType: set.type, allowedModes: share.allowedModesList.filter((mode) => modesForSetType(set.type).includes(mode)), words: publicWords } };
   }
   const requestedTypes = requestedCollection && collectionKeys.includes(requestedCollection) ? questionTypesForCollections([requestedCollection]) : selectedTypes;

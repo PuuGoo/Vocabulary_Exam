@@ -8,6 +8,7 @@ import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { dedupeImportRows, importWordKey } from "@/lib/importDedup";
+import { appendWords } from "@/lib/wordOrder.server";
 
 export const runtime = "nodejs";
 
@@ -91,7 +92,7 @@ export async function POST(req: NextRequest) {
 
   let added = 0;
   let invalidCount = 0;
-  const toInsert: (typeof words.$inferInsert)[] = [];
+  const toInsert: Omit<typeof words.$inferInsert, "position">[] = [];
   const validRows: Row[] = [];
   for (const r of rows) {
     if (setType === "irregular_verb") {
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
   }
   added = toInsert.length;
   if (toInsert.length > 0) {
-    await db.insert(words).values(toInsert);
+    await db.transaction((tx) => appendWords(tx, setId, toInsert));
   }
 
   return NextResponse.json({

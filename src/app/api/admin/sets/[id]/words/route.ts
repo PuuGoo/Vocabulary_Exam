@@ -6,6 +6,7 @@ import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
+import { appendWord } from "@/lib/wordOrder.server";
 
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
@@ -38,9 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (set.type === "irregular_verb") {
     const parsed = verbSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Vui lòng điền đầy đủ nghĩa, V1, V2, V3." }, { status: 400 });
-    const [w] = await db
-      .insert(words)
-      .values({
+    const w = await db.transaction((tx) => appendWord(tx, setId, {
         setId,
         meaning: normalizeText(parsed.data.meaning),
         v1: normalizeText(parsed.data.v1),
@@ -49,25 +48,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         ipaV1: parsed.data.ipaV1 ? normalizeText(parsed.data.ipaV1) : null,
         ipaV2: parsed.data.ipaV2 ? normalizeText(parsed.data.ipaV2) : null,
         ipaV3: parsed.data.ipaV3 ? normalizeText(parsed.data.ipaV3) : null,
-      })
-      .returning();
+      }));
     return NextResponse.json({ word: w });
   } else {
     const parsed = vocabSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Vui lòng điền từ và nghĩa." }, { status: 400 });
     const patternError = getFillPatternValidationError(parsed.data.term, parsed.data.wtype);
     if (patternError) return NextResponse.json({ error: patternError }, { status: 400 });
-    const [w] = await db
-      .insert(words)
-      .values({
+    const w = await db.transaction((tx) => appendWord(tx, setId, {
         setId,
         meaning: normalizeText(parsed.data.meaning),
         term: normalizeText(parsed.data.term),
         example: normalizeText(parsed.data.example || ""),
         wtype: normalizeText(parsed.data.wtype || ""),
         ipa: parsed.data.ipa ? normalizeText(parsed.data.ipa) : null,
-      })
-      .returning();
+      }));
     return NextResponse.json({ word: w });
   }
 }

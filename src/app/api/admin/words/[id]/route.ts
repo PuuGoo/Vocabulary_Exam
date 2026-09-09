@@ -6,13 +6,17 @@ import { words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
+import { deleteWordsAndNormalize } from "@/lib/wordOrder.server";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session || session.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  await db.delete(words).where(eq(words.id, Number(params.id)));
+  const wordId = Number(params.id);
+  if (!Number.isInteger(wordId) || wordId < 1) return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
+  const result = await deleteWordsAndNormalize([wordId]);
+  if (result.kind === "stale") return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
 

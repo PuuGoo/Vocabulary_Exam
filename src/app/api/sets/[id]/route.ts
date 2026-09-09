@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
@@ -15,7 +15,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
   if (!set) return NextResponse.json({ error: "Không tìm thấy bộ từ vựng." }, { status: 404 });
 
-  const wordList = await db.select().from(words).where(eq(words.setId, setId)).orderBy(words.id);
+  const wordList = await db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id));
 
   const progress: Record<number, boolean> = {};
   if (wordList.length > 0) {

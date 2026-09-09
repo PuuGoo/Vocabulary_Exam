@@ -40,8 +40,9 @@ async function main() {
       .values({ name: "157 Động từ bất quy tắc", type: "irregular_verb" })
       .returning();
     await db.insert(words).values(
-      IRREGULAR_VERBS_SEED.map((v) => ({
+      IRREGULAR_VERBS_SEED.map((v, index) => ({
         setId: verbSet.id,
+        position: index + 1,
         meaning: v.m,
         v1: v.v1,
         v2: v.v2,
@@ -54,8 +55,9 @@ async function main() {
       .values({ name: "IELTS Vocabulary — Band 6.5+ (mẫu)", type: "ielts_vocab" })
       .returning();
     await db.insert(words).values(
-      IELTS_VOCAB_SEED.map((v) => ({
+      IELTS_VOCAB_SEED.map((v, index) => ({
         setId: vocabSet.id,
+        position: index + 1,
         meaning: v.meaning,
         term: v.term,
         example: v.example,

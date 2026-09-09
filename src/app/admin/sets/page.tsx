@@ -14,10 +14,12 @@ import ShareDialog from "@/components/ShareDialog";
 import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
 import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLetter, planPermanentOptionShuffle, type PermanentShufflePlan, type QuestionShuffleMode, type QuestionShuffleSettings, type ShuffleQuestion } from "@/lib/questionShuffle";
 import { getFillPatternValidationError, parseFillAnswerGroups } from "@/lib/fillAnswer";
+import { moveWordIdByOffset, moveWordIdToPosition } from "@/lib/wordOrder";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
   id: number;
+  position: number;
   meaning: string;
   v1?: string | null;
   v2?: string | null;
@@ -121,6 +123,9 @@ export default function AdminSetsPage() {
   const [bulkDeletingSets, setBulkDeletingSets] = useState(false);
   const [bulkDeletingWords, setBulkDeletingWords] = useState(false);
   const [reorderingSets, setReorderingSets] = useState(false);
+  const [reorderingWords, setReorderingWords] = useState(false);
+  const [draggingWordId, setDraggingWordId] = useState<number | null>(null);
+  const [dragOverWordId, setDragOverWordId] = useState<number | null>(null);
   const [moveTargetSetId, setMoveTargetSetId] = useState("");
   const [movingWords, setMovingWords] = useState(false);
   const [focusedWordId, setFocusedWordId] = useState<number | null>(null);
@@ -935,9 +940,9 @@ export default function AdminSetsPage() {
       if (!res.ok || !data.set) throw new Error(data.error || "Không thể tải dữ liệu bộ từ.");
       const current = data.set as SetDetail;
       const safeName = current.name.replace(/[\\/:*?"<>|]/g, "-").trim() || `bo-tu-${current.id}`;
-      const rows = current.words.map((word, index) => current.type === "irregular_verb"
-        ? { STT: index + 1, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
-        : { STT: index + 1, Từ: word.term || "", Nghĩa: word.meaning, IPA: word.ipa || "", "Loại từ": word.wtype || "", "Ví dụ": word.example || "" });
+      const rows = current.words.map((word) => current.type === "irregular_verb"
+        ? { STT: word.position, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
+        : { STT: word.position, Từ: word.term || "", Nghĩa: word.meaning, IPA: word.ipa || "", "Loại từ": word.wtype || "", "Ví dụ": word.example || "" });
       if (format === "xlsx") {
         const XLSX = await import("xlsx");
         const sheet = XLSX.utils.json_to_sheet(rows);
@@ -949,9 +954,9 @@ export default function AdminSetsPage() {
         const [{ default: pdfMake }, { default: pdfFonts }] = await Promise.all([import("pdfmake/build/pdfmake"), import("pdfmake/build/vfs_fonts")]);
         pdfMake.vfs = pdfFonts.pdfMake?.vfs || pdfFonts.vfs || pdfFonts;
         const headers = current.type === "irregular_verb" ? ["STT", "Nghĩa", "V1 / IPA", "V2 / IPA", "V3 / IPA"] : ["STT", "Từ / IPA", "Nghĩa", "Loại", "Ví dụ"];
-        const body = [headers, ...current.words.map((word, index) => current.type === "irregular_verb"
-          ? [String(index + 1), word.meaning, `${word.v1 || ""}\n${word.ipaV1 || ""}`, `${word.v2 || ""}\n${word.ipaV2 || ""}`, `${word.v3 || ""}\n${word.ipaV3 || ""}`]
-          : [String(index + 1), `${word.term || ""}\n${word.ipa || ""}`, word.meaning, word.wtype || "", word.example || ""] )];
+        const body = [headers, ...current.words.map((word) => current.type === "irregular_verb"
+          ? [String(word.position), word.meaning, `${word.v1 || ""}\n${word.ipaV1 || ""}`, `${word.v2 || ""}\n${word.ipaV2 || ""}`, `${word.v3 || ""}\n${word.ipaV3 || ""}`]
+          : [String(word.position), `${word.term || ""}\n${word.ipa || ""}`, word.meaning, word.wtype || "", word.example || ""] )];
         pdfMake.createPdf({ pageOrientation: "landscape", pageMargins: [28, 38, 28, 34], content: [
           { text: current.name, fontSize: 18, bold: true, color: "#242337", margin: [0, 0, 0, 4] },
           { text: `${current.category || "Chưa phân loại"} · ${current.words.length} mục`, fontSize: 9, color: "#6F6C82", margin: [0, 0, 0, 14] },
@@ -986,6 +991,70 @@ export default function AdminSetsPage() {
     }
   }
 
+  function wordsInOrder(orderedIds: readonly number[], source = detail?.words || []) {
+    const byId = new Map(source.map((word) => [word.id, word]));
+    return orderedIds.flatMap((id, index) => {
+      const word = byId.get(id);
+      return word ? [{ ...word, position: index + 1 }] : [];
+    });
+  }
+
+  async function saveWordOrder(orderedIds: number[]) {
+    if (!detail || reorderingWords) return;
+    const previousWords = detail.words;
+    if (orderedIds.length !== previousWords.length || orderedIds.every((id, index) => id === previousWords[index]?.id)) return;
+    setReorderingWords(true);
+    setDetail((current) => current ? { ...current, words: wordsInOrder(orderedIds, current.words) } : current);
+    try {
+      const response = await fetch(`/api/admin/sets/${detail.id}/words/reorder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedIds }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setDetail((current) => current ? { ...current, words: previousWords } : current);
+        toast(data.error || "Không thể lưu thứ tự từ vựng. Thứ tự cũ đã được khôi phục.");
+        if (response.status === 409) await openDetail(detail.id);
+        return;
+      }
+      toast("Đã lưu thứ tự từ vựng.");
+    } catch {
+      setDetail((current) => current ? { ...current, words: previousWords } : current);
+      toast("Không thể lưu thứ tự từ vựng. Thứ tự cũ đã được khôi phục.");
+    } finally {
+      setReorderingWords(false);
+      setDraggingWordId(null);
+      setDragOverWordId(null);
+    }
+  }
+
+  function moveWordByOffset(wordId: number, offset: -1 | 1) {
+    if (!detail || reorderingWords || detailWordQuery.trim()) return;
+    void saveWordOrder(moveWordIdByOffset(detail.words.map((word) => word.id), wordId, offset));
+  }
+
+  function dropWordBefore(targetId: number) {
+    if (!detail || draggingWordId === null || draggingWordId === targetId || detailWordQuery.trim()) return;
+    const withoutDragged = detail.words.map((word) => word.id).filter((id) => id !== draggingWordId);
+    const targetIndex = withoutDragged.indexOf(targetId);
+    if (targetIndex < 0) return;
+    withoutDragged.splice(targetIndex, 0, draggingWordId);
+    void saveWordOrder(withoutDragged);
+  }
+
+  function moveWordToExactPosition(word: Word) {
+    if (!detail || reorderingWords) return;
+    const raw = window.prompt(`Chuyển “${word.term || word.v1 || word.meaning}” đến STT (1-${detail.words.length}):`, String(word.position));
+    if (raw === null) return;
+    const target = Number(raw);
+    if (!Number.isInteger(target) || target < 1 || target > detail.words.length) {
+      toast(`STT phải là số nguyên từ 1 đến ${detail.words.length}.`);
+      return;
+    }
+    void saveWordOrder(moveWordIdToPosition(detail.words.map((item) => item.id), word.id, target));
+  }
+
   useEffect(() => {
     if (!detail || focusedWordId === null) return;
     const timer = window.setTimeout(() => {
@@ -1010,7 +1079,7 @@ export default function AdminSetsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể di chuyển các từ đã chọn.");
-      setDetail((current) => current ? { ...current, words: current.words.filter((word) => !selectedWordIds.includes(word.id)) } : current);
+      setDetail((current) => current ? { ...current, words: current.words.filter((word) => !selectedWordIds.includes(word.id)).map((word, index) => ({ ...word, position: index + 1 })) } : current);
       setSelectedWordIds([]);
       setMoveTargetSetId("");
       await loadSets();
@@ -1061,7 +1130,7 @@ export default function AdminSetsPage() {
       const res = await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
       if (!res.ok) return toast("Không thể xoá từ.");
       setSelectedWordIds((current) => current.filter((id) => id !== wordId));
-      setDetail((current) => current ? { ...current, words: current.words.filter((word) => word.id !== wordId) } : current);
+      setDetail((current) => current ? { ...current, words: current.words.filter((word) => word.id !== wordId).map((word, index) => ({ ...word, position: index + 1 })) } : current);
       toast("Đã xoá từ.");
       loadSets();
     } catch {
@@ -1077,7 +1146,7 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/admin/words/bulk", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: selectedWordIds }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể xóa các từ đã chọn.");
-      setDetail((current) => current ? { ...current, words: current.words.filter((word) => !selectedWordIds.includes(word.id)) } : current);
+      setDetail((current) => current ? { ...current, words: current.words.filter((word) => !selectedWordIds.includes(word.id)).map((word, index) => ({ ...word, position: index + 1 })) } : current);
       setSelectedWordIds([]);
       await loadSets();
       toast(`Đã xóa ${data.deleted || 0} từ.`);
@@ -1891,6 +1960,8 @@ export default function AdminSetsPage() {
               value={detailWordQuery}
               onChange={(event) => setDetailWordQuery(event.target.value)}
             />
+            {detailWordQuery.trim() && <p className="mt-2 text-xs font-semibold text-[#6550DB]">Xóa tìm kiếm để kéo-thả hoặc dùng nút lên/xuống. “Chuyển đến STT” vẫn dùng STT gốc của bộ.</p>}
+            {reorderingWords && <p className="mt-2 text-xs font-semibold text-golddark" role="status">Đang lưu thứ tự...</p>}
           </div>
           <div className="flex gap-2.5 mb-3 flex-wrap">
             <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
@@ -1990,11 +2061,13 @@ export default function AdminSetsPage() {
               Không tìm thấy từ phù hợp trong bộ này.
             </div>
           ) : (
-          <div className="max-h-[52vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white">
+          <div className="max-h-[52vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white" onDragOver={(event) => { if (draggingWordId === null) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientY < bounds.top + 56) event.currentTarget.scrollTop -= 28; else if (event.clientY > bounds.bottom - 56) event.currentTarget.scrollTop += 28; }}>
             <table className={cx.table}>
               <thead>
                 <tr>
+                  <th className={`${cx.th} w-12`}><span className="sr-only">Sắp xếp</span></th>
                   <th className={`${cx.th} w-10`}><span className="sr-only">Chọn</span></th>
+                  <th className={`${cx.th} w-14`}>STT</th>
                   {detail.type === "irregular_verb" ? (
                     <>
                       <th className={cx.th}>Nghĩa</th>
@@ -2018,8 +2091,10 @@ export default function AdminSetsPage() {
               </thead>
               <tbody>
                 {filteredDetailWords.map((w) => (
-                  <tr key={w.id} ref={(element) => { if (element) wordRowRefs.set(w.id, element); else wordRowRefs.delete(w.id); }} tabIndex={focusedWordId === w.id ? -1 : undefined} className={`${selectedWordIds.includes(w.id) ? "bg-[#F5F2FF]" : "hover:bg-goldpale/30"} ${focusedWordId === w.id ? "ring-2 ring-inset ring-[#7865EE]" : ""}`}>
+                  <tr key={w.id} ref={(element) => { if (element) wordRowRefs.set(w.id, element); else wordRowRefs.delete(w.id); }} tabIndex={focusedWordId === w.id ? -1 : undefined} onDragOver={(event) => { if (draggingWordId !== null && !detailWordQuery.trim()) { event.preventDefault(); setDragOverWordId(w.id); } }} onDrop={(event) => { event.preventDefault(); dropWordBefore(w.id); }} className={`${selectedWordIds.includes(w.id) ? "bg-[#F5F2FF]" : "hover:bg-goldpale/30"} ${focusedWordId === w.id ? "ring-2 ring-inset ring-[#7865EE]" : ""} ${draggingWordId === w.id ? "opacity-50" : ""} ${dragOverWordId === w.id ? "border-t-2 border-t-[#7865EE]" : ""}`}>
+                    <td className={cx.td}><div className="flex min-w-[44px] flex-col items-center gap-1"><button type="button" draggable={!reorderingWords && !detailWordQuery.trim() && editingWordId !== w.id} onDragStart={(event) => { setDraggingWordId(w.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(w.id)); }} onDragEnd={() => { setDraggingWordId(null); setDragOverWordId(null); }} disabled={reorderingWords || Boolean(detailWordQuery.trim()) || editingWordId === w.id} className="flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-line bg-white text-lg text-muted disabled:cursor-not-allowed disabled:opacity-35 active:cursor-grabbing" aria-label={`Kéo để đổi thứ tự ${w.term || w.v1 || w.meaning}`} title={detailWordQuery.trim() ? "Xóa tìm kiếm để sắp xếp" : "Kéo để đổi thứ tự"}>⠿</button><div className="flex gap-1"><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingWords || Boolean(detailWordQuery.trim()) || w.position === 1} onClick={() => moveWordByOffset(w.id, -1)} aria-label={`Đưa ${w.term || w.v1 || w.meaning} lên`}>↑</button><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingWords || Boolean(detailWordQuery.trim()) || w.position === detail.words.length} onClick={() => moveWordByOffset(w.id, 1)} aria-label={`Đưa ${w.term || w.v1 || w.meaning} xuống`}>↓</button></div></div></td>
                     <td className={cx.td}><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" aria-label={`Chọn ${w.term || w.v1 || w.meaning}`} checked={selectedWordIds.includes(w.id)} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...current, w.id] : current.filter((id) => id !== w.id))} /></td>
+                    <td className={`${cx.td} font-mono font-bold text-[#6550DB]`}>{w.position}</td>
                     {detail.type === "irregular_verb" ? (
                       <>
                         <td className={cx.td}>{w.meaning}</td>
@@ -2059,7 +2134,10 @@ export default function AdminSetsPage() {
                       )}
                     </td>
                     <td className={cx.td}>
-                      <div className="flex gap-1.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} disabled={reorderingWords} onClick={() => moveWordToExactPosition(w)}>
+                          Chuyển đến STT…
+                        </button>
                         <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
                           Sửa
                         </button>

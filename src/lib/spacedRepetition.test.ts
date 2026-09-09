@@ -3,6 +3,7 @@ import test from "node:test";
 import { nextSpacedProgress } from "./spacedRepetition";
 import "./reviewPlanner.test";
 import "./fillAnswer.test";
+import "./wordOrder.test";
 
 const now = new Date("2026-07-20T00:00:00.000Z");
 

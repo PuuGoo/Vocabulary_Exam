@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { classMembers, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
   const rows = await db
     .select({
       id: words.id,
+      position: words.position,
       setId: words.setId,
       setName: vocabSets.name,
       setType: vocabSets.type,
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
     .from(words)
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
     .where(and(...conditions))
-    .orderBy(vocabSets.id, words.id)
+    .orderBy(asc(vocabSets.id), asc(words.position), asc(words.id))
     .limit(500);
 
   const grouped = setIds.map((setId) => {

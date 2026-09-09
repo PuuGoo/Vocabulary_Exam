@@ -146,6 +146,7 @@ export const words = pgTable("words", {
   setId: integer("set_id")
     .notNull()
     .references(() => vocabSets.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
   // irregular_verb fields
   meaning: text("meaning").notNull(),
   v1: text("v1"),
@@ -160,7 +161,9 @@ export const words = pgTable("words", {
   wtype: varchar("wtype", { length: 32 }),
   ipa: varchar("ipa", { length: 128 }), // phonetic transcription, e.g. /wɜːrd/
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  setPositionIdx: uniqueIndex("words_set_position_idx").on(table.setId, table.position),
+}));
 
 export const attempts = pgTable("attempts", {
   id: serial("id").primaryKey(),

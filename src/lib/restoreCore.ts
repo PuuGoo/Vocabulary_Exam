@@ -164,12 +164,23 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
     const wordMap = new Map<number, number>();
     const existingWords = await tx.select().from(words);
     const wordsByKey = new Map(existingWords.map((item) => [wordKey(item.setId, item as unknown as BackupRow), item.id]));
-    for (const row of backup.data.words) {
+    const nextPositionBySet = new Map<number, number>();
+    for (const item of existingWords) nextPositionBySet.set(item.setId, Math.max(nextPositionBySet.get(item.setId) || 0, item.position));
+    const restoreWords = [...backup.data.words].sort((left, right) => {
+      const setDifference = number(left, "setId", -1) - number(right, "setId", -1);
+      if (setDifference) return setDifference;
+      const leftPosition = number(left, "position", oldId(left) || Number.MAX_SAFE_INTEGER);
+      const rightPosition = number(right, "position", oldId(right) || Number.MAX_SAFE_INTEGER);
+      return leftPosition - rightPosition || (oldId(left) || 0) - (oldId(right) || 0);
+    });
+    for (const row of restoreWords) {
       const id = oldId(row); const setId = setMap.get(number(row, "setId", -1)); const meaning = text(row, "meaning");
       if (id == null || setId == null || !meaning) { report.skipped.words++; continue; }
       const key = wordKey(setId, row); let mapped = wordsByKey.get(key);
       if (mapped == null) {
-        const [created] = await tx.insert(words).values({ setId, meaning, v1: nullableText(row, "v1"), v2: nullableText(row, "v2"), v3: nullableText(row, "v3"), ipaV1: nullableText(row, "ipaV1"), ipaV2: nullableText(row, "ipaV2"), ipaV3: nullableText(row, "ipaV3"), term: nullableText(row, "term"), example: nullableText(row, "example"), wtype: nullableText(row, "wtype"), ipa: nullableText(row, "ipa"), createdAt: date(row, "createdAt") }).returning({ id: words.id });
+        const position = (nextPositionBySet.get(setId) || 0) + 1;
+        const [created] = await tx.insert(words).values({ setId, position, meaning, v1: nullableText(row, "v1"), v2: nullableText(row, "v2"), v3: nullableText(row, "v3"), ipaV1: nullableText(row, "ipaV1"), ipaV2: nullableText(row, "ipaV2"), ipaV3: nullableText(row, "ipaV3"), term: nullableText(row, "term"), example: nullableText(row, "example"), wtype: nullableText(row, "wtype"), ipa: nullableText(row, "ipa"), createdAt: date(row, "createdAt") }).returning({ id: words.id });
+        nextPositionBySet.set(setId, position);
         mapped = created.id; wordsByKey.set(key, mapped); report.added.words++;
       } else report.skipped.words++;
       wordMap.set(id, mapped);
