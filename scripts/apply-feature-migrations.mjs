@@ -15,6 +15,7 @@ const migrations = [
   "0027_share_password_protection.sql",
   "0028_word_positions.sql",
   "0029_admin_rbac.sql",
+  "0030_multilingual_chinese.sql",
 ];
 
 const client = postgres(connectionString, { max: 1 });
@@ -57,6 +58,15 @@ try {
            COUNT(*) FILTER (WHERE password_enabled)::integer AS password_share_count
     FROM share_links
   `);
+  const [languageIntegrity] = await client.unsafe(`
+    SELECT COUNT(*) FILTER (
+      WHERE language_code IS NULL OR btrim(language_code) = ''
+         OR translation_language_code IS NULL OR btrim(translation_language_code) = ''
+         OR language_settings IS NULL
+    )::integer AS invalid_sets,
+    COUNT(*) FILTER (WHERE language_code = 'zh-CN')::integer AS chinese_sets
+    FROM vocab_sets
+  `);
 
   if (wordIntegrity.invalid_positions || positionIntegrity.duplicate_positions || positionIntegrity.non_contiguous_sets) {
     throw new Error("Word position integrity check failed after migrations.");
@@ -64,11 +74,13 @@ try {
   if (rbacIntegrity.owner_count < 1 || rbacIntegrity.invalid_admins || rbacIntegrity.invalid_students) {
     throw new Error("Admin RBAC integrity check failed after migrations.");
   }
+  if (languageIntegrity.invalid_sets) throw new Error("Language metadata integrity check failed after migrations.");
   console.log(JSON.stringify({
     words: wordIntegrity.word_count,
     owners: rbacIntegrity.owner_count,
     customSlugs: shareIntegrity.custom_slug_count,
     passwordProtectedShares: shareIntegrity.password_share_count,
+    chineseSets: languageIntegrity.chinese_sets,
   }));
 } finally {
   await client.end();

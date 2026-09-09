@@ -1,6 +1,6 @@
 export const BACKUP_FORMAT = "lexora-backup";
-export const BACKUP_VERSION = 4;
-export const SUPPORTED_BACKUP_VERSIONS = [1, 2, 3, BACKUP_VERSION] as const;
+export const BACKUP_VERSION = 5;
+export const SUPPORTED_BACKUP_VERSIONS = [1, 2, 3, 4, BACKUP_VERSION] as const;
 
 export const BACKUP_COLLECTIONS = [
   "users", "classes", "classMembers", "vocabCategories", "categoryDocuments", "vocabSets", "words", "attempts",

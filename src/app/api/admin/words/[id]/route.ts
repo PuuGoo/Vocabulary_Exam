@@ -30,6 +30,12 @@ const patchSchema = z.object({
   example: z.string().trim().optional(),
   wtype: z.string().trim().optional(),
   ipa: z.string().trim().optional(),
+  alternateTerm: z.string().trim().optional(),
+  pronunciation: z.string().trim().optional(),
+  examplePronunciation: z.string().trim().optional(),
+  exampleMeaning: z.string().trim().optional(),
+  level: z.string().trim().optional(),
+  classifier: z.string().trim().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {

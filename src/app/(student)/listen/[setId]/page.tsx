@@ -5,11 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import { getAvailableModes, getLanguageConfig } from "@/lib/languages";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import VerbIpa from "@/components/VerbIpa";
 
-type Word = { id: number; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; ipaV1?: string | null; ipaV2?: string | null; ipaV3?: string | null };
-type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
+type Word = { id: number; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; pronunciation?:string|null; ipaV1?: string | null; ipaV2?: string | null; ipaV3?: string | null };
+type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?:string|null; words: Word[] };
 
 function shuffle<T>(items: T[]) {
   const result = [...items];
@@ -76,8 +77,8 @@ export default function ListenPage() {
 
     const utterances: SpeechSynthesisUtterance[] = [];
     for (let repeat = 0; repeat < Number(repeats); repeat += 1) {
-      const utterance = new SpeechSynthesisUtterance(english.split("/")[0].trim());
-      utterance.lang = "en-US";
+      const utterance = new SpeechSynthesisUtterance(set.languageCode === "zh-CN" ? english.trim() : english.split("/")[0].trim());
+      utterance.lang = getLanguageConfig(set.languageCode).ttsLanguage;
       utterance.rate = Number(speed);
       utterances.push(utterance);
     }
@@ -165,7 +166,7 @@ export default function ListenPage() {
   if (!started) return (
     <div className={cx.panel}>
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe rảnh tay — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
-      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} />
+      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className={cx.desc}>Ứng dụng tự đọc lần lượt để bạn ôn từ mà không cần liên tục nhìn hoặc chạm màn hình.</div>
       {!speechSupported ? <div className={cx.empty}>Trình duyệt này chưa hỗ trợ đọc văn bản. Hãy dùng Chrome, Edge hoặc Safari phiên bản mới.</div> : set.words.length === 0 ? <div className={cx.empty}>Bộ từ chưa có nội dung phù hợp để nghe.</div> : (
         <section className="mx-auto max-w-lg rounded-xl border border-line bg-white p-5">
@@ -187,7 +188,7 @@ export default function ListenPage() {
   if (finished) return (
     <div className={cx.panel}>
       <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe rảnh tay — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
-      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} />
+      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <section className="mx-auto max-w-lg rounded-xl border border-gold bg-goldpale/40 p-6 text-center">
         <div className="text-4xl" aria-hidden="true">🎧</div><h2 className="mt-2 font-serif text-xl font-bold">Đã kết thúc lượt nghe</h2>
         <p className="mt-2 text-sm text-muted">Bạn đã nghe {visitedRef.current.size}/{sessionWords.length} từ.</p>
@@ -200,14 +201,14 @@ export default function ListenPage() {
   return (
     <div className={cx.panel}>
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe rảnh tay — {set.name}</h2><span className="text-sm text-muted">{index + 1}/{sessionWords.length}</span></div>
-      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} />
+      <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(index + 1) / sessionWords.length * 100}%` }} /></div>
       {word && <section {...listenSwipe.swipeProps} style={listenSwipe.swipeStyle} className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-line bg-white px-5 py-10 text-center">
         <span className={`pointer-events-none absolute left-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>← Từ trước</span>
         <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Từ sau →</span>
         <div className={`mx-auto flex h-24 w-24 items-center justify-center rounded-full text-4xl ${playing ? "animate-pulse bg-goldpale" : "bg-line/50"}`} aria-hidden="true">{playing ? "🔊" : "⏸"}</div>
         <div className="mt-6 font-serif text-3xl font-bold">{set.type === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}</div>
-        {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
+        {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : (set.languageCode === "zh-CN" ? word.pronunciation : word.ipa) && <div className="mt-1 text-lg text-golddark">{set.languageCode === "zh-CN" ? word.pronunciation : word.ipa}</div>}
         <div className="mt-4 text-base text-muted">{word.meaning}</div>
         <div className="mt-8 flex flex-wrap justify-center gap-3">
           <button className={`${cx.btn} ${cx.btnGhost}`} disabled={index === 0} onClick={() => setIndex((current) => Math.max(0, current - 1))}>◀ Từ trước</button>

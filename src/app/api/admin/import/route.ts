@@ -15,6 +15,21 @@ export const runtime = "nodejs";
 
 type Row = Record<string, string>;
 
+const CHINESE_HEADERS = {
+  term: ["term", "hanzi", "chữ hán", "chinese", "simplified", "简体"],
+  alternateTerm: ["alternateterm", "alternate term", "traditional", "phồn thể", "繁體", "繁体"],
+  pronunciation: ["pronunciation", "pinyin", "拼音"],
+  meaning: ["meaning", "nghĩa"],
+  wtype: ["wtype", "type", "word type", "loại từ"],
+  classifier: ["classifier", "lượng từ"],
+  level: ["level", "hsk"],
+  example: ["example", "ví dụ"],
+  examplePronunciation: ["examplepronunciation", "example pronunciation", "pinyin ví dụ"],
+  exampleMeaning: ["examplemeaning", "example meaning", "nghĩa ví dụ"],
+} as const;
+function alias(row: Row, keys: readonly string[]) { for (const key of keys) if (row[key]) return row[key]; return ""; }
+function canonicalChineseRow(row: Row): Row { return { ...row, term:alias(row,CHINESE_HEADERS.term), alternateTerm:alias(row,CHINESE_HEADERS.alternateTerm), pronunciation:alias(row,CHINESE_HEADERS.pronunciation), meaning:alias(row,CHINESE_HEADERS.meaning), wtype:alias(row,CHINESE_HEADERS.wtype), classifier:alias(row,CHINESE_HEADERS.classifier), level:alias(row,CHINESE_HEADERS.level), example:alias(row,CHINESE_HEADERS.example), examplePronunciation:alias(row,CHINESE_HEADERS.examplePronunciation), exampleMeaning:alias(row,CHINESE_HEADERS.exampleMeaning) }; }
+
 function normalizeRow(raw: Record<string, unknown>): Row {
   const out: Row = {};
   for (const [k, v] of Object.entries(raw)) {
@@ -33,6 +48,7 @@ export async function POST(req: NextRequest) {
   const target = String(form.get("target") || "");
   const newSetName = String(form.get("newSetName") || "").trim();
   const category = normalizeText(String(form.get("category") || "").trim()) || null;
+  const requestedLanguage = String(form.get("languageCode") || "en");
   const classIdRaw = form.get("classId");
   const classId = classIdRaw && String(classIdRaw).trim() !== "" ? Number(classIdRaw) : null;
 
@@ -66,15 +82,17 @@ export async function POST(req: NextRequest) {
 
   let setId: number;
   let setType: string;
+  let languageCode = "en";
 
-  if (target === "__new_vocab" || target === "__new_verb") {
-    setType = target === "__new_verb" ? "irregular_verb" : "ielts_vocab";
+  if (target === "__new_vocab" || target === "__new_verb" || target === "__new_language") {
+    setType = target === "__new_verb" ? "irregular_verb" : target === "__new_language" ? "language_vocab" : "ielts_vocab";
+    languageCode = setType === "language_vocab" && requestedLanguage === "zh-CN" ? "zh-CN" : "en";
     const rawName = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
     if (category) {
       await db.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
     const name = category ? formatCategorySetName(await nextCategoryOrder(db, category), rawName) : rawName;
-    const [set] = await db.insert(vocabSets).values({ name, category, type: setType, classId, createdBy: session.userId }).returning();
+    const [set] = await db.insert(vocabSets).values({ name, category, type: setType, languageCode, translationLanguageCode:"vi", languageSettings:languageCode === "zh-CN" ? JSON.stringify({scriptVariant:"simplified",pronunciationScheme:"pinyin",pinyinTonePolicy:"strict"}) : "{}", classId, createdBy: session.userId }).returning();
     setId = set.id;
   } else {
     const setIdNum = Number(target);
@@ -82,7 +100,10 @@ export async function POST(req: NextRequest) {
     if (!set) return NextResponse.json({ error: "Bộ từ vựng đích không tồn tại." }, { status: 400 });
     setId = set.id;
     setType = set.type;
+    languageCode = set.languageCode;
   }
+
+  if (languageCode === "zh-CN") rows = rows.map(canonicalChineseRow);
 
   const existingWords = await db
     .select({ term: words.term, v1: words.v1, v2: words.v2, v3: words.v3 })
@@ -130,6 +151,12 @@ export async function POST(req: NextRequest) {
         example: r.example || "",
         wtype: r.wtype || r.type || "",
         ipa: r.ipa || null,
+        alternateTerm: r.alternateTerm || null,
+        pronunciation: r.pronunciation || null,
+        classifier: r.classifier || null,
+        level: r.level || null,
+        examplePronunciation: r.examplePronunciation || null,
+        exampleMeaning: r.exampleMeaning || null,
       });
     }
   }

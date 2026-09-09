@@ -26,14 +26,22 @@ export async function GET(req: NextRequest) {
       setId: words.setId,
       setName: vocabSets.name,
       setType: vocabSets.type,
+      languageCode:vocabSets.languageCode,
+      languageSettings:vocabSets.languageSettings,
       meaning: words.meaning,
       term: words.term,
+      alternateTerm:words.alternateTerm,
+      pronunciation:words.pronunciation,
       v1: words.v1,
       v2: words.v2,
       v3: words.v3,
       ipa: words.ipa,
       wtype: words.wtype,
       example: words.example,
+      examplePronunciation:words.examplePronunciation,
+      exampleMeaning:words.exampleMeaning,
+      level:words.level,
+      classifier:words.classifier,
     })
     .from(words)
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
@@ -43,7 +51,7 @@ export async function GET(req: NextRequest) {
 
   const grouped = setIds.map((setId) => {
     const setWords = rows.filter((row) => row.setId === setId);
-    return setWords.length > 0 ? { id: setId, name: setWords[0].setName, type: setWords[0].setType, words: setWords } : null;
+    return setWords.length > 0 ? { id: setId, name: setWords[0].setName, type: setWords[0].setType, languageCode:setWords[0].languageCode, languageSettings:setWords[0].languageSettings, words: setWords } : null;
   }).filter(Boolean);
   return NextResponse.json({ sets: grouped, totalWords: rows.length, truncated: rows.length === 500 });
 }

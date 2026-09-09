@@ -23,6 +23,12 @@ const vocabSchema = z.object({
   example: z.string().trim().optional(),
   wtype: z.string().trim().optional(),
   ipa: z.string().trim().optional(),
+  alternateTerm: z.string().trim().optional(),
+  pronunciation: z.string().trim().optional(),
+  examplePronunciation: z.string().trim().optional(),
+  exampleMeaning: z.string().trim().optional(),
+  level: z.string().trim().optional(),
+  classifier: z.string().trim().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
@@ -60,6 +66,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         example: normalizeText(parsed.data.example || ""),
         wtype: normalizeText(parsed.data.wtype || ""),
         ipa: parsed.data.ipa ? normalizeText(parsed.data.ipa) : null,
+        alternateTerm: parsed.data.alternateTerm ? normalizeText(parsed.data.alternateTerm) : null,
+        pronunciation: parsed.data.pronunciation ? normalizeText(parsed.data.pronunciation) : null,
+        examplePronunciation: parsed.data.examplePronunciation ? normalizeText(parsed.data.examplePronunciation) : null,
+        exampleMeaning: parsed.data.exampleMeaning ? normalizeText(parsed.data.exampleMeaning) : null,
+        level: parsed.data.level ? normalizeText(parsed.data.level) : null,
+        classifier: parsed.data.classifier ? normalizeText(parsed.data.classifier) : null,
       }));
     return NextResponse.json({ word: w });
   }

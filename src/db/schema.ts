@@ -14,7 +14,7 @@ import {
 import { relations } from "drizzle-orm";
 
 export const roleEnum = ["admin", "student"] as const;
-export const setTypeEnum = ["irregular_verb", "ielts_vocab"] as const;
+export const setTypeEnum = ["irregular_verb", "ielts_vocab", "language_vocab"] as const;
 export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily", "writing"] as const;
 export const shareTargetTypeEnum = ["vocab_set", "question_collection"] as const;
 export const shareAccessModeEnum = ["restricted", "anyone_with_link"] as const;
@@ -88,6 +88,9 @@ export const vocabSets = pgTable("vocab_sets", {
   name: varchar("name", { length: 256 }).notNull(),
   category: varchar("category", { length: 128 }),
   type: varchar("type", { length: 32 }).notNull(), // 'irregular_verb' | 'ielts_vocab'
+  languageCode: varchar("language_code", { length: 16 }).notNull().default("en"),
+  translationLanguageCode: varchar("translation_language_code", { length: 16 }).notNull().default("vi"),
+  languageSettings: text("language_settings").notNull().default("{}"),
   classId: integer("class_id").references(() => classes.id, { onDelete: "set null" }), // null = public, visible to all students
   createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -187,9 +190,15 @@ export const words = pgTable("words", {
   ipaV3: varchar("ipa_v3", { length: 128 }),
   // ielts_vocab fields
   term: text("term"),
+  alternateTerm: text("alternate_term"),
+  pronunciation: text("pronunciation"),
   example: text("example"),
+  examplePronunciation: text("example_pronunciation"),
+  exampleMeaning: text("example_meaning"),
   wtype: varchar("wtype", { length: 32 }),
   ipa: varchar("ipa", { length: 128 }), // phonetic transcription, e.g. /wɜːrd/
+  level: varchar("level", { length: 64 }),
+  classifier: varchar("classifier", { length: 128 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   setPositionIdx: uniqueIndex("words_set_position_idx").on(table.setId, table.position),

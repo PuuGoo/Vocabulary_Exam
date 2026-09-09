@@ -3,6 +3,7 @@ import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { classMembers, vocabSets, wordBookmarks, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { normalizePinyinForSearch } from "@/lib/pinyin";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -11,6 +12,7 @@ export async function GET(req: NextRequest) {
   const queryText = (req.nextUrl.searchParams.get("q") || "").trim().slice(0, 100);
   if (!queryText) return NextResponse.json({ results: [], query: "" });
   const pattern = `%${queryText}%`;
+  const pinyinPattern = `%${normalizePinyinForSearch(queryText)}%`;
 
   let classFilter;
   if (session.role !== "admin") {
@@ -27,6 +29,11 @@ export async function GET(req: NextRequest) {
   const searchFilter = or(
     ilike(words.meaning, pattern),
     ilike(words.term, pattern),
+    ilike(words.alternateTerm, pattern),
+    ilike(words.pronunciation, pattern),
+    sql`replace(replace(translate(lower(coalesce(${words.pronunciation}, '')), 'āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜü', 'aaaaeeeeiiiioooouuuuvvvvv'), ' ', ''), '''', '') like ${pinyinPattern}`,
+    ilike(words.examplePronunciation, pattern),
+    ilike(words.exampleMeaning, pattern),
     ilike(words.v1, pattern),
     ilike(words.v2, pattern),
     ilike(words.v3, pattern),
@@ -39,13 +46,21 @@ export async function GET(req: NextRequest) {
       setId: vocabSets.id,
       setName: vocabSets.name,
       setType: vocabSets.type,
+      languageCode: vocabSets.languageCode,
+      languageSettings: vocabSets.languageSettings,
       meaning: words.meaning,
       term: words.term,
+      alternateTerm: words.alternateTerm,
+      pronunciation: words.pronunciation,
       v1: words.v1,
       v2: words.v2,
       v3: words.v3,
       ipa: words.ipa,
       example: words.example,
+      examplePronunciation: words.examplePronunciation,
+      exampleMeaning: words.exampleMeaning,
+      level: words.level,
+      classifier: words.classifier,
       bookmarkId: wordBookmarks.id,
     })
     .from(words)

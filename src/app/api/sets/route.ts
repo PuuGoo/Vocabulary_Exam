@@ -7,6 +7,8 @@ import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { z } from "zod";
 import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { isSupportedLanguageCode } from "@/lib/languages";
+import { serializeLanguageSettings } from "@/lib/languageSettings";
 
 export async function GET() {
   const session = await getSession();
@@ -31,6 +33,9 @@ export async function GET() {
       name: vocabSets.name,
       category: vocabSets.category,
       type: vocabSets.type,
+      languageCode: vocabSets.languageCode,
+      translationLanguageCode: vocabSets.translationLanguageCode,
+      languageSettings: vocabSets.languageSettings,
       classId: vocabSets.classId,
       className: classes.name,
       createdAt: vocabSets.createdAt,
@@ -61,7 +66,10 @@ export async function GET() {
 const createSchema = z.object({
   name: z.string().trim().min(1).max(256),
   category: z.string().trim().max(128).nullable().optional(),
-  type: z.enum(["irregular_verb", "ielts_vocab"]),
+  type: z.enum(["irregular_verb", "ielts_vocab", "language_vocab"]),
+  languageCode: z.string().max(16).optional(),
+  translationLanguageCode: z.string().max(16).optional(),
+  languageSettings: z.unknown().optional(),
   classId: z.number().int().nullable().optional(),
 });
 
@@ -73,6 +81,13 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
+  const languageCode = parsed.data.type === "language_vocab" ? parsed.data.languageCode : "en";
+  if (!isSupportedLanguageCode(languageCode) || (parsed.data.type === "language_vocab" && languageCode !== "zh-CN")) {
+    return NextResponse.json({ error: "Ngôn ngữ này chưa được hỗ trợ." }, { status: 400 });
+  }
+  let languageSettings: string;
+  try { languageSettings = serializeLanguageSettings(parsed.data.languageSettings, languageCode); }
+  catch { return NextResponse.json({ error: "Cấu hình ngôn ngữ không hợp lệ." }, { status: 400 }); }
   const category = parsed.data.category ? normalizeText(parsed.data.category) : null;
   const [set] = await db.transaction(async (tx) => {
     if (category) {
@@ -84,6 +99,9 @@ export async function POST(req: NextRequest) {
       name: setName,
       category,
       type: parsed.data.type,
+      languageCode,
+      translationLanguageCode: parsed.data.translationLanguageCode || "vi",
+      languageSettings,
       classId: parsed.data.classId ?? null,
       createdBy: access.userId,
     }).returning();

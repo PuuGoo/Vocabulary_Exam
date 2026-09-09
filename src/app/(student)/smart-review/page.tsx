@@ -7,6 +7,7 @@ import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import VerbIpa from "@/components/VerbIpa";
+import { getLanguageConfig, getSpeakText, getWordDisplayForms, getWordPronunciation } from "@/lib/languages";
 
 type Reason = "difficult" | "forgotten" | "stale" | "new";
 type ReviewWord = {
@@ -14,6 +15,8 @@ type ReviewWord = {
   setId: number;
   setName: string;
   setType: string;
+  languageCode: string;
+  languageSettings: string;
   meaning: string;
   v1: string | null;
   v2: string | null;
@@ -22,9 +25,13 @@ type ReviewWord = {
   ipaV2: string | null;
   ipaV3: string | null;
   term: string | null;
+  alternateTerm: string | null;
+  pronunciation: string | null;
   example: string | null;
   wtype: string | null;
   ipa: string | null;
+  level: string | null;
+  classifier: string | null;
   known: boolean | null;
   ageDays: number | null;
   due: boolean;
@@ -92,6 +99,8 @@ export default function SmartReviewPage() {
   }, [count, loadAttempt]);
 
   const word = words?.[index];
+  const displayForms = word ? getWordDisplayForms(word, word) : { primary: "", secondary: "" };
+  const pronunciation = word ? getWordPronunciation(word, word) : "";
   const finished = !!words && words.length > 0 && index >= words.length;
 
   const mark = useCallback(async (learned: boolean) => {
@@ -207,7 +216,7 @@ export default function SmartReviewPage() {
             {!flipped ? (
               <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">Nghĩa tiếng Việt</span><span className="font-serif text-2xl font-bold">{word.meaning}</span><span className="mt-5 text-xs text-muted">Bấm hoặc nhấn Space để xem đáp án</span></>
             ) : (
-              <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">{word.setType === "irregular_verb" ? "V1 — V2 — V3" : "Từ tiếng Anh"}</span><span className="flex flex-wrap items-center justify-center gap-3 font-serif text-2xl font-bold">{word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}<span onClick={(event) => event.stopPropagation()}><SpeakButton text={word.setType === "irregular_verb" ? word.v1 || "" : word.term || ""} /></span></span>{word.setType === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <span className="mt-1 text-lg text-golddark">{word.ipa}</span>}{word.wtype && <span className="mt-2 text-sm text-muted">({word.wtype})</span>}{word.example && <span className="mt-3 max-w-xl text-sm italic text-muted">VD: {word.example}</span>}</>
+              <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">{word.setType === "irregular_verb" ? "V1 — V2 — V3" : getLanguageConfig(word.languageCode).termLabel}</span><span className="flex flex-wrap items-center justify-center gap-3 font-serif text-2xl font-bold">{word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : displayForms.primary}<span onClick={(event) => event.stopPropagation()}><SpeakButton text={getSpeakText(word, word)} languageCode={word.languageCode} /></span></span>{displayForms.secondary && <span className="mt-1 text-base text-muted">{displayForms.secondary}</span>}{word.setType === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : pronunciation && <span className="mt-1 text-lg text-golddark">{pronunciation}</span>}{word.wtype && <span className="mt-2 text-sm text-muted">({word.wtype}){word.level ? ` · ${word.level}` : ""}{word.classifier ? ` · Lượng từ: ${word.classifier}` : ""}</span>}{word.example && <span className="mt-3 max-w-xl text-sm italic text-muted">VD: {word.example}</span>}</>
             )}
           </button>
           <div className="mt-2 text-center text-xs font-semibold text-muted sm:hidden">Vuốt trái: chưa nhớ · Vuốt phải: đã nhớ</div>

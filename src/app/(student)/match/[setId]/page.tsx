@@ -9,6 +9,7 @@ import { toast } from "@/components/Toast";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
+import { getAvailableModes, getLanguageConfig } from "@/lib/languages";
 
 type Word = {
   id: number;
@@ -20,7 +21,8 @@ type Word = {
 type SetDetail = {
   id: number;
   name: string;
-  type: "irregular_verb" | "ielts_vocab";
+  type: "irregular_verb" | "ielts_vocab" | "language_vocab";
+  languageCode?: string | null;
   words: Word[];
 };
 type MatchDraft = {
@@ -313,7 +315,7 @@ export default function MatchGamePage() {
     return (
       <div className={cx.panel}>
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🧩 Ghép cặp — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
-        <StudyModeNav setId={set.id} active="match" isVerb={set.type === "irregular_verb"} />
+        <StudyModeNav setId={set.id} active="match" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
         <h2 className={`${cx.h2} text-center`}>🎉 Hoàn thành ghép cặp!</h2>
         <div className="mx-auto my-6 max-w-md rounded-2xl border border-gold bg-goldpale p-6 text-center">
           <div className="font-serif text-4xl font-bold text-golddark">{score}/{set.words.length}</div>
@@ -344,7 +346,7 @@ export default function MatchGamePage() {
         <h2 className={cx.h2}>🧩 Ghép cặp — {set.name}</h2>
         <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button>
       </div>
-      <StudyModeNav setId={set.id} active="match" isVerb={set.type === "irregular_verb"} />
+      <StudyModeNav setId={set.id} active="match" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className={cx.desc}>Chọn một từ tiếng Anh và nghĩa tiếng Việt tương ứng. Bạn có thể chọn bên nào trước cũng được.</div>
 
       <div className="mb-4 grid grid-cols-3 gap-2 rounded-lg border border-line bg-white p-3 text-center text-xs sm:max-w-md sm:mx-auto">
@@ -353,7 +355,7 @@ export default function MatchGamePage() {
         <div><b className="block text-base">{formatTime(elapsed)}</b><span className="text-muted">Thời gian</span></div>
       </div>
 
-      <div className="mb-3 flex justify-between text-xs text-muted"><span>Từ tiếng Anh</span><span>Nghĩa tiếng Việt</span></div>
+      <div className="mb-3 flex justify-between text-xs text-muted"><span>{getLanguageConfig(set.languageCode).termLabel}</span><span>Nghĩa tiếng Việt</span></div>
       <div className="grid grid-cols-2 gap-3" aria-live="polite">
         <div className="flex flex-col gap-2">
           {currentWords.map((word) => (

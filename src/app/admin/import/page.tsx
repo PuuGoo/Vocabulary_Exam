@@ -113,6 +113,7 @@ export default function AdminImportPage() {
     form.append("newSetName", newSetName);
     form.append("category", category);
     form.append("classId", classId);
+    form.append("languageCode", target === "__new_language" ? "zh-CN" : "en");
     const res = await fetch("/api/admin/import", { method: "POST", body: form });
     setSubmitting(false);
     const data = await res.json();
@@ -162,7 +163,7 @@ export default function AdminImportPage() {
       <div className="mb-3">
         <span className={cx.label}>Chọn đích nhập dữ liệu</span>
         <div className="flex flex-wrap gap-2">
-          {[["__new_vocab", "+ Tạo bộ mới — Từ vựng IELTS"], ["__new_verb", "+ Tạo bộ mới — Động từ bất quy tắc"]].map(([value, label]) => (
+          {[["__new_vocab", "+ Tạo bộ mới — Từ vựng IELTS"], ["__new_verb", "+ Tạo bộ mới — Động từ bất quy tắc"], ["__new_language", "+ Tạo bộ mới — Tiếng Trung"]].map(([value, label]) => (
             <button key={value} type="button" onClick={() => setTarget(value)} className={`rounded-full border px-3.5 py-2 text-xs font-bold ${target === value ? "border-ink bg-ink text-white" : "border-line bg-white text-muted hover:border-gold"}`}>{label}</button>
           ))}
         </div>
@@ -183,12 +184,12 @@ export default function AdminImportPage() {
         </div>
       </div>
 
-      {(target === "__new_vocab" || target === "__new_verb") && (
+      {(target === "__new_vocab" || target === "__new_verb" || target === "__new_language") && (
         <>
           <label className={cx.label}>Tên bộ từ vựng mới</label>
           <input
             className={cx.input}
-            placeholder="VD: Từ vựng chủ đề Giáo dục"
+            placeholder={target === "__new_language" ? "VD: Tiếng Trung HSK 1" : "VD: Từ vựng chủ đề Giáo dục"}
             value={newSetName}
             onChange={(e) => setNewSetName(e.target.value)}
           />

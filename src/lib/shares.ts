@@ -9,6 +9,7 @@ import { normalizeShareSlug, validateShareSlug } from "@/lib/shareSlug";
 import { hashSharePassword, hasShareAccess, validateSharePassword } from "@/lib/sharePassword";
 import { buildSharedFolderView, resolveSharedFolderPath } from "@/lib/shareCategoryTree";
 import { normalizeCategoryPath } from "@/lib/categoryPath";
+import { getAvailableModes } from "@/lib/languages";
 
 export { buildShareUrl, defaultShareModes, getPublicShareUrl, modesForSetType, QUESTION_SHARE_MODES, SHARE_TARGET_TYPES, SHARE_ACCESS_MODES, VOCAB_SHARE_MODES } from "@/lib/shareConfig";
 export { hashShareToken } from "@/lib/shareToken";
@@ -75,10 +76,10 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
   }
   if (requestedMode && !share.allowedModesList.includes(requestedMode)) return { share, error: "mode_not_allowed" as const };
   if (share.targetType === "vocab_set") {
-    const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type }).from(vocabSets).where(eq(vocabSets.id, share.targetId)).limit(1);
+    const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type, languageCode:vocabSets.languageCode, translationLanguageCode:vocabSets.translationLanguageCode, languageSettings:vocabSets.languageSettings }).from(vocabSets).where(eq(vocabSets.id, share.targetId)).limit(1);
     if (!set) return { share, error: "target_missing" as const };
-    const publicWords = await db.select({ id: words.id, position: words.position, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id));
-    return { share, payload: { targetType: share.targetType, title: set.name, count: publicWords.length, setType: set.type, allowedModes: share.allowedModesList, words: publicWords } };
+    const publicWords = await db.select({ id: words.id, position: words.position, meaning: words.meaning, term: words.term, alternateTerm:words.alternateTerm, pronunciation:words.pronunciation, example: words.example, examplePronunciation:words.examplePronunciation, exampleMeaning:words.exampleMeaning, wtype: words.wtype, ipa: words.ipa, level:words.level, classifier:words.classifier, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id));
+    return { share, payload: { targetType: share.targetType, title: set.name, count: publicWords.length, setType: set.type, languageCode:set.languageCode, translationLanguageCode:set.translationLanguageCode, languageSettings:set.languageSettings, allowedModes: share.allowedModesList.filter(mode=>getAvailableModes(set).includes(mode as never)), words: publicWords } };
   }
   const [category] = await db.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(eq(vocabCategories.id, share.targetId)).limit(1);
   if (!category) return { share, error: "target_missing" as const };
@@ -98,10 +99,10 @@ export async function getPublicSharePayload(token: string, requestedMode?: strin
   if (requestedSetId) {
     const selectedSet = allowedSets.find((item) => item.id === requestedSetId);
     if (!selectedSet) return { share, error: "target_missing" as const };
-    const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type }).from(vocabSets).where(eq(vocabSets.id, selectedSet.id)).limit(1);
+    const [set] = await db.select({ id: vocabSets.id, name: vocabSets.name, type: vocabSets.type, languageCode:vocabSets.languageCode, translationLanguageCode:vocabSets.translationLanguageCode, languageSettings:vocabSets.languageSettings }).from(vocabSets).where(eq(vocabSets.id, selectedSet.id)).limit(1);
     if (!set) return { share, error: "target_missing" as const };
-    const publicWords = await db.select({ id: words.id, position: words.position, meaning: words.meaning, term: words.term, example: words.example, wtype: words.wtype, ipa: words.ipa, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id));
-    return { share, payload: { targetType: "vocab_set", title: set.name, count: publicWords.length, setType: set.type, allowedModes: share.allowedModesList.filter((mode) => modesForSetType(set.type).includes(mode)), words: publicWords } };
+    const publicWords = await db.select({ id: words.id, position: words.position, meaning: words.meaning, term: words.term, alternateTerm:words.alternateTerm, pronunciation:words.pronunciation, example: words.example, examplePronunciation:words.examplePronunciation, exampleMeaning:words.exampleMeaning, wtype: words.wtype, ipa: words.ipa, level:words.level, classifier:words.classifier, v1: words.v1, v2: words.v2, v3: words.v3 }).from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id));
+    return { share, payload: { targetType: "vocab_set", title: set.name, count: publicWords.length, setType: set.type, languageCode:set.languageCode, translationLanguageCode:set.translationLanguageCode, languageSettings:set.languageSettings, allowedModes: share.allowedModesList.filter((mode) => getAvailableModes(set).includes(mode as never)), words: publicWords } };
   }
   const requestedTypes = requestedCollection && collectionKeys.includes(requestedCollection) ? questionTypesForCollections([requestedCollection]) : selectedTypes;
   const requestedFolderPath = resolveSharedFolderPath(category.name, requestedFolder);

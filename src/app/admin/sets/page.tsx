@@ -16,8 +16,10 @@ import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLet
 import { getFillPatternValidationError, parseFillAnswerGroups } from "@/lib/fillAnswer";
 import { moveWordIdByOffset, moveWordIdToPosition } from "@/lib/wordOrder";
 import { useAdminPermissions } from "@/components/AdminPermissionProvider";
+import { getFillModeLabel, getLanguageConfig } from "@/lib/languages";
+import { getChineseSettings } from "@/lib/languageSettings";
 
-type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
+type SetSummary = { id: number; name: string; category: string | null; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
   id: number;
   position: number;
@@ -32,6 +34,7 @@ type Word = {
   example?: string | null;
   wtype?: string | null;
   ipa?: string | null;
+  alternateTerm?:string|null; pronunciation?:string|null; examplePronunciation?:string|null; exampleMeaning?:string|null; level?:string|null; classifier?:string|null;
 };
 type SetDetail = SetSummary & { words: Word[] };
 type WordMatch = {
@@ -99,7 +102,10 @@ export default function AdminSetsPage() {
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [newName, setNewName] = useState("");
   const [newCategory, setNewCategory] = useState("");
-  const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb">("ielts_vocab");
+  const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb" | "language_vocab">("ielts_vocab");
+  const [newLanguageCode, setNewLanguageCode] = useState("zh-CN");
+  const [newScriptVariant, setNewScriptVariant] = useState<"simplified"|"traditional"|"both">("simplified");
+  const [newTonePolicy, setNewTonePolicy] = useState<"strict"|"relaxed">("strict");
   const [newClassId, setNewClassId] = useState<string>("");
   const [detail, setDetail] = useState<SetDetail | null>(null);
   const [detailTab, setDetailTab] = useState<SetWorkspaceTab>("overview");
@@ -107,9 +113,10 @@ export default function AdminSetsPage() {
   const [editCategory, setEditCategory] = useState("");
   const [savingSetName, setSavingSetName] = useState(false);
   const [showAddWord, setShowAddWord] = useState(false);
-  const [wForm, setWForm] = useState({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
+  const emptyWordForm = { meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", alternateTerm:"", pronunciation:"", example: "", examplePronunciation:"", exampleMeaning:"", wtype: "", ipa: "", level:"", classifier:"" };
+  const [wForm, setWForm] = useState(emptyWordForm);
   const [editingWordId, setEditingWordId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
+  const [editForm, setEditForm] = useState(emptyWordForm);
   const [fetchingIpaId, setFetchingIpaId] = useState<number | null>(null);
   const [bulkIpaLoading, setBulkIpaLoading] = useState(false);
   const [savingClass, setSavingClass] = useState(false);
@@ -329,12 +336,12 @@ export default function AdminSetsPage() {
     const query = normalizeSearch(detailWordQuery);
     if (!query) return detail.words;
     return detail.words.filter((word) => normalizeSearch([
-      word.term, word.meaning, word.v1, word.v2, word.v3, word.example,
+      word.term, word.alternateTerm, word.pronunciation, word.meaning, word.v1, word.v2, word.v3, word.example, word.examplePronunciation, word.exampleMeaning, word.level, word.classifier,
     ].filter(Boolean).join(" ")).includes(query));
   }, [detail, detailWordQuery]);
   const compatibleMoveTargets = useMemo(() => {
     if (!sets || !detail) return [];
-    return sets.filter((set) => set.id !== detail.id && set.type === detail.type)
+    return sets.filter((set) => set.id !== detail.id && set.type === detail.type && set.languageCode === detail.languageCode)
       .sort((left, right) => left.name.localeCompare(right.name, "vi", { numeric: true, sensitivity: "base" }));
   }, [detail, sets]);
   const hasAggregatedCategoryDocuments = useMemo(
@@ -809,7 +816,7 @@ export default function AdminSetsPage() {
       const res = await fetch("/api/sets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newName.trim(), category: newCategory.trim() || null, type: newType, classId: newClassId ? Number(newClassId) : null }),
+        body: JSON.stringify({ name: newName.trim(), category: newCategory.trim() || null, type: newType, languageCode:newType === "language_vocab" ? newLanguageCode : "en", translationLanguageCode:"vi", languageSettings:newType === "language_vocab" ? {scriptVariant:newScriptVariant,pronunciationScheme:"pinyin",pinyinTonePolicy:newTonePolicy} : {}, classId: newClassId ? Number(newClassId) : null }),
       });
       if (!res.ok) return toast("Không thể tạo bộ từ vựng.");
       toast("Đã tạo bộ từ vựng!");
@@ -832,6 +839,7 @@ export default function AdminSetsPage() {
     setNewName("");
     setNewCategory("");
     setNewType("ielts_vocab");
+    setNewLanguageCode("zh-CN"); setNewScriptVariant("simplified"); setNewTonePolicy("strict");
     setNewClassId("");
   }
 
@@ -944,21 +952,24 @@ export default function AdminSetsPage() {
       const safeName = current.name.replace(/[\\/:*?"<>|]/g, "-").trim() || `bo-tu-${current.id}`;
       const rows = current.words.map((word) => current.type === "irregular_verb"
         ? { STT: word.position, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
+        : current.languageCode === "zh-CN" ? { STT:word.position,"Chữ Hán":word.term||"","Phồn thể":word.alternateTerm||"",Pinyin:word.pronunciation||"",Nghĩa:word.meaning,"Loại từ":word.wtype||"","Lượng từ":word.classifier||"",HSK:word.level||"","Ví dụ":word.example||"","Pinyin ví dụ":word.examplePronunciation||"","Nghĩa ví dụ":word.exampleMeaning||"" }
         : { STT: word.position, Từ: word.term || "", Nghĩa: word.meaning, IPA: word.ipa || "", "Loại từ": word.wtype || "", "Ví dụ": word.example || "" });
       if (format === "xlsx") {
         const XLSX = await import("xlsx");
         const sheet = XLSX.utils.json_to_sheet(rows);
-        sheet["!cols"] = current.type === "irregular_verb" ? [{ wch: 6 }, { wch: 28 }, ...Array.from({ length: 6 }, () => ({ wch: 18 }))] : [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 52 }];
+        sheet["!cols"] = current.type === "irregular_verb" ? [{ wch: 6 }, { wch: 28 }, ...Array.from({ length: 6 }, () => ({ wch: 18 }))] : current.languageCode === "zh-CN" ? [{wch:6},{wch:18},{wch:18},{wch:20},{wch:28},{wch:14},{wch:12},{wch:10},{wch:38},{wch:38},{wch:38}] : [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 52 }];
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, sheet, "Từ vựng");
         XLSX.writeFile(workbook, `${safeName}.xlsx`);
       } else {
         const [{ default: pdfMake }, { default: pdfFonts }] = await Promise.all([import("pdfmake/build/pdfmake"), import("pdfmake/build/vfs_fonts")]);
         pdfMake.vfs = pdfFonts.pdfMake?.vfs || pdfFonts.vfs || pdfFonts;
-        const headers = current.type === "irregular_verb" ? ["STT", "Nghĩa", "V1 / IPA", "V2 / IPA", "V3 / IPA"] : ["STT", "Từ / IPA", "Nghĩa", "Loại", "Ví dụ"];
+        const headers = current.type === "irregular_verb" ? ["STT", "Nghĩa", "V1 / IPA", "V2 / IPA", "V3 / IPA"] : current.languageCode === "zh-CN" ? ["STT", "Chữ Hán / Pinyin", "Nghĩa", "Loại / HSK", "Ví dụ"] : ["STT", "Từ / IPA", "Nghĩa", "Loại", "Ví dụ"];
         const body = [headers, ...current.words.map((word) => current.type === "irregular_verb"
           ? [String(word.position), word.meaning, `${word.v1 || ""}\n${word.ipaV1 || ""}`, `${word.v2 || ""}\n${word.ipaV2 || ""}`, `${word.v3 || ""}\n${word.ipaV3 || ""}`]
-          : [String(word.position), `${word.term || ""}\n${word.ipa || ""}`, word.meaning, word.wtype || "", word.example || ""] )];
+          : current.languageCode === "zh-CN"
+            ? [String(word.position), `${word.term || ""}${word.alternateTerm && word.alternateTerm !== word.term ? ` / ${word.alternateTerm}` : ""}\n${word.pronunciation || ""}`, word.meaning, [word.wtype, word.classifier ? `Lượng từ: ${word.classifier}` : "", word.level].filter(Boolean).join(" · "), [word.example, word.examplePronunciation, word.exampleMeaning].filter(Boolean).join("\n")]
+            : [String(word.position), `${word.term || ""}\n${word.ipa || ""}`, word.meaning, word.wtype || "", word.example || ""] )];
         pdfMake.createPdf({ pageOrientation: "landscape", pageMargins: [28, 38, 28, 34], content: [
           { text: current.name, fontSize: 18, bold: true, color: "#242337", margin: [0, 0, 0, 4] },
           { text: `${current.category || "Chưa phân loại"} · ${current.words.length} mục`, fontSize: 9, color: "#6F6C82", margin: [0, 0, 0, 14] },
@@ -1106,7 +1117,7 @@ export default function AdminSetsPage() {
     const isVerb = detail.type === "irregular_verb";
     const body = isVerb
       ? { meaning: wForm.meaning, v1: wForm.v1, v2: wForm.v2, v3: wForm.v3, ipaV1: wForm.ipaV1, ipaV2: wForm.ipaV2, ipaV3: wForm.ipaV3 }
-      : { term: wForm.term, meaning: wForm.meaning, example: wForm.example, wtype: wForm.wtype, ipa: wForm.ipa };
+      : { term: wForm.term, meaning: wForm.meaning, example: wForm.example, wtype: wForm.wtype, ipa: wForm.ipa, alternateTerm:wForm.alternateTerm, pronunciation:wForm.pronunciation, examplePronunciation:wForm.examplePronunciation, exampleMeaning:wForm.exampleMeaning, level:wForm.level, classifier:wForm.classifier };
     const res = await fetch(`/api/admin/sets/${detail.id}/words`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1117,7 +1128,7 @@ export default function AdminSetsPage() {
       return toast(err.error || "Không thể thêm từ.");
     }
     toast("Đã thêm từ.");
-    setWForm({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
+    setWForm(emptyWordForm);
     setShowAddWord(false);
     openDetail(detail.id);
     loadSets();
@@ -1170,6 +1181,7 @@ export default function AdminSetsPage() {
       example: w.example || "",
       wtype: w.wtype || "",
       ipa: w.ipa || "",
+      alternateTerm:w.alternateTerm||"", pronunciation:w.pronunciation||"", examplePronunciation:w.examplePronunciation||"", exampleMeaning:w.exampleMeaning||"", level:w.level||"", classifier:w.classifier||"",
     });
   }
 
@@ -1229,6 +1241,17 @@ export default function AdminSetsPage() {
     toast(category ? `Đã chuyển bộ từ vào danh mục “${category}”.` : "Đã bỏ bộ từ khỏi danh mục.");
   }
 
+  async function saveChineseSettings(change: Partial<{ scriptVariant: "simplified" | "traditional" | "both"; pinyinTonePolicy: "strict" | "relaxed" }>) {
+    if (!detail || detail.languageCode !== "zh-CN") return;
+    const next = { ...getChineseSettings(detail), ...change, pronunciationScheme: "pinyin" as const };
+    const res = await fetch(`/api/sets/${detail.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ languageSettings: next }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return toast(data.error || "Không thể cập nhật cài đặt tiếng Trung.");
+    setDetail((current) => current ? { ...current, languageSettings: data.set?.languageSettings || JSON.stringify(next) } : current);
+    void loadSets();
+    toast("Đã lưu cài đặt tiếng Trung.");
+  }
+
   async function fetchIpaForWord(wordId: number) {
     setFetchingIpaId(wordId);
     const res = await fetch(`/api/admin/words/${wordId}/fetch-ipa`, { method: "POST" });
@@ -1263,7 +1286,7 @@ export default function AdminSetsPage() {
     const isVerb = detail.type === "irregular_verb";
     const body = isVerb
       ? { meaning: editForm.meaning, v1: editForm.v1, v2: editForm.v2, v3: editForm.v3, ipaV1: editForm.ipaV1, ipaV2: editForm.ipaV2, ipaV3: editForm.ipaV3 }
-      : { term: editForm.term, meaning: editForm.meaning, example: editForm.example, wtype: editForm.wtype, ipa: editForm.ipa };
+      : { term: editForm.term, meaning: editForm.meaning, example: editForm.example, wtype: editForm.wtype, ipa: editForm.ipa, alternateTerm:editForm.alternateTerm, pronunciation:editForm.pronunciation, examplePronunciation:editForm.examplePronunciation, exampleMeaning:editForm.exampleMeaning, level:editForm.level, classifier:editForm.classifier };
     const res = await fetch(`/api/admin/words/${editingWordId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -1618,11 +1641,13 @@ export default function AdminSetsPage() {
           <select
             className={cx.input}
             value={newType}
-            onChange={(e) => setNewType(e.target.value as "ielts_vocab" | "irregular_verb")}
+            onChange={(e) => setNewType(e.target.value as "ielts_vocab" | "irregular_verb" | "language_vocab")}
           >
             <option value="ielts_vocab">Từ vựng IELTS (từ — nghĩa — ví dụ)</option>
             <option value="irregular_verb">Động từ bất quy tắc (nghĩa — V1 — V2 — V3)</option>
+            <option value="language_vocab">Từ vựng ngôn ngữ</option>
           </select>
+          {newType === "language_vocab" && <div className="mb-4 grid gap-3 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] p-3 sm:grid-cols-2"><label><span className={cx.label}>Ngôn ngữ đang học</span><select className={`${cx.input} !mb-0`} value={newLanguageCode} onChange={e=>setNewLanguageCode(e.target.value)}><option value="zh-CN">中文 · Tiếng Trung</option></select></label><label><span className={cx.label}>Hệ chữ</span><select className={`${cx.input} !mb-0`} value={newScriptVariant} onChange={e=>setNewScriptVariant(e.target.value as typeof newScriptVariant)}><option value="simplified">Giản thể</option><option value="traditional">Phồn thể</option><option value="both">Cả hai</option></select></label><label className="sm:col-span-2"><span className={cx.label}>Cách chấm Pinyin</span><select className={`${cx.input} !mb-0`} value={newTonePolicy} onChange={e=>setNewTonePolicy(e.target.value as typeof newTonePolicy)}><option value="strict">Có thanh điệu</option><option value="relaxed">Không bắt buộc thanh điệu</option></select></label></div>}
           <label className={cx.label}>Phạm vi hiển thị</label>
           <select className={cx.input} value={newClassId} onChange={(e) => setNewClassId(e.target.value)}>
             <option value="">Công khai — mọi học sinh đều thấy</option>
@@ -1786,9 +1811,9 @@ export default function AdminSetsPage() {
                     onClick={() => setPreviewSetId(null)}
                     className="block rounded-md px-3 py-2 text-[0.84rem] hover:bg-goldpale"
                   >
-                    ✍️ {s.type === "ielts_vocab" ? "Điền từ tiếng Anh" : "Điền V1/V2/V3"}
+                    ✍️ {getFillModeLabel(s)}
                   </a>
-                  {s.type === "ielts_vocab" && (
+                  {s.type !== "irregular_verb" && (
                     <a
                       href={`/quiz/${s.id}?mode=mc`}
                       target="_blank"
@@ -1819,7 +1844,7 @@ export default function AdminSetsPage() {
         <Modal title={detail.name} onClose={closeDetail} wide>
           <div>
           <div className={cx.desc}>
-            {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : "Từ vựng IELTS"} · {detail.words.length} mục
+            {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : detail.type === "language_vocab" ? getLanguageConfig(detail.languageCode).label : "Từ vựng IELTS"} · {detail.words.length} mục
           </div>
           <div className="mb-4 flex items-center justify-between gap-3 rounded-[12px] border border-line bg-[#FBFAFE] p-2.5">
             <button
@@ -1876,6 +1901,11 @@ export default function AdminSetsPage() {
           </section>}
 
           {detailTab === "settings" && <>
+          {detail.languageCode === "zh-CN" && (() => { const chinese = getChineseSettings(detail); return <div className="mb-4 grid gap-3 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] p-4 sm:grid-cols-2">
+            <div className="sm:col-span-2"><b className="text-sm text-ink">中文 · Cài đặt tiếng Trung</b><p className="mt-1 text-xs text-muted">Thay đổi được lưu ngay và áp dụng cho flashcard, bài điền và chia sẻ.</p></div>
+            <label><span className={cx.label}>Hệ chữ</span><select className={`${cx.input} !mb-0`} value={chinese.scriptVariant} onChange={(event) => void saveChineseSettings({ scriptVariant: event.target.value as typeof chinese.scriptVariant })}><option value="simplified">Giản thể</option><option value="traditional">Phồn thể</option><option value="both">Cả hai</option></select></label>
+            <label><span className={cx.label}>Cách chấm Pinyin</span><select className={`${cx.input} !mb-0`} value={chinese.pinyinTonePolicy} onChange={(event) => void saveChineseSettings({ pinyinTonePolicy: event.target.value as typeof chinese.pinyinTonePolicy })}><option value="strict">Có thanh điệu</option><option value="relaxed">Không bắt buộc thanh điệu</option></select></label>
+          </div>; })()}
           <div className="mb-4 grid grid-cols-1 items-end gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
             <div>
               <label className={cx.label} htmlFor="edit-set-name">Tên bộ từ vựng</label>
@@ -1993,7 +2023,7 @@ export default function AdminSetsPage() {
               closeOnBackdrop={false}
               onClose={() => {
                 setShowAddWord(false);
-                setWForm({ meaning: "", v1: "", v2: "", v3: "", ipaV1: "", ipaV2: "", ipaV3: "", term: "", example: "", wtype: "", ipa: "" });
+                setWForm(emptyWordForm);
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2023,9 +2053,10 @@ export default function AdminSetsPage() {
                 ) : (
                   <>
                     <div>
-                      <label className={cx.label}>Từ / cụm từ tiếng Anh</label>
-                      <input className={cx.input} value={wForm.term} onChange={(e) => setWForm({ ...wForm, term: e.target.value })} />
+                      <label className={cx.label}>{getLanguageConfig(detail.languageCode).termLabel}</label>
+                      <input lang={detail.languageCode} className={cx.input} value={wForm.term} onChange={(e) => setWForm({ ...wForm, term: e.target.value })} />
                     </div>
+                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Chữ phồn thể</label><input lang="zh-CN" className={cx.input} value={wForm.alternateTerm} onChange={e=>setWForm({...wForm,alternateTerm:e.target.value})}/></div><div><label className={cx.label}>Pinyin</label><input className={cx.input} autoCapitalize="off" value={wForm.pronunciation} onChange={e=>setWForm({...wForm,pronunciation:e.target.value})}/></div></>}
                     <div>
                       <label className={cx.label}>Nghĩa (tiếng Việt)</label>
                       <input className={cx.input} value={wForm.meaning} onChange={(e) => setWForm({ ...wForm, meaning: e.target.value })} />
@@ -2034,15 +2065,16 @@ export default function AdminSetsPage() {
                       <label className={cx.label}>Ví dụ (không bắt buộc)</label>
                       <input className={cx.input} value={wForm.example} onChange={(e) => setWForm({ ...wForm, example: e.target.value })} />
                     </div>
+                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Pinyin ví dụ</label><input className={cx.input} value={wForm.examplePronunciation} onChange={e=>setWForm({...wForm,examplePronunciation:e.target.value})}/></div><div><label className={cx.label}>Nghĩa ví dụ</label><input className={cx.input} value={wForm.exampleMeaning} onChange={e=>setWForm({...wForm,exampleMeaning:e.target.value})}/></div><div><label className={cx.label}>Lượng từ / classifier</label><input className={cx.input} value={wForm.classifier} onChange={e=>setWForm({...wForm,classifier:e.target.value})}/></div><div><label className={cx.label}>Trình độ</label><input className={cx.input} list="chinese-levels" placeholder="HSK 1" value={wForm.level} onChange={e=>setWForm({...wForm,level:e.target.value})}/><datalist id="chinese-levels">{[1,2,3,4,5,6].map(level=><option key={level} value={`HSK ${level}`}/>)}</datalist></div></>}
                     <div>
                       <label className={cx.label}>Loại từ (không bắt buộc)</label>
                       <input className={cx.input} placeholder="noun / verb / adj..." value={wForm.wtype} onChange={(e) => setWForm({ ...wForm, wtype: e.target.value })} />
                       {wForm.wtype.trim().toLowerCase() === "pattern" && <div className="-mt-2 mb-3 rounded-lg border border-[#DCD8F3] bg-[#F8F7FF] p-3 text-xs leading-5 text-muted"><b className="text-[#6550DB]">Cú pháp pattern:</b> Dùng dấu <code>;</code> để tách các cấu trúc đều bắt buộc phải nhớ. Dùng <code>/</code> cho các biến thể trong cùng một cấu trúc.{wForm.term.trim() && <span className="mt-1 block font-semibold text-ink">{parseFillAnswerGroups(wForm.term, wForm.wtype).groups.length} cấu trúc bắt buộc</span>}{getFillPatternValidationError(wForm.term, wForm.wtype) && <span className="mt-1 block font-semibold text-bad">{getFillPatternValidationError(wForm.term, wForm.wtype)}</span>}</div>}
                     </div>
-                    <div>
+                    {detail.languageCode !== "zh-CN" && <div>
                       <label className={cx.label}>Phiên âm IPA (không bắt buộc)</label>
                       <input className={cx.input} placeholder="/wɜːd/" value={wForm.ipa} onChange={(e) => setWForm({ ...wForm, ipa: e.target.value })} />
-                    </div>
+                    </div>}
                   </>
                 )}
                 <div className="md:col-span-2">
@@ -2081,11 +2113,11 @@ export default function AdminSetsPage() {
                     </>
                   ) : (
                     <>
-                      <th className={cx.th}>Từ</th>
+                      <th className={cx.th}>{getLanguageConfig(detail.languageCode).termLabel}</th>
                       <th className={cx.th}>Nghĩa</th>
                       <th className={cx.th}>Ví dụ</th>
                       <th className={cx.th}>Loại từ</th>
-                      <th className={cx.th}>Phiên âm</th>
+                      <th className={cx.th}>{getLanguageConfig(detail.languageCode).pronunciationLabel}</th>
                       <th className={cx.th}></th>
                     </>
                   )}
@@ -2106,7 +2138,7 @@ export default function AdminSetsPage() {
                       </>
                     ) : (
                       <>
-                        <td className={cx.td}>{w.term}</td>
+                        <td className={cx.td}><b>{w.term}</b>{detail.languageCode === "zh-CN"&&w.alternateTerm&&w.alternateTerm!==w.term&&<span className="mt-1 block text-xs text-muted">{w.alternateTerm}</span>}</td>
                         <td className={cx.td}>{w.meaning}</td>
                         <td className={cx.td}>{w.example}</td>
                         <td className={cx.td}>{w.wtype}</td>
@@ -2123,8 +2155,10 @@ export default function AdminSetsPage() {
                         >
                           {fetchingIpaId === w.id ? "..." : "🔤 Lấy"}
                         </button>
-                      ) : w.ipa ? (
-                        <span className="text-golddark">{w.ipa}</span>
+                      ) : (detail.languageCode === "zh-CN" ? w.pronunciation : w.ipa) ? (
+                        <span className="text-golddark">{detail.languageCode === "zh-CN" ? w.pronunciation : w.ipa}</span>
+                      ) : detail.languageCode === "zh-CN" ? (
+                        <span className="text-xs text-muted">Chưa có Pinyin</span>
                       ) : (
                         <button
                           className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`}
@@ -2184,9 +2218,10 @@ export default function AdminSetsPage() {
                 ) : (
                   <>
                     <div>
-                      <label className={cx.label}>Từ</label>
-                      <input className={`${cx.input} !mb-0`} value={editForm.term} onChange={(e) => setEditForm({ ...editForm, term: e.target.value })} />
+                      <label className={cx.label}>{getLanguageConfig(detail.languageCode).termLabel}</label>
+                      <input lang={detail.languageCode} className={`${cx.input} !mb-0`} value={editForm.term} onChange={(e) => setEditForm({ ...editForm, term: e.target.value })} />
                     </div>
+                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Chữ phồn thể</label><input className={`${cx.input} !mb-0`} value={editForm.alternateTerm} onChange={e=>setEditForm({...editForm,alternateTerm:e.target.value})}/></div><div><label className={cx.label}>Pinyin</label><input className={`${cx.input} !mb-0`} value={editForm.pronunciation} onChange={e=>setEditForm({...editForm,pronunciation:e.target.value})}/></div></>}
                     <div>
                       <label className={cx.label}>Nghĩa</label>
                       <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />
@@ -2200,10 +2235,11 @@ export default function AdminSetsPage() {
                       <input className={`${cx.input} !mb-0`} value={editForm.wtype} onChange={(e) => setEditForm({ ...editForm, wtype: e.target.value })} />
                       {editForm.wtype.trim().toLowerCase() === "pattern" && <div className="mt-2 rounded-lg border border-[#DCD8F3] bg-[#F8F7FF] p-3 text-xs leading-5 text-muted">Dùng <code>;</code> cho các cấu trúc bắt buộc và <code>/</code> cho biến thể trong cùng cấu trúc. <b className="ml-1 text-[#6550DB]">{parseFillAnswerGroups(editForm.term, editForm.wtype).groups.length} cấu trúc bắt buộc</b>{getFillPatternValidationError(editForm.term, editForm.wtype) && <span className="mt-1 block font-semibold text-bad">{getFillPatternValidationError(editForm.term, editForm.wtype)}</span>}</div>}
                     </div>
-                    <div>
+                    {detail.languageCode !== "zh-CN" && <div>
                       <label className={cx.label}>Phiên âm IPA</label>
                       <input className={`${cx.input} !mb-0`} value={editForm.ipa} onChange={(e) => setEditForm({ ...editForm, ipa: e.target.value })} />
-                    </div>
+                    </div>}
+                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Lượng từ</label><input className={`${cx.input} !mb-0`} value={editForm.classifier} onChange={e=>setEditForm({...editForm,classifier:e.target.value})}/></div><div><label className={cx.label}>Trình độ</label><input className={`${cx.input} !mb-0`} value={editForm.level} onChange={e=>setEditForm({...editForm,level:e.target.value})}/></div><div><label className={cx.label}>Pinyin ví dụ</label><input className={`${cx.input} !mb-0`} value={editForm.examplePronunciation} onChange={e=>setEditForm({...editForm,examplePronunciation:e.target.value})}/></div><div><label className={cx.label}>Nghĩa ví dụ</label><input className={`${cx.input} !mb-0`} value={editForm.exampleMeaning} onChange={e=>setEditForm({...editForm,exampleMeaning:e.target.value})}/></div></>}
                   </>
                 )}
                 <div className="md:col-span-2 flex gap-2">

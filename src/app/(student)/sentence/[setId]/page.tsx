@@ -12,7 +12,7 @@ import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
 
 type Word = { id: number; meaning: string; term: string | null; example: string | null; ipa: string | null };
-type SetDetail = { id: number; name: string; type: string; words: Word[] };
+type SetDetail = { id: number; name: string; type: string; languageCode?: string | null; words: Word[] };
 type Token = { id: number; text: string };
 type RoundResult = { wordId: number; perfect: boolean };
 type SentenceDraft = {
@@ -81,6 +81,12 @@ export default function SentencePage() {
       .then((data) => {
         if (!active) return;
         const detail: SetDetail = data.set;
+        if (detail.languageCode === "zh-CN") {
+          setSet(detail);
+          setQuestions([]);
+          setLoading(false);
+          return;
+        }
         const eligible = detail.words.filter((word) => {
           const length = word.example ? tokenize(word.example).length : 0;
           return length >= 3 && length <= 24;
@@ -272,7 +278,7 @@ export default function SentencePage() {
       <StudyModeNav setId={set.id} active="sentence" isVerb={set.type === "irregular_verb"} />
 
       {questions.length === 0 ? (
-        <div className={cx.empty}>Bộ từ này chưa có câu ví dụ phù hợp để luyện xếp câu.</div>
+        <div className={cx.empty}>{set.languageCode === "zh-CN" ? "Chế độ Xếp câu chưa hỗ trợ tiếng Trung trong phiên bản này." : "Bộ từ này chưa có câu ví dụ phù hợp để luyện xếp câu."}</div>
       ) : finished ? (
         <section className="rounded-xl border border-gold bg-goldpale/40 p-6 text-center">
           <div className="text-4xl" aria-hidden="true">🎉</div>

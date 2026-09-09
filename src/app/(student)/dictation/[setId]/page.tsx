@@ -9,6 +9,8 @@ import { toast } from "@/components/Toast";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
+import { getAvailableModes, getLanguageConfig } from "@/lib/languages";
+import { gradeLanguageAnswer } from "@/lib/languageAnswer";
 
 type Word = {
   id: number;
@@ -17,12 +19,15 @@ type Word = {
   v1: string | null;
   ipa: string | null;
   example: string | null;
+  alternateTerm?:string|null; pronunciation?:string|null;
 };
 
 type SetDetail = {
   id: number;
   name: string;
-  type: "irregular_verb" | "ielts_vocab";
+  type: "irregular_verb" | "ielts_vocab" | "language_vocab";
+  languageCode?:string|null;
+  languageSettings?:unknown;
   words: Word[];
 };
 type DictationDraft = {
@@ -169,13 +174,13 @@ export default function DictationPage() {
 
   const word = sessionWords[index];
   const expected = word && set ? (set.type === "irregular_verb" ? word.v1 : word.term) || "" : "";
-  const answerCorrect = checked && matches(answer, expected);
+  const answerCorrect = checked && (set?.type === "irregular_verb" ? matches(answer,expected) : gradeLanguageAnswer({set:set||{},word:word||{},userAnswer:answer}).correct);
 
   function speak() {
     if (!word || !speechSupported) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(expected.split("/")[0].trim());
-    utterance.lang = "en-US";
+    const utterance = new SpeechSynthesisUtterance(set?.languageCode === "zh-CN" ? expected.trim() : expected.split("/")[0].trim());
+    utterance.lang = getLanguageConfig(set?.languageCode).ttsLanguage;
     utterance.rate = Number(speed);
     window.speechSynthesis.speak(utterance);
   }
@@ -238,7 +243,7 @@ export default function DictationPage() {
 
   function checkAnswer() {
     if (!answer.trim() || checked) return;
-    const correct = matches(answer, expected);
+    const correct = set?.type === "irregular_verb" ? matches(answer,expected) : gradeLanguageAnswer({set:set||{},word:word||{},userAnswer:answer}).correct;
     setChecked(true);
     if (correct) setCorrectCount((value) => value + 1);
     else setWrongWordIds((current) => current.includes(word.id) ? current : [...current, word.id]);
@@ -297,7 +302,7 @@ export default function DictationPage() {
           <h2 className={cx.h2}>🎧 Nghe & viết — {set.name}</h2>
           <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button>
         </div>
-        <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} />
+        <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
         <div className={cx.desc}>Nghe cách phát âm rồi gõ lại chính xác từ tiếng Anh bạn vừa nghe.</div>
         {!speechSupported ? (
           <div className={cx.empty}>Trình duyệt này không hỗ trợ đọc văn bản. Hãy mở bằng Chrome, Edge hoặc Safari phiên bản mới.</div>
@@ -328,7 +333,7 @@ export default function DictationPage() {
     return (
       <div className={cx.panel}>
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe & viết — {set.name}</h2><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button></div>
-        <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} />
+        <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
         <h2 className={`${cx.h2} text-center`}>🎉 Hoàn thành bài nghe!</h2>
         <div className="mx-auto my-6 max-w-md rounded-2xl border border-gold bg-goldpale p-6 text-center">
           <div className="font-serif text-4xl font-bold text-golddark">{correctCount}/{sessionWords.length}</div>
@@ -351,7 +356,7 @@ export default function DictationPage() {
         <h2 className={cx.h2}>🎧 Nghe & viết — {set.name}</h2>
         <div className="text-sm text-muted">{index + 1}/{sessionWords.length} · {formatTime(elapsed)}</div>
       </div>
-      <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} />
+      <StudyModeNav setId={set.id} active="dictation" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className="mb-5 h-2 overflow-hidden rounded-full bg-line">
         <div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${((index + (checked ? 1 : 0)) / sessionWords.length) * 100}%` }} />
       </div>

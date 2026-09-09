@@ -1,0 +1,18 @@
+ALTER TABLE "vocab_sets" ADD COLUMN IF NOT EXISTS "language_code" varchar(16);
+ALTER TABLE "vocab_sets" ADD COLUMN IF NOT EXISTS "translation_language_code" varchar(16);
+ALTER TABLE "vocab_sets" ADD COLUMN IF NOT EXISTS "language_settings" text;
+UPDATE "vocab_sets" SET "language_code" = 'en' WHERE "language_code" IS NULL OR btrim("language_code") = '';
+UPDATE "vocab_sets" SET "translation_language_code" = 'vi' WHERE "translation_language_code" IS NULL OR btrim("translation_language_code") = '';
+UPDATE "vocab_sets" SET "language_settings" = '{}' WHERE "language_settings" IS NULL OR btrim("language_settings") = '';
+ALTER TABLE "vocab_sets" ALTER COLUMN "language_code" SET DEFAULT 'en';
+ALTER TABLE "vocab_sets" ALTER COLUMN "language_code" SET NOT NULL;
+ALTER TABLE "vocab_sets" ALTER COLUMN "translation_language_code" SET DEFAULT 'vi';
+ALTER TABLE "vocab_sets" ALTER COLUMN "translation_language_code" SET NOT NULL;
+ALTER TABLE "vocab_sets" ALTER COLUMN "language_settings" SET DEFAULT '{}';
+ALTER TABLE "vocab_sets" ALTER COLUMN "language_settings" SET NOT NULL;
+ALTER TABLE "words" ADD COLUMN IF NOT EXISTS "alternate_term" text;
+ALTER TABLE "words" ADD COLUMN IF NOT EXISTS "pronunciation" text;
+ALTER TABLE "words" ADD COLUMN IF NOT EXISTS "example_pronunciation" text;
+ALTER TABLE "words" ADD COLUMN IF NOT EXISTS "example_meaning" text;
+ALTER TABLE "words" ADD COLUMN IF NOT EXISTS "level" varchar(64);
+ALTER TABLE "words" ADD COLUMN IF NOT EXISTS "classifier" varchar(128);

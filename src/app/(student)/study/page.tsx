@@ -17,12 +17,15 @@ import {
   countDescendantDueSets,
   UNCATEGORIZED_PATH,
 } from "@/lib/categoryPath";
+import { getFillModeLabel, getFillUnknownLabel, getLanguageConfig } from "@/lib/languages";
 
 type SetSummary = {
   id: number;
   name: string;
   category?: string | null;
   type: string;
+  languageCode:string;
+  languageSettings:string;
   count: number;
   unknownCount: number;
   className?: string | null;
@@ -127,6 +130,7 @@ export default function StudyPage() {
     return <CollectionCard key={set.id} set={set} position={sessionPositionBySetId[set.id] || 0}
       onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }}
       onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")}
+      onPinyinFill={() => router.push(`/quiz/${set.id}?mode=fill&target=pronunciation`)}
       onUnknownFill={() => router.push(`/quiz/${set.id}?mode=fill&scope=unknown`)}
       onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }}
       onTimed={() => setTimedSetId(set.id)} />;
@@ -408,6 +412,7 @@ function CollectionCard({
   position,
   onLearn,
   onFill,
+  onPinyinFill,
   onUnknownFill,
   onMc,
   onRoute,
@@ -417,6 +422,7 @@ function CollectionCard({
   position: number;
   onLearn: () => void;
   onFill: () => void;
+  onPinyinFill: () => void;
   onUnknownFill: () => void;
   onMc: () => void;
   onRoute: (route: string) => void;
@@ -432,7 +438,7 @@ function CollectionCard({
       <div className="p-5">
         <div className="flex items-start gap-4">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EFECFF] text-xs font-extrabold text-[#6550DB]">
-            {set.type === "irregular_verb" ? "V123" : "Aa"}
+            {set.type === "irregular_verb" ? "V123" : getLanguageConfig(set.languageCode).badge}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
@@ -446,7 +452,7 @@ function CollectionCard({
             <p className="mt-1.5 text-xs text-muted">
               {set.type === "irregular_verb"
                 ? "Động từ bất quy tắc"
-                : "Từ vựng IELTS"}
+                : set.type === "language_vocab" ? getLanguageConfig(set.languageCode).label : "Từ vựng IELTS"}
               {set.className ? ` · ${set.className}` : ""}
             </p>
             {position > 1 && (
@@ -474,18 +480,18 @@ function CollectionCard({
         </summary>
         <div className="grid gap-2 border-t border-line bg-[#FBFAFE] p-4 sm:grid-cols-2">
           <button disabled={empty} onClick={onFill} className={modeClass}>
-            {set.type === "irregular_verb"
-              ? "Điền V1 / V2 / V3"
-              : "Điền từ tiếng Anh"}
+            {getFillModeLabel(set)}
           </button>
+          {set.languageCode === "zh-CN" && <button disabled={empty} onClick={onPinyinFill} className={modeClass}>Điền Pinyin</button>}
           <button
+            data-feature="Điền từ chưa nhớ"
             disabled={set.unknownCount === 0}
             onClick={onUnknownFill}
             className={modeClass}
             title={set.unknownCount === 0 ? "Bạn chưa có từ nào được đánh dấu Chưa nhớ." : undefined}
-            aria-label={`${set.type === "irregular_verb" ? "Điền V1/V2/V3 chưa nhớ" : "Điền từ chưa nhớ"} (${set.unknownCount})`}
+            aria-label={`${getFillUnknownLabel(set)} (${set.unknownCount})`}
           >
-            {set.type === "irregular_verb" ? "Điền V1/V2/V3 chưa nhớ" : "Điền từ chưa nhớ"} ({set.unknownCount})
+            {getFillUnknownLabel(set)} ({set.unknownCount})
           </button>
           {set.type !== "irregular_verb" && (
             <button disabled={empty} onClick={onMc} className={modeClass}>
@@ -520,7 +526,7 @@ function CollectionCard({
           >
             Luyện phát âm
           </button>
-          {set.type !== "irregular_verb" && (
+          {set.type !== "irregular_verb" && set.languageCode !== "zh-CN" && (
             <button
               disabled={empty}
               onClick={() => onRoute("sentence")}

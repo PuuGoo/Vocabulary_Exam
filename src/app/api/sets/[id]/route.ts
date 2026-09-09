@@ -8,6 +8,7 @@ import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
 import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { writeAdminAudit } from "@/lib/adminAudit";
+import { serializeLanguageSettings } from "@/lib/languageSettings";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -41,6 +42,7 @@ const patchSchema = z.object({
   name: z.string().trim().min(1).max(256).optional(),
   category: z.string().trim().max(128).nullable().optional(),
   classId: z.number().int().nullable().optional(),
+  languageSettings: z.unknown().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -51,8 +53,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
   if (Object.keys(parsed.data).length === 0) return NextResponse.json({ error: "Không có thay đổi." }, { status: 400 });
+  const currentForSettings = parsed.data.languageSettings !== undefined ? await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) }) : null;
+  let serializedSettings: string | undefined;
+  if (parsed.data.languageSettings !== undefined) {
+    if (!currentForSettings) return NextResponse.json({ error: "Không tìm thấy bộ từ vựng." }, { status: 404 });
+    try { serializedSettings = serializeLanguageSettings(parsed.data.languageSettings, currentForSettings.languageCode); }
+    catch { return NextResponse.json({ error: "Cấu hình ngôn ngữ không hợp lệ." }, { status: 400 }); }
+  }
+  const { languageSettings: _settings, ...basicPatch } = parsed.data;
   const patch = {
-    ...parsed.data,
+    ...basicPatch,
+    ...(serializedSettings !== undefined ? { languageSettings: serializedSettings } : {}),
     ...(parsed.data.name ? { name: normalizeText(parsed.data.name) } : {}),
     ...(parsed.data.category !== undefined ? { category: parsed.data.category ? normalizeText(parsed.data.category) : null } : {}),
   };

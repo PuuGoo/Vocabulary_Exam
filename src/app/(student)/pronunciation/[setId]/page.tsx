@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import StudyModeNav from "@/components/StudyModeNav";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import { getAvailableModes, getLanguageConfig } from "@/lib/languages";
 import VerbIpa from "@/components/VerbIpa";
 import MobileThumbBar from "@/components/MobileThumbBar";
 import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
@@ -22,9 +23,10 @@ type Word = {
   ipaV2?: string | null;
   ipaV3?: string | null;
   ipa: string | null;
+  pronunciation?:string|null;
   wtype: string | null;
 };
-type SetDetail = { id: number; name: string; type: string; words: Word[] };
+type SetDetail = { id: number; name: string; type: string; languageCode?:string|null; words: Word[] };
 type SpeechResultEvent = Event & { results: { [index: number]: { [index: number]: { transcript: string; confidence: number } } } };
 type SpeechErrorEvent = Event & { error?: string };
 type SpeechRecognitionLike = {
@@ -207,8 +209,8 @@ export default function PronunciationPage() {
   const speak = useCallback((rate: number) => {
     if (!target || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(target.split("/")[0].trim());
-    utterance.lang = "en-US";
+    const utterance = new SpeechSynthesisUtterance(set?.languageCode === "zh-CN" ? target.trim() : target.split("/")[0].trim());
+    utterance.lang = getLanguageConfig(set?.languageCode).ttsLanguage;
     utterance.rate = rate;
     window.speechSynthesis.speak(utterance);
   }, [target]);
@@ -223,7 +225,7 @@ export default function PronunciationPage() {
     }
     recognitionRef.current?.stop();
     const recognition = new Recognition();
-    recognition.lang = "en-US";
+    recognition.lang = getLanguageConfig(set?.languageCode).recognitionLanguage;
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
     recognition.onresult = (event) => {
@@ -291,7 +293,7 @@ export default function PronunciationPage() {
 
   if (loading) return <div className={cx.panel}><div className={cx.empty} role="status">Đang tải bài luyện phát âm...</div></div>;
   if (loadError || !set) return <div className={cx.panel}><div className={cx.empty}>Không thể tải bộ từ.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div></div>;
-  if (set.words.length === 0) return <div className={cx.panel}><StudyModeNav setId={set.id} active="pronunciation" isVerb={set.type === "irregular_verb"} /><div className={cx.empty}>Bộ từ này chưa có từ để luyện.</div></div>;
+  if (set.words.length === 0) return <div className={cx.panel}><StudyModeNav setId={set.id} active="pronunciation" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} /><div className={cx.empty}>Bộ từ này chưa có từ để luyện.</div></div>;
 
   const goodCount = ratings.filter((item) => item.good).length;
   const weakCount = ratings.length - goodCount;
@@ -301,7 +303,7 @@ export default function PronunciationPage() {
         <h2 className={cx.h2}>🎙️ Luyện phát âm — {set.name}</h2>
         <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push("/study")}>← Chọn bộ khác</button>
       </div>
-      <StudyModeNav setId={set.id} active="pronunciation" isVerb={set.type === "irregular_verb"} />
+      <StudyModeNav setId={set.id} active="pronunciation" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
 
       {finished ? (
         <section className="rounded-xl border border-gold bg-goldpale/40 p-6 text-center">
@@ -323,7 +325,7 @@ export default function PronunciationPage() {
           <section className="rounded-2xl border border-line bg-white px-5 py-8 text-center">
             <div className="text-xs uppercase tracking-widest text-muted">Đọc to từ sau</div>
             <div className="mt-3 font-serif text-3xl font-bold">{target}</div>
-            {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
+            {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : (set.languageCode === "zh-CN" ? word.pronunciation : word.ipa) && <div className="mt-1 text-lg text-golddark">{set.languageCode === "zh-CN" ? word.pronunciation : word.ipa}</div>}
             <div className="mt-2 text-sm text-muted">{word.wtype ? `(${word.wtype}) · ` : ""}{word.meaning}</div>
             {set.type === "irregular_verb" && <div className="mt-2 text-xs text-muted">Các dạng: {word.v1} — {word.v2} — {word.v3}</div>}
             <div className="mt-6 flex flex-wrap justify-center gap-2">

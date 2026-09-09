@@ -25,7 +25,7 @@ function nullableDate(row: BackupRow, key: string) { const value = row[key]; if 
 function oldId(row: BackupRow) { const value = number(row, "id", -1); return value >= 0 ? value : null; }
 function pair(a: number, b: number) { return `${a}:${b}`; }
 function setKey(name: string, type: string, classId: number | null) { return `${classId ?? "public"}\u0000${type}\u0000${name.trim().toLocaleLowerCase("vi")}`; }
-function wordKey(setId: number, row: BackupRow) { return [setId, "meaning", "v1", "v2", "v3", "term", "example", "wtype", "ipa"].map((value) => typeof value === "number" ? value : text(row, value)).join("\u0000"); }
+function wordKey(setId: number, row: BackupRow) { return [setId, "meaning", "v1", "v2", "v3", "term", "alternateTerm", "pronunciation", "example", "wtype", "ipa"].map((value) => typeof value === "number" ? value : text(row, value)).join("\u0000"); }
 function assignmentKey(classId: number, setId: number, title: string, dueAt: Date | null) { return `${classId}:${setId}:${title.trim().toLocaleLowerCase("vi")}:${dueAt?.toISOString() ?? ""}`; }
 function attemptKey(row: { userId: number; setName: string; mode: string; score: number; total: number; timed: boolean; createdAt: Date }) { return `${row.userId}\u0000${row.setName}\u0000${row.mode}\u0000${row.score}\u0000${row.total}\u0000${row.timed}\u0000${row.createdAt.toISOString()}`; }
 
@@ -173,7 +173,8 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
           const [createdCategory] = await tx.insert(vocabCategories).values({ name: category }).returning({ id: vocabCategories.id });
           categoriesByName.set(category.trim().toLocaleLowerCase("vi"), createdCategory.id);
         }
-        const [created] = await tx.insert(vocabSets).values({ name, category, type, classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
+        const languageCode = nullableText(row, "languageCode") || "en";
+        const [created] = await tx.insert(vocabSets).values({ name, category, type, languageCode, translationLanguageCode:nullableText(row,"translationLanguageCode")||"vi", languageSettings:nullableText(row,"languageSettings")||"{}", classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
         mapped = created.id; setsByKey.set(key, mapped); report.added.vocabSets++;
       } else report.skipped.vocabSets++;
       setMap.set(id, mapped);
@@ -197,7 +198,7 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       const key = wordKey(setId, row); let mapped = wordsByKey.get(key);
       if (mapped == null) {
         const position = (nextPositionBySet.get(setId) || 0) + 1;
-        const [created] = await tx.insert(words).values({ setId, position, meaning, v1: nullableText(row, "v1"), v2: nullableText(row, "v2"), v3: nullableText(row, "v3"), ipaV1: nullableText(row, "ipaV1"), ipaV2: nullableText(row, "ipaV2"), ipaV3: nullableText(row, "ipaV3"), term: nullableText(row, "term"), example: nullableText(row, "example"), wtype: nullableText(row, "wtype"), ipa: nullableText(row, "ipa"), createdAt: date(row, "createdAt") }).returning({ id: words.id });
+        const [created] = await tx.insert(words).values({ setId, position, meaning, v1: nullableText(row, "v1"), v2: nullableText(row, "v2"), v3: nullableText(row, "v3"), ipaV1: nullableText(row, "ipaV1"), ipaV2: nullableText(row, "ipaV2"), ipaV3: nullableText(row, "ipaV3"), term: nullableText(row, "term"), alternateTerm:nullableText(row,"alternateTerm"), pronunciation:nullableText(row,"pronunciation"), example: nullableText(row, "example"), examplePronunciation:nullableText(row,"examplePronunciation"), exampleMeaning:nullableText(row,"exampleMeaning"), wtype: nullableText(row, "wtype"), ipa: nullableText(row, "ipa"), level:nullableText(row,"level"), classifier:nullableText(row,"classifier"), createdAt: date(row, "createdAt") }).returning({ id: words.id });
         nextPositionBySet.set(setId, position);
         mapped = created.id; wordsByKey.set(key, mapped); report.added.words++;
       } else report.skipped.words++;

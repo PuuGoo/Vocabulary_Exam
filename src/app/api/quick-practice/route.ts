@@ -35,8 +35,16 @@ export async function GET(req: NextRequest) {
       example: words.example,
       wtype: words.wtype,
       ipa: words.ipa,
+      alternateTerm:words.alternateTerm,
+      pronunciation:words.pronunciation,
+      examplePronunciation:words.examplePronunciation,
+      exampleMeaning:words.exampleMeaning,
+      level:words.level,
+      classifier:words.classifier,
       setName: vocabSets.name,
       setType: vocabSets.type,
+      languageCode:vocabSets.languageCode,
+      languageSettings:vocabSets.languageSettings,
       mistakeId: mistakes.id,
       timesWrong: mistakes.timesWrong,
       known: wordProgress.known,
@@ -76,7 +84,7 @@ export async function GET(req: NextRequest) {
 
   const selected = rankedSets[0].selected;
   const first = selected[0];
-  const selectedWords = selected.map(({ setName: _setName, setType: _setType, mistakeId: _mistakeId, timesWrong: _timesWrong, known: _known, ...word }) => word);
+  const selectedWords = selected.map(({ setName: _setName, setType: _setType, languageCode:_languageCode, languageSettings:_languageSettings, mistakeId: _mistakeId, timesWrong: _timesWrong, known: _known, ...word }) => word);
   const mistakeIdByWordId = Object.fromEntries(
     selected.filter((item) => item.mistakeId !== null).map((item) => [item.id, item.mistakeId])
   );
@@ -84,7 +92,7 @@ export async function GET(req: NextRequest) {
   const newCount = selected.filter((item) => item.known === null && !item.timesWrong).length;
 
   return NextResponse.json({
-    set: { id: first.setId, name: first.setName, type: first.setType, words: selectedWords },
+    set: { id: first.setId, name: first.setName, type: first.setType, languageCode:first.languageCode, languageSettings:first.languageSettings, words: selectedWords },
     recommendation: { reviewCount, newCount },
     mistakeIdByWordId,
   });

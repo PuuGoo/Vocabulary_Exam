@@ -6,13 +6,16 @@ import { useRouter } from "next/navigation";
 import SpeakButton from "@/components/SpeakButton";
 import VerbIpa from "@/components/VerbIpa";
 import { toast } from "@/components/Toast";
+import { getFillModeLabel, getFillUnknownLabel, getLanguageConfig, getSpeakText, getWordDisplayForms, getWordPronunciation, normalizeLanguageCode } from "@/lib/languages";
 
 export type LearnWord = {
   id: number; meaning: string; term?: string | null; example?: string | null;
   wtype?: string | null; ipa?: string | null; v1?: string | null; v2?: string | null; v3?: string | null;
   ipaV1?: string | null; ipaV2?: string | null; ipaV3?: string | null;
+  alternateTerm?: string | null; pronunciation?: string | null; examplePronunciation?: string | null; exampleMeaning?: string | null;
+  level?: string | null; classifier?: string | null;
 };
-export type LearnSetData = { id?: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: LearnWord[] };
+export type LearnSetData = { id?: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?: string | null; languageSettings?: unknown; words: LearnWord[] };
 export type LearnExperienceProps = {
   authenticatedSetId?: number;
   initialSet?: LearnSetData;
@@ -92,6 +95,7 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
   useEffect(() => () => { if (undoTimer.current) clearTimeout(undoTimer.current); }, []);
 
   const word = order[index]; const total = order.length; const isVerb = set?.type === "irregular_verb";
+  const languageConfig = getLanguageConfig(set?.languageCode);
   const unknown = set ? set.words.filter(w => known[w.id] === false).length : 0;
   const mastered = set ? set.words.filter(w => known[w.id] === true).length : 0;
   const unrated = set ? set.words.length - unknown - mastered : 0;
@@ -247,7 +251,7 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
       </div>
       <div className="mb-2 mt-4 px-2 text-xs font-semibold uppercase tracking-wide text-[#8B899F]">Chuyển chế độ</div>
       <div className="grid gap-1">
-        <button data-menu-item role="menuitem" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={() => selectLearningMode("fill")}>Điền từ tiếng Anh <Shortcut>F</Shortcut></button>
+        <button data-menu-item role="menuitem" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={() => selectLearningMode("fill")}>{getFillModeLabel(set || {})} <Shortcut>F</Shortcut></button>
         {!isVerb && <button data-menu-item role="menuitem" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={() => selectLearningMode("mc")}>Trắc nghiệm <Shortcut>Q</Shortcut></button>}
         <button data-menu-item role="menuitem" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={() => selectLearningMode("dictation")}>Nghe và viết <Shortcut>D</Shortcut></button>
         <button data-menu-item role="menuitem" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF]" onClick={() => selectLearningMode("match")}>Ghép cặp <Shortcut>G</Shortcut></button>
@@ -286,7 +290,9 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
     {undo&&<div className="lexora-undo-snackbar fixed inset-x-3 bottom-[max(20px,env(safe-area-inset-bottom))] z-[100] mx-auto flex max-w-md items-center justify-between gap-3 overflow-hidden rounded-2xl bg-[#242337] px-4 py-3 text-left text-sm text-white shadow-2xl"><span>{undo.message}</span><button onClick={()=>void undoLast()} className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold text-white hover:bg-white/25">Hoàn tác</button><span aria-hidden="true" className="lexora-undo-timer absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[#AFA2FF]"/></div>}
   </main>;
 
-  const answer = isVerb ? `${word.v1 || ""} — ${word.v2 || ""} — ${word.v3 || ""}` : word.term || "";
+  const forms = getWordDisplayForms(word,set || {});
+  const answer = isVerb ? `${word.v1 || ""} — ${word.v2 || ""} — ${word.v3 || ""}` : forms.primary;
+  const pronunciation = getWordPronunciation(word,set || {});
   return <main className="fixed inset-0 z-[80] flex flex-col overflow-hidden bg-[#F8F8FC] text-[#242337]">
     <header className="relative shrink-0 border-b border-[#EBEAF2] bg-white px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
       <div className="mx-auto flex max-w-4xl items-center justify-between gap-3"><button onClick={exit} className="min-h-10 rounded-xl border border-[#EBEAF2] bg-white px-3 text-sm font-semibold transition hover:border-[#CFC7FF] hover:bg-[#F8F7FF]">← Thoát</button><div className="min-w-0 text-center" aria-live="polite"><div className="truncate text-sm font-bold">{set.name}</div><div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-[#8B899F]"><span>{modeLabel[mode]}</span><span aria-hidden="true">·</span><span>Thẻ {index+1}/{total}</span></div></div><div aria-hidden="true" className="w-16 sm:w-[74px]" /></div>
@@ -306,7 +312,7 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
         <div className="grid grid-cols-2 gap-2"><button data-menu-item role="menuitem" aria-keyshortcuts="R" className="flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm hover:bg-[#F8F7FF]" onClick={restart}><ActionLabel icon="↺">Học lại</ActionLabel><Shortcut>R</Shortcut></button><button data-menu-item role="menuitem" aria-keyshortcuts="S" className="flex min-h-11 items-center justify-center rounded-lg border px-2 py-2 text-sm hover:bg-[#F8F7FF]" onClick={reshuffle}><ActionLabel icon="⤨">Xáo trộn</ActionLabel><Shortcut>S</Shortcut></button></div>
         <div className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-[#8B899F]">Chuyển chế độ</div>
         <div className="grid gap-1">
-          {(!allowedModes || allowedModes.includes("fill")) && <button data-menu-item role="menuitem" aria-keyshortcuts="F" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>selectLearningMode("fill")}><ActionLabel icon="✎">Điền từ tiếng Anh</ActionLabel><Shortcut>F</Shortcut></button>}
+          {(!allowedModes || allowedModes.includes("fill")) && <button data-menu-item role="menuitem" aria-keyshortcuts="F" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>selectLearningMode("fill")}><ActionLabel icon="✎">{getFillModeLabel(set || {})}</ActionLabel><Shortcut>F</Shortcut></button>}
           {!isVerb && (!allowedModes || allowedModes.includes("mc")) && <button data-menu-item role="menuitem" aria-keyshortcuts="Q" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>selectLearningMode("mc")}><ActionLabel icon="☑">Trắc nghiệm</ActionLabel><Shortcut>Q</Shortcut></button>}
           {(!allowedModes || allowedModes.includes("dictation")) && <button data-menu-item role="menuitem" aria-keyshortcuts="D" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>selectLearningMode("dictation")}><ActionLabel icon="♬">Nghe và viết</ActionLabel><Shortcut>D</Shortcut></button>}
           {(!allowedModes || allowedModes.includes("match")) && <button data-menu-item role="menuitem" aria-keyshortcuts="G" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-[#F0EDFF] focus:bg-[#F0EDFF]" onClick={()=>selectLearningMode("match")}><ActionLabel icon="⌘">Ghép cặp</ActionLabel><Shortcut>G</Shortcut></button>}
@@ -326,14 +332,14 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
         {Math.abs(swipe)>12&&<span aria-hidden="true" style={{opacity:Math.min(1,Math.abs(swipe)/70)}} className={`pointer-events-none absolute top-1/2 z-30 -translate-y-1/2 rounded-full bg-[#242337]/90 px-3 py-2 text-xs font-bold text-white shadow-xl ${swipe<0?"right-4":"left-4"}`}>{swipe<0?(index>=total-1?"Kết thúc lượt học →":"Thẻ tiếp theo →"):(index===0?"Đang ở thẻ đầu":"← Thẻ trước")}</span>}
         <div className={`flashcard-flipper relative h-full w-full ${flipped?"is-flipped":""}`}>
           <article className="flashcard-face absolute inset-0 flex h-full flex-col items-center justify-center overflow-y-auto rounded-3xl border border-[#EBEAF2] bg-white p-6 text-center shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-10"><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">Nghĩa tiếng Việt</div><div className="mt-4 font-serif text-3xl font-bold sm:text-5xl">{word.meaning}</div><div className="mt-5 text-sm text-[#8B899F]">Chạm vào thẻ để xem đáp án</div></article>
-          <article className="flashcard-face flashcard-back absolute inset-0 flex h-full flex-col items-center justify-center overflow-y-auto rounded-3xl border border-[#7865EE]/20 bg-white p-6 text-center shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-10"><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">{isVerb?"V1 — V2 — V3":"Từ tiếng Anh"}</div><div className="mt-4 flex flex-wrap items-center justify-center gap-3 font-serif text-3xl font-bold sm:text-5xl">{answer}<SpeakButton text={isVerb?word.v1||"":word.term||""}/></div>{isVerb?<VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-3 text-lg"/>:word.ipa&&<div className="mt-2 text-xl text-[#765FD5]">{word.ipa}</div>}{!isVerb&&word.wtype&&<div className="mt-2 text-sm text-[#8B899F]">({word.wtype})</div>}{!isVerb&&word.example&&<div className="mt-4 max-w-xl text-sm italic text-[#8B899F]">“{word.example}”</div>}</article>
+          <article className="flashcard-face flashcard-back absolute inset-0 flex h-full flex-col items-center justify-center overflow-y-auto rounded-3xl border border-[#7865EE]/20 bg-white p-6 text-center shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-10"><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">{isVerb?"V1 — V2 — V3":languageConfig.termLabel}</div><div lang={normalizeLanguageCode(set?.languageCode)} className="mt-4 flex flex-wrap items-center justify-center gap-3 font-serif text-3xl font-bold sm:text-5xl">{answer}<SpeakButton text={getSpeakText(word,set||{})} languageCode={set?.languageCode||"en"}/></div>{!isVerb&&forms.secondary&&<div className="mt-2 text-xl text-[#6E6A83]">{forms.secondary}</div>}{isVerb?<VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-3 text-lg"/>:pronunciation&&<div className="mt-2 text-xl text-[#765FD5]">{pronunciation}</div>}{!isVerb&&word.wtype&&<div className="mt-2 text-sm text-[#8B899F]">({word.wtype}){word.level?` · ${word.level}`:""}{word.classifier?` · Lượng từ: ${word.classifier}`:""}</div>}{!isVerb&&word.example&&<div className="mt-4 max-w-xl text-sm italic text-[#8B899F]">“{word.example}”{word.examplePronunciation&&<span className="mt-1 block not-italic text-[#765FD5]">{word.examplePronunciation}</span>}{word.exampleMeaning&&<span className="mt-1 block not-italic">{word.exampleMeaning}</span>}</div>}</article>
         </div>
       </div>
       <button type="button" aria-label={index>=total-1 ? "Kết thúc lượt học" : "Thẻ tiếp theo"} onClick={next} className="absolute right-4 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-[#EBEAF2] bg-white text-xl text-[#6550DB] shadow-sm transition hover:-translate-y-[55%] hover:border-[#CFC7FF] hover:shadow-md md:flex">→</button>
       <p className="text-center text-xs text-[#8B899F] sm:hidden">Vuốt sang trái/phải để chuyển thẻ</p>
     </section>
     <footer className="shrink-0 border-t border-[#EBEAF2] bg-white px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
-      {mode === "unknown" && unknown > 0 && authenticatedSetId && <button type="button" className="mx-auto mb-2 block min-h-11 w-full max-w-2xl rounded-xl border border-[#CFC7FF] bg-[#F7F5FF] px-4 text-sm font-bold text-[#6550DB]" onClick={practiceUnknownWords}>Điền {unknown} từ chưa nhớ</button>}
+      {mode === "unknown" && unknown > 0 && authenticatedSetId && <button type="button" className="mx-auto mb-2 block min-h-11 w-full max-w-2xl rounded-xl border border-[#CFC7FF] bg-[#F7F5FF] px-4 text-sm font-bold text-[#6550DB]" onClick={practiceUnknownWords}>{getFillUnknownLabel(set||{})} ({unknown})</button>}
       <div className="mx-auto max-w-2xl">{flipped?<div className="grid grid-cols-2 gap-3"><button disabled={saving} onClick={()=>void mark(false)} className="min-h-[52px] rounded-2xl border border-[#F0B7B7] bg-[#FFF1F1] px-3 text-sm font-bold text-[#B64242] active:scale-[.98]">Chưa nhớ <span className="hidden text-xs font-normal sm:inline">· phím 1</span></button><button disabled={saving} onClick={()=>void mark(true)} className="min-h-[52px] rounded-2xl border border-[#B6DEC8] bg-[#EEFBF3] px-3 text-sm font-bold text-[#277A4B] active:scale-[.98]">Đã nhớ <span className="hidden text-xs font-normal sm:inline">· phím 2</span></button></div>:<button onClick={()=>setFlipped(true)} className="min-h-[52px] w-full rounded-2xl bg-[#7865EE] px-4 text-sm font-bold text-white">Lật thẻ để đánh giá</button>}{saving&&<div className="mt-1 text-center text-xs text-[#8B899F]">Đang lưu…</div>}</div>
     </footer>
     {undo&&<div className="lexora-undo-snackbar fixed inset-x-3 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[100] mx-auto flex max-w-md items-center justify-between gap-3 overflow-hidden rounded-2xl bg-[#242337] px-4 py-3 text-sm text-white shadow-2xl"><span>{undo.message}</span><button onClick={()=>void undoLast()} className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold text-white hover:bg-white/25">Hoàn tác</button><span aria-hidden="true" className="lexora-undo-timer absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[#AFA2FF]"/></div>}

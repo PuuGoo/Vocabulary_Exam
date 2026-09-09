@@ -4,15 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
 import { normalizeSearch } from "@/lib/search";
+import { getFillModeLabel } from "@/lib/languages";
 
 type Tab = { href: string; label: string };
-export type SetSummary = { id: number; name: string; type: string };
+export type SetSummary = { id: number; name: string; type: string; languageCode?:string|null };
 export type Command = { href: string; label: string; description: string; kind: "Trang" | "Bộ từ" | "Quản trị" };
 
 export function runStudentSetCommands(sets: SetSummary[]): Command[] {
   return sets.flatMap((set) => [
     { href: `/learn/${set.id}`, label: `Học · ${set.name}`, description: "Flashcard", kind: "Bộ từ" as const },
-    { href: `/quiz/${set.id}?mode=fill`, label: `Điền từ · ${set.name}`, description: set.type === "irregular_verb" ? "Điền V1/V2/V3" : "Điền từ tiếng Anh", kind: "Bộ từ" as const },
+    { href: `/quiz/${set.id}?mode=fill`, label: `${getFillModeLabel(set)} · ${set.name}`, description: getFillModeLabel(set), kind: "Bộ từ" as const },
+    ...(set.languageCode === "zh-CN" ? [{ href:`/quiz/${set.id}?mode=fill&target=pronunciation`, label:`Điền Pinyin · ${set.name}`, description:"Luyện Pinyin có thanh điệu", kind:"Bộ từ" as const }] : []),
     { href: `/quiz/${set.id}?mode=mc`, label: `Trắc nghiệm · ${set.name}`, description: "Câu hỏi trắc nghiệm", kind: "Bộ từ" as const },
     { href: `/match/${set.id}`, label: `Ghép cặp · ${set.name}`, description: "Ghép từ với nghĩa", kind: "Bộ từ" as const },
     { href: `/dictation/${set.id}`, label: `Nghe & viết · ${set.name}`, description: "Luyện chính tả", kind: "Bộ từ" as const },

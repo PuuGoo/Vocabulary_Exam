@@ -1,14 +1,16 @@
 "use client";
 
-export default function SpeakButton({ text, className = "" }: { text: string; className?: string }) {
+import { getLanguageConfig } from "@/lib/languages";
+
+export default function SpeakButton({ text, languageCode = "en", speechLanguage, className = "" }: { text: string; languageCode?: string; speechLanguage?: string; className?: string }) {
   function speak(e: React.MouseEvent) {
     e.stopPropagation();
     if (!text) return;
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
-    const cleanText = text.split("/")[0].trim(); // if "burned/burnt", just read the first form
+    const cleanText = languageCode === "en" ? text.split("/")[0].trim() : text.trim();
     const utter = new SpeechSynthesisUtterance(cleanText);
-    utter.lang = "en-US";
+    utter.lang = speechLanguage || getLanguageConfig(languageCode).ttsLanguage;
     utter.rate = 0.9;
     window.speechSynthesis.speak(utter);
   }

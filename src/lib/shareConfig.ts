@@ -23,6 +23,7 @@ export function modesForSetType(type: string): readonly string[] {
   return type === "irregular_verb" ? ["learn", "fill", "mc", "match", "dictation", "timed"] : VOCAB_SHARE_MODES;
 }
 
+
 export function defaultShareModes(targetType: ShareTargetType, setType?: string) {
   return [...(targetType === "vocab_set" ? modesForSetType(setType || "ielts_vocab") : CATEGORY_SHARE_MODES)];
 }

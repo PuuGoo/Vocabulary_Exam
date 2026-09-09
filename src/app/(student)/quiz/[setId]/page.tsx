@@ -14,6 +14,8 @@ import { useCurrentUserId } from "@/components/UserSessionContext";
 import FillFocusSession from "@/components/FillFocusSession";
 import { getAcceptedAnswers, gradeFillAnswer, gradeFillAnswerGroups, maskAnswerInExample, parseFillAnswerGroups } from "@/lib/fillAnswer";
 import { fillScopeDraftSegment, filterWordsByFillScope, quizProgressMode, resolveFillWordScope } from "@/lib/unknownFill";
+import { gradeLanguageAnswer } from "@/lib/languageAnswer";
+import { getAvailableModes, getFillModeLabel, type FillTarget } from "@/lib/languages";
 
 type Word = {
   id: number;
@@ -28,8 +30,14 @@ type Word = {
   example?: string | null;
   wtype?: string | null;
   ipa?: string | null;
+  alternateTerm?: string | null;
+  pronunciation?: string | null;
+  examplePronunciation?: string | null;
+  exampleMeaning?: string | null;
+  level?: string | null;
+  classifier?: string | null;
 };
-type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab"; words: Word[] };
+type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?:string|null; languageSettings?:unknown; words: Word[] };
 type QuizDraft = {
   savedAt: number;
   wordIds: number[];
@@ -89,6 +97,7 @@ function QuizPlayerInner() {
   const router = useRouter();
   const userId = useCurrentUserId();
   const mode = (search.get("mode") as "fill" | "mc") || "fill";
+  const fillTarget:FillTarget = search.get("target") === "pronunciation" ? "pronunciation" : "term";
   const timedMode = search.get("timed") === "1";
   const minutes = Math.min(120, Math.max(1, Number(search.get("minutes")) || 15));
   const retest = search.get("retest") === "1";
@@ -97,14 +106,14 @@ function QuizPlayerInner() {
   const isTestSession = fillSessionKind === "test";
   const quickMode = search.get("quick") === "1";
   const fillScope = resolveFillWordScope({ mode, scope: search.get("scope"), retest, quickMode });
-  const progressMode = quizProgressMode(mode, fillScope);
+  const progressMode = `${quizProgressMode(mode, fillScope)}${mode === "fill" && fillTarget === "pronunciation" ? "_pronunciation" : ""}`;
   const quickCount = [5, 10, 20].includes(Number(search.get("count"))) ? Number(search.get("count")) : 10;
   const draftEnabled = !quickMode;
   const rangeFromParam = Math.max(1, Number(search.get("from")) || 0);
   const rangeToParam = Math.max(0, Number(search.get("to")) || 0);
   const hasRangeParam = rangeFromParam > 0 && rangeToParam > 0 && rangeFromParam <= rangeToParam;
 
-  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}${fillScopeDraftSegment(fillScope)}${hasRangeParam ? `-range-${rangeFromParam}-${rangeToParam}` : ""}`;
+  const draftKey = `lexora-learning-draft-u${userId}-quiz-${params.setId}-${mode}-${timedMode ? `timed-${minutes}` : "practice"}-${retest ? "retest" : "normal"}${fillScopeDraftSegment(fillScope)}-target-${fillTarget}${hasRangeParam ? `-range-${rangeFromParam}-${rangeToParam}` : ""}`;
 
   const [set, setSet] = useState<SetDetail | null>(null);
   const totalWordCountRef = useRef<number>(0);
@@ -189,7 +198,10 @@ function QuizPlayerInner() {
             words: filterWordsByFillScope(loadedSet.words, data.progress || {}, fillScope),
           };
         }
-        totalWordCountRef.current = fillScope === "unknown" ? loadedSet.words.length : originalWordCount;
+        if (mode === "fill" && fillTarget === "pronunciation") {
+          loadedSet = { ...loadedSet, words: loadedSet.words.filter((word) => Boolean(word.pronunciation?.trim())) };
+        }
+        totalWordCountRef.current = fillScope === "unknown" || fillTarget === "pronunciation" ? loadedSet.words.length : originalWordCount;
         // Ranges address the current scope, so 1..2 means the first two unknown
         // words rather than the first two words in the original set.
         if (hasRangeParam) {
@@ -613,6 +625,7 @@ function submitJumpQuestion() {
       const a = answers[w.id] || {};
       return checkMatch(a.v1, w.v1) && checkMatch(a.v2, w.v2) && checkMatch(a.v3, w.v3);
     } else if (mode === "fill") {
+      if (set?.languageCode === "zh-CN") return gradeLanguageAnswer({set,word:w,target:fillTarget,userAnswer:answers[w.id]?.term||""}).correct;
       const parsed = parseFillAnswerGroups(w.term, w.wtype);
       const responses = parsed.kind === "multi_group"
         ? parsed.groups.map((_, index) => answers[w.id]?.[`group-${index}`] || "")
@@ -851,6 +864,10 @@ function submitJumpQuestion() {
     );
   }
 
+  if (mode === "fill" && fillTarget === "pronunciation" && set.words.length === 0) {
+    return <div className={cx.panel}><div className={cx.empty}>Bộ này chưa có từ nào có Pinyin.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => router.push(`/quiz/${set.id}?mode=fill`)}>Điền chữ Hán</button></div></div></div>;
+  }
+
   if (set.words.length === 0) {
     return (
       <div className={cx.panel}>
@@ -864,7 +881,7 @@ function submitJumpQuestion() {
     );
   }
 
-  if (mode === "fill" && !isVerb && !timedMode && fillView === "focus") {
+  if (mode === "fill" && !isVerb && !timedMode && (fillView === "focus" || set.languageCode === "zh-CN")) {
     return (
       <FillFocusSession
         set={set}
@@ -892,13 +909,14 @@ function submitJumpQuestion() {
         <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted">Chuyển chế độ học</div>
         <div className="grid gap-1">
           <QuizMenuItem shortcut="H" onClick={() => navigateQuiz(`/learn/${set.id}`)}>Học bằng flashcard</QuizMenuItem>
-          <QuizMenuItem shortcut="F" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill`)}>Điền từ tiếng Anh</QuizMenuItem>
+          <QuizMenuItem shortcut="F" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill`)}>{getFillModeLabel(set)}</QuizMenuItem>
+          {set.languageCode === "zh-CN" && <QuizMenuItem shortcut="Y" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill&target=pronunciation`)}>Điền Pinyin</QuizMenuItem>}
           {!isVerb && <QuizMenuItem shortcut="Q" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=mc`)}>Trắc nghiệm</QuizMenuItem>}
           <QuizMenuItem shortcut="D" onClick={() => navigateQuiz(`/dictation/${set.id}`)}>Nghe và viết</QuizMenuItem>
           <QuizMenuItem shortcut="G" onClick={() => navigateQuiz(`/match/${set.id}`)}>Ghép cặp</QuizMenuItem>
           <QuizMenuItem shortcut="L" onClick={() => navigateQuiz(`/listen/${set.id}`)}>Nghe rảnh tay</QuizMenuItem>
           <QuizMenuItem shortcut="P" onClick={() => navigateQuiz(`/pronunciation/${set.id}`)}>Luyện phát âm</QuizMenuItem>
-          {!isVerb && <QuizMenuItem shortcut="C" onClick={() => navigateQuiz(`/sentence/${set.id}`)}>Xếp câu</QuizMenuItem>}
+          {getAvailableModes(set).includes("sentence") && <QuizMenuItem shortcut="C" onClick={() => navigateQuiz(`/sentence/${set.id}`)}>Xếp câu</QuizMenuItem>}
           <QuizMenuItem shortcut="T" onClick={() => navigateQuiz(`/quiz/${set.id}?mode=fill&timed=1&minutes=15`)}>Thi thử tính giờ</QuizMenuItem>
           <QuizMenuItem shortcut="X" danger onClick={() => navigateQuiz("/study")}>Thoát về danh sách bộ từ</QuizMenuItem>
         </div>
@@ -931,6 +949,8 @@ function submitJumpQuestion() {
           setId={set.id}
           active={timedMode ? "timed" : mode}
           isVerb={isVerb}
+          languageCode={set.languageCode || "en"}
+          availableModes={getAvailableModes(set)}
         />
       )}
 
@@ -1127,7 +1147,7 @@ function submitJumpQuestion() {
       </div>
 
       <div className="text-[0.82rem] text-muted text-center mb-3.5">
-        {mode === "mc" ? "Trắc nghiệm" : isVerb ? "Điền V1 / V2 / V3" : "Điền từ tiếng Anh"}
+        {mode === "mc" ? "Trắc nghiệm" : getFillModeLabel(set, fillTarget)}
       </div>
 
       <div>

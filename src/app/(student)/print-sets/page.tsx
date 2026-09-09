@@ -4,15 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import SetPicker from "@/components/SetPicker";
+import { getLanguageConfig, getWordDisplayForms, getWordPronunciation } from "@/lib/languages";
 
 type SetSummary = { id: number; name: string; type: string; count: number; className: string | null; category?: string | null };
-type PrintableWord = { id: number; setId: number; setName: string; setType: string; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; wtype: string | null; example: string | null };
-type PrintableSet = { id: number; name: string; type: string; words: PrintableWord[] };
+type PrintableWord = { id: number; setId: number; setName: string; setType: string; languageCode:string; languageSettings:string; meaning: string; term: string | null; alternateTerm:string|null; pronunciation:string|null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; wtype: string | null; example: string | null; examplePronunciation:string|null; exampleMeaning:string|null; level:string|null; classifier:string|null };
+type PrintableSet = { id: number; name: string; type: string; languageCode:string; languageSettings:string; words: PrintableWord[] };
 type Layout = "list" | "cards" | "worksheet";
 
 function answer(word: PrintableWord) {
-  return word.setType === "irregular_verb" ? `${word.v1 || ""} — ${word.v2 || ""} — ${word.v3 || ""}` : word.term || "";
+  return word.setType === "irregular_verb" ? `${word.v1 || ""} — ${word.v2 || ""} — ${word.v3 || ""}` : getWordDisplayForms(word, word).primary;
 }
+
+function phonetic(word: PrintableWord) { return getWordPronunciation(word, word); }
 
 function exampleHint(word: PrintableWord) {
   const example = word.example || "";
@@ -111,7 +114,7 @@ export default function PrintSetsPage() {
               <h3 className="font-semibold">Thiết lập bản in</h3>
               <label className={`${cx.label} mt-4`}>Tiêu đề<input className={`${cx.input} mt-1`} maxLength={100} value={title} onChange={(event) => setTitle(event.target.value)} /></label>
               <label className={cx.label}>Mẫu trình bày<select className={`${cx.input} mt-1`} value={layout} onChange={(event) => setLayout(event.target.value as Layout)}><option value="list">Danh sách tra cứu</option><option value="cards">Flashcard cắt rời</option><option value="worksheet">Bài tập điền từ</option></select></label>
-              <div className="mb-4 space-y-2 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={showIpa} onChange={(event) => setShowIpa(event.target.checked)} /> Hiện phiên âm IPA</label><label className="flex items-center gap-2"><input type="checkbox" checked={showExample} onChange={(event) => setShowExample(event.target.checked)} /> Hiện câu ví dụ</label>{layout === "worksheet" && <label className="flex items-center gap-2"><input type="checkbox" checked={showAnswerKey} onChange={(event) => setShowAnswerKey(event.target.checked)} /> Thêm trang đáp án</label>}</div>
+              <div className="mb-4 space-y-2 text-sm"><label className="flex items-center gap-2"><input type="checkbox" checked={showIpa} onChange={(event) => setShowIpa(event.target.checked)} /> Hiện phiên âm / Pinyin</label><label className="flex items-center gap-2"><input type="checkbox" checked={showExample} onChange={(event) => setShowExample(event.target.checked)} /> Hiện câu ví dụ</label>{layout === "worksheet" && <label className="flex items-center gap-2"><input type="checkbox" checked={showAnswerKey} onChange={(event) => setShowAnswerKey(event.target.checked)} /> Thêm trang đáp án</label>}</div>
               <button className={`${cx.btn} ${cx.btnGold} w-full`} disabled={selectedIds.length === 0 || generating} onClick={() => void generate()}>{generating ? "Đang tạo phiếu..." : "Tạo bản xem trước"}</button>
             </div>
           </div>
@@ -130,15 +133,15 @@ export default function PrintSetsPage() {
 }
 
 function ListLayout({ sets, showIpa, showExample }: { sets: PrintableSet[]; showIpa: boolean; showExample: boolean }) {
-  return <>{sets.map((set) => <div key={set.id} className="mb-6 break-inside-avoid-page"><h2 className="mb-2 border-b border-black pb-1 font-serif text-lg font-bold">{set.name}</h2><table className="w-full border-collapse text-sm"><thead><tr><th className="border border-black/30 p-2 text-left">#</th><th className="border border-black/30 p-2 text-left">Từ tiếng Anh</th><th className="border border-black/30 p-2 text-left">Nghĩa tiếng Việt</th>{showExample && <th className="border border-black/30 p-2 text-left">Ví dụ</th>}</tr></thead><tbody>{set.words.map((word, index) => <tr key={word.id} className="break-inside-avoid"><td className="border border-black/30 p-2">{index + 1}</td><td className="border border-black/30 p-2"><b>{answer(word)}</b>{showIpa && word.ipa && <div className="text-xs text-gray-600">{word.ipa}</div>}</td><td className="border border-black/30 p-2">{word.meaning}</td>{showExample && <td className="border border-black/30 p-2 text-xs italic">{word.example || "—"}</td>}</tr>)}</tbody></table></div>)}</>;
+  return <>{sets.map((set) => <div key={set.id} className="mb-6 break-inside-avoid-page"><h2 className="mb-2 border-b border-black pb-1 font-serif text-lg font-bold">{set.name}</h2><table className="w-full border-collapse text-sm"><thead><tr><th className="border border-black/30 p-2 text-left">#</th><th className="border border-black/30 p-2 text-left">{getLanguageConfig(set.languageCode).termLabel}</th><th className="border border-black/30 p-2 text-left">Nghĩa tiếng Việt</th>{showExample && <th className="border border-black/30 p-2 text-left">Ví dụ</th>}</tr></thead><tbody>{set.words.map((word, index) => <tr key={word.id} className="break-inside-avoid"><td className="border border-black/30 p-2">{index + 1}</td><td className="border border-black/30 p-2"><b>{answer(word)}</b>{showIpa && phonetic(word) && <div className="text-xs text-gray-600">{phonetic(word)}</div>}</td><td className="border border-black/30 p-2">{word.meaning}</td>{showExample && <td className="border border-black/30 p-2 text-xs italic">{word.example || "—"}{word.examplePronunciation && <div>{word.examplePronunciation}</div>}{word.exampleMeaning && <div>{word.exampleMeaning}</div>}</td>}</tr>)}</tbody></table></div>)}</>;
 }
 
 function CardsLayout({ sets, showIpa, showExample }: { sets: PrintableSet[]; showIpa: boolean; showExample: boolean }) {
   const words = sets.flatMap((set) => set.words);
-  return <div className="grid grid-cols-2 gap-3">{words.map((word) => <article key={word.id} className="min-h-36 break-inside-avoid border border-dashed border-black p-4 text-center"><div className="text-[0.65rem] uppercase tracking-wide text-gray-500">{word.setName}</div><div className="mt-3 font-serif text-xl font-bold">{answer(word)}</div>{showIpa && word.ipa && <div className="text-sm text-gray-600">{word.ipa}</div>}<div className="mt-3 border-t border-black/20 pt-2">{word.meaning}</div>{showExample && word.example && <div className="mt-2 text-xs italic text-gray-600">{word.example}</div>}</article>)}</div>;
+  return <div className="grid grid-cols-2 gap-3">{words.map((word) => <article key={word.id} className="min-h-36 break-inside-avoid border border-dashed border-black p-4 text-center"><div className="text-[0.65rem] uppercase tracking-wide text-gray-500">{word.setName}</div><div className="mt-3 font-serif text-xl font-bold">{answer(word)}</div>{showIpa && phonetic(word) && <div className="text-sm text-gray-600">{phonetic(word)}</div>}<div className="mt-3 border-t border-black/20 pt-2">{word.meaning}</div>{showExample && word.example && <div className="mt-2 text-xs italic text-gray-600">{word.example}</div>}</article>)}</div>;
 }
 
 function WorksheetLayout({ sets, showIpa, showExample, showAnswerKey }: { sets: PrintableSet[]; showIpa: boolean; showExample: boolean; showAnswerKey: boolean }) {
   const words = sets.flatMap((set) => set.words);
-  return <><div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">{words.map((word, index) => <div key={word.id} className="break-inside-avoid border-b border-black/30 pb-3 text-sm"><div><b>{index + 1}.</b> {word.meaning}</div><div className="mt-2 flex items-end gap-2"><span className="text-xs text-gray-500">Đáp án:</span><span className="h-5 flex-1 border-b border-black" /></div>{showIpa && word.ipa && <div className="mt-1 text-xs text-gray-500">IPA: {word.ipa}</div>}{showExample && word.example && <div className="mt-1 text-xs italic text-gray-600">Gợi ý: {exampleHint(word)}</div>}</div>)}</div>{showAnswerKey && <div className="print-page-break mt-8"><h2 className="mb-4 border-b border-black pb-2 font-serif text-xl font-bold">Đáp án</h2><div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">{words.map((word, index) => <div key={word.id}><b>{index + 1}.</b> {answer(word)}</div>)}</div></div>}</>;
+  return <><div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">{words.map((word, index) => <div key={word.id} className="break-inside-avoid border-b border-black/30 pb-3 text-sm"><div><b>{index + 1}.</b> {word.meaning}</div><div className="mt-2 flex items-end gap-2"><span className="text-xs text-gray-500">Đáp án:</span><span className="h-5 flex-1 border-b border-black" /></div>{showIpa && phonetic(word) && <div className="mt-1 text-xs text-gray-500">{getLanguageConfig(word.languageCode).pronunciationLabel}: {phonetic(word)}</div>}{showExample && word.example && <div className="mt-1 text-xs italic text-gray-600">Gợi ý: {exampleHint(word)}</div>}</div>)}</div>{showAnswerKey && <div className="print-page-break mt-8"><h2 className="mb-4 border-b border-black pb-2 font-serif text-xl font-bold">Đáp án</h2><div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">{words.map((word, index) => <div key={word.id}><b>{index + 1}.</b> {answer(word)}</div>)}</div></div>}</>;
 }

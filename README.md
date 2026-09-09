@@ -1,5 +1,13 @@
 # IELTS Vocab Check
 
+## Nền tảng đa ngôn ngữ
+
+Lexora dùng chung hệ thống bộ từ, tiến độ, bookmark, mistakes và chia sẻ cho mọi ngôn ngữ. Hiện nền tảng hỗ trợ Tiếng Anh (`languageCode=en`) và Tiếng Trung Quốc / Mandarin (`type=language_vocab`, `languageCode=zh-CN`).
+
+Trong bộ tiếng Trung, `term` là chữ Hán chính, `alternateTerm` là dạng phồn thể tùy chọn, `pronunciation` là Pinyin và `meaning` là nghĩa tiếng Việt. File import chấp nhận các cột `Chữ Hán`, `Phồn thể`, `Pinyin`, `Nghĩa`, `Loại từ`, `Lượng từ`, `HSK`, `Ví dụ`, `Pinyin ví dụ`, `Nghĩa ví dụ` cùng các tên field chuẩn tiếng Anh tương ứng.
+
+Chấm Pinyin nghiêm ngặt chấp nhận dấu thanh (`xuéxí`) hoặc số thanh (`xue2xi2`); chế độ thư giãn chấp nhận `xuexi`. Các dạng `ü`, `v`, `u:` được chuẩn hóa. Sentence mode hiện được ẩn với Mandarin cho đến khi có tokenizer phù hợp. Muốn thêm ngôn ngữ sau này, mở rộng registry tại `src/lib/languages.ts` và bộ chấm tương ứng, không tạo progress hay quiz engine riêng.
+
 ## Vocabulary pattern syntax
 
 Với hàng từ vựng có `wtype=pattern`, dùng dấu `;` để tách các cấu trúc đều bắt
