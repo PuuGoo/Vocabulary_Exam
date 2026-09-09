@@ -6,6 +6,7 @@ import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import SpeakButton from "@/components/SpeakButton";
 import { groupMistakesBySet, type MistakeRow } from "@/lib/reviewGroups";
+import { getSpeakText, getWordDisplayForms, getWordPronunciation } from "@/lib/languages";
 
 export default function ReviewPage() {
   const [rows, setRows] = useState<MistakeRow[] | null>(null);
@@ -109,7 +110,7 @@ export default function ReviewPage() {
                 <Link className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} href={`/quiz/${g.setId}?mode=fill&retest=1`}>
                   Làm lại (Điền từ)
                 </Link>
-                {g.setType === "ielts_vocab" && (
+                {g.setType !== "irregular_verb" && (
                   <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/quiz/${g.setId}?mode=mc&retest=1`}>
                     Làm lại (Trắc nghiệm)
                   </Link>
@@ -141,10 +142,10 @@ export default function ReviewPage() {
                               {r.v1} — {r.v2} — {r.v3}
                             </span>
                           ) : (
-                            <span>{r.term}</span>
+                            <span>{getWordDisplayForms(r, r).primary}</span>
                           )}
-                          {r.ipa && <span className="text-golddark">{r.ipa}</span>}
-                          <SpeakButton text={(r.setType === "irregular_verb" ? r.v1 : r.term) || ""} />
+                          {getWordPronunciation(r, r) && <span className="text-golddark">{getWordPronunciation(r, r)}</span>}
+                          <SpeakButton text={getSpeakText(r, r)} languageCode={r.languageCode || "en"} />
                         </div>
                     )}
                   </div>

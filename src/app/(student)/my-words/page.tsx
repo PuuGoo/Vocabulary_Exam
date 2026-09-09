@@ -7,15 +7,20 @@ import SpeakButton from "@/components/SpeakButton";
 import { toast } from "@/components/Toast";
 import { groupMistakesBySet, type MistakeRow } from "@/lib/reviewGroups";
 import { normalizeSearch } from "@/lib/search";
+import { getSpeakText, getWordDisplayForms, getWordPronunciation } from "@/lib/languages";
 
 type Bookmark = {
   id: number;
   wordId: number;
   setId: number;
   setName: string;
-  setType: "irregular_verb" | "ielts_vocab";
+  setType: "irregular_verb" | "ielts_vocab" | "language_vocab";
+  languageCode?: string | null;
+  languageSettings?: unknown;
   meaning: string;
   term: string | null;
+  alternateTerm?: string | null;
+  pronunciation?: string | null;
   v1: string | null;
   v2: string | null;
   v3: string | null;
@@ -23,6 +28,11 @@ type Bookmark = {
   example: string | null;
   note: string;
 };
+
+function displayAnswer(item: Pick<Bookmark, "setType" | "v1" | "v2" | "v3" | "term" | "alternateTerm" | "languageCode" | "languageSettings">) {
+  return item.setType === "irregular_verb" ? `${item.v1} — ${item.v2} — ${item.v3}` : getWordDisplayForms(item, item).primary;
+}
+type DictionaryWord = Omit<Bookmark, "id" | "wordId" | "note"> & { id: number; bookmarkId: number | null };
 
 type TabKey = "lookup" | "saved" | "review";
 
@@ -159,8 +169,8 @@ export default function MyWordsPage() {
               {filteredSaved.length === 0 ? (
                 <div className={cx.empty}>Không tìm thấy từ đã lưu phù hợp.</div>
               ) : filteredSaved.map((bookmark) => {
-                const answer = bookmark.setType === "irregular_verb" ? `${bookmark.v1} — ${bookmark.v2} — ${bookmark.v3}` : bookmark.term;
-                const speakText = bookmark.setType === "irregular_verb" ? bookmark.v1 : bookmark.term;
+                const answer = displayAnswer(bookmark);
+                const speakText = getSpeakText(bookmark, bookmark);
                 return (
                   <article key={bookmark.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -168,8 +178,8 @@ export default function MyWordsPage() {
                         <div className="mb-1 text-[0.7rem] text-muted">{bookmark.setName}</div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-serif text-lg font-bold">{answer}</span>
-                          {bookmark.ipa && <span className="text-golddark">{bookmark.ipa}</span>}
-                          <SpeakButton text={speakText || ""} />
+                          {getWordPronunciation(bookmark, bookmark) && <span className="text-golddark">{getWordPronunciation(bookmark, bookmark)}</span>}
+                          <SpeakButton text={speakText || ""} languageCode={bookmark.languageCode || "en"} />
                         </div>
                         <div className="mt-1 text-[0.9rem]">{bookmark.meaning}</div>
                         {bookmark.example && <div className="mt-1 text-[0.8rem] italic text-muted">VD: {bookmark.example}</div>}
@@ -221,7 +231,7 @@ export default function MyWordsPage() {
                     <h3 className="font-serif text-[1rem]">{group.setName} <span className="text-muted text-[0.8rem] font-sans">— {group.items.length} từ</span></h3>
                     <div className="flex gap-2">
                       <Link className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} href={`/quiz/${group.setId}?mode=fill&retest=1`}>Điền từ</Link>
-                      {group.setType === "ielts_vocab" && <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/quiz/${group.setId}?mode=mc&retest=1`}>Trắc nghiệm</Link>}
+                      {group.setType !== "irregular_verb" && <Link className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/quiz/${group.setId}?mode=mc&retest=1`}>Trắc nghiệm</Link>}
                     </div>
                   </div>
                   {group.items.map((row) => (
@@ -232,9 +242,9 @@ export default function MyWordsPage() {
                           {!revealed[row.id] && <div className="mt-1 text-[0.78rem] text-muted">Bấm để xem đáp án</div>}
                           {revealed[row.id] && (
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[0.95rem]">
-                              {row.setType === "irregular_verb" ? <span>{row.v1} — {row.v2} — {row.v3}</span> : <span>{row.term}</span>}
-                              {row.ipa && <span className="text-golddark">{row.ipa}</span>}
-                              <SpeakButton text={row.setType === "irregular_verb" ? row.v1 || "" : row.term || ""} />
+                              <span>{row.setType === "irregular_verb" ? `${row.v1} — ${row.v2} — ${row.v3}` : getWordDisplayForms(row, row).primary}</span>
+                              {getWordPronunciation(row, row) && <span className="text-golddark">{getWordPronunciation(row, row)}</span>}
+                              <SpeakButton text={getSpeakText(row, row)} languageCode={row.languageCode || "en"} />
                             </div>
                           )}
                         </button>
@@ -254,7 +264,7 @@ export default function MyWordsPage() {
 
 function DictionarySection() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<Array<{ id: number; setId: number; setName: string; setType: "irregular_verb" | "ielts_vocab"; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; example: string | null; bookmarkId: number | null }> | null>(null);
+  const [results, setResults] = useState<DictionaryWord[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [savingWordId, setSavingWordId] = useState<number | null>(null);
@@ -291,7 +301,7 @@ function DictionarySection() {
     };
   }, [query]);
 
-  async function toggleBookmark(word: { id: number; setType: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; example: string | null; meaning: string; setName: string; setId: number; bookmarkId: number | null }) {
+  async function toggleBookmark(word: DictionaryWord) {
     if (savingWordId !== null) return;
     setSavingWordId(word.id);
     try {
@@ -346,8 +356,8 @@ function DictionarySection() {
       ) : (
         <div aria-live="polite" aria-busy={searching}>
           {results.map((word) => {
-            const answer = word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term;
-            const speakText = word.setType === "irregular_verb" ? word.v1 : word.term;
+            const answer = displayAnswer(word);
+            const speakText = getSpeakText(word, word);
             return (
               <article key={word.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -355,8 +365,8 @@ function DictionarySection() {
                     <div className="mb-1 text-xs text-muted">{word.setName}</div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-serif text-lg font-bold">{answer}</span>
-                      {word.ipa && <span className="text-golddark">{word.ipa}</span>}
-                      <SpeakButton text={speakText || ""} />
+                      {getWordPronunciation(word, word) && <span className="text-golddark">{getWordPronunciation(word, word)}</span>}
+                      <SpeakButton text={speakText || ""} languageCode={word.languageCode || "en"} />
                     </div>
                     <div className="mt-1 text-sm">{word.meaning}</div>
                     {word.example && <div className="mt-1 text-xs italic text-muted">VD: {word.example}</div>}

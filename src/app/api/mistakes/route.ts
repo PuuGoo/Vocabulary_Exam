@@ -20,6 +20,13 @@ export async function GET() {
       wordId: words.id,
       meaning: words.meaning,
       term: words.term,
+      alternateTerm: words.alternateTerm,
+      pronunciation: words.pronunciation,
+      example: words.example,
+      examplePronunciation: words.examplePronunciation,
+      exampleMeaning: words.exampleMeaning,
+      level: words.level,
+      classifier: words.classifier,
       v1: words.v1,
       v2: words.v2,
       v3: words.v3,
@@ -27,6 +34,8 @@ export async function GET() {
       setId: vocabSets.id,
       setName: vocabSets.name,
       setType: vocabSets.type,
+      languageCode: vocabSets.languageCode,
+      languageSettings: vocabSets.languageSettings,
     })
     .from(mistakes)
     .innerJoin(words, eq(mistakes.wordId, words.id))
