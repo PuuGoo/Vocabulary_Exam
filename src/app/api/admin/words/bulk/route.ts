@@ -1,23 +1,25 @@
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { writeAdminAudit } from "@/lib/adminAudit";
 import { deleteWordsAndNormalize, moveWordsToSet } from "@/lib/wordOrder.server";
 
 const schema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(1000) });
 const moveSchema = schema.extend({ targetSetId: z.number().int().positive() });
 
 export async function DELETE(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Bạn không có quyền xóa từ." }, { status: 403 });
+  const access = await requireAdminPermission("vocab.delete");
+  if (isAuthorizationError(access)) return access;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Danh sách từ cần xóa không hợp lệ." }, { status: 400 });
   const result = await deleteWordsAndNormalize([...new Set(parsed.data.ids)]);
   if (result.kind === "stale") return Response.json({ error: "Danh sách từ đã thay đổi. Hãy tải lại trước khi xóa." }, { status: 409 });
+  await writeAdminAudit({ actorUserId: access.userId, action: "vocab.words.bulk_delete", resourceType: "word", metadata: { count: result.deleted } });
   return Response.json({ ok: true, deleted: result.deleted });
 }
 
 export async function PATCH(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Bạn không có quyền di chuyển từ." }, { status: 403 });
+  const access = await requireAdminPermission("vocab.move");
+  if (isAuthorizationError(access)) return access;
   const parsed = moveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Dữ liệu di chuyển không hợp lệ." }, { status: 400 });
   const result = await moveWordsToSet([...new Set(parsed.data.ids)], parsed.data.targetSetId);

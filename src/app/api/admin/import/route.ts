@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 import { db } from "@/db";
 import { vocabCategories, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { dedupeImportRows, importWordKey } from "@/lib/importDedup";
@@ -23,10 +24,9 @@ function normalizeRow(raw: Record<string, unknown>): Row {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.import");
+  if (isAuthorizationError(access)) return access;
+  const session = { userId: access.userId };
 
   const form = await req.formData();
   const file = form.get("file") as File | null;

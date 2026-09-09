@@ -17,12 +17,14 @@ async function main() {
         passwordHash: await bcrypt.hash("admin123", 10),
         displayName: "Quản trị viên",
         role: "admin",
+        adminProfile: "owner",
       },
       {
         username: "hocsinh",
         passwordHash: await bcrypt.hash("123456", 10),
         displayName: "Học sinh demo",
         role: "student",
+        adminProfile: null,
       },
     ]);
     console.log("Created default admin + demo student accounts.");

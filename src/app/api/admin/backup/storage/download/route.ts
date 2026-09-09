@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { ADMIN_DOWNLOAD_TTL_MS, assertBackupPathname, createPrivateBackupDownloadUrl, safeStorageError, verifyStoredBackup } from "@/lib/backupStorage";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,8 +9,8 @@ export const dynamic = "force-dynamic";
 const schema = z.object({ pathname: z.string().min(1).max(1024) });
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (session?.role !== "admin") return Response.json({ error: "Bạn không có quyền tải backup đám mây." }, { status: 403 });
+  const access = await requireAdminPermission("backup.create");
+  if (isAuthorizationError(access)) return access;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Đường dẫn backup không hợp lệ." }, { status: 400 });
   try {

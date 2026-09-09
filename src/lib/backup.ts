@@ -1,13 +1,13 @@
 export const BACKUP_FORMAT = "lexora-backup";
-export const BACKUP_VERSION = 3;
-export const SUPPORTED_BACKUP_VERSIONS = [1, 2, BACKUP_VERSION] as const;
+export const BACKUP_VERSION = 4;
+export const SUPPORTED_BACKUP_VERSIONS = [1, 2, 3, BACKUP_VERSION] as const;
 
 export const BACKUP_COLLECTIONS = [
   "users", "classes", "classMembers", "vocabCategories", "categoryDocuments", "vocabSets", "words", "attempts",
   "assignments", "assignmentExtensions", "assignmentSubmissions", "teachBackNotes",
   "mistakes", "wordProgress", "setReviewProgress", "reviewSessions", "wordBookmarks", "studySessions", "learningGoals",
   "dailyActivities",
-  "appSettings",
+  "appSettings", "adminPermissionOverrides", "adminAuditLogs",
 ] as const;
 
 export type BackupCollection = (typeof BACKUP_COLLECTIONS)[number];
@@ -37,7 +37,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
   for (const collection of BACKUP_COLLECTIONS) {
     const rows = rawData[collection];
     // These collections were added after v1, so older backups remain restorable.
-    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings" || collection === "setReviewProgress" || collection === "reviewSessions") && rows === undefined) {
+    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings" || collection === "setReviewProgress" || collection === "reviewSessions" || collection === "adminPermissionOverrides" || collection === "adminAuditLogs") && rows === undefined) {
       data[collection] = [];
       continue;
     }

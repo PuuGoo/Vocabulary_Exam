@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import {
-  appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments,
+  adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments,
   classes, classMembers, dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users,
   vocabCategories, vocabSets, wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
 } from "@/db/schema";
@@ -14,7 +14,7 @@ export async function createBackupExport(createdBy?: { id: number; username: str
   const [
     userRows, classRows, memberRows, categoryRows, documentRows, setRows, wordRows, attemptRows,
     assignmentRows, extensionRows, submissionRows, teachBackRows, mistakeRows, progressRows,
-    setReviewRows, reviewSessionRows, bookmarkRows, sessionRows, goalRows, activityRows, settingRows,
+    setReviewRows, reviewSessionRows, bookmarkRows, sessionRows, goalRows, activityRows, settingRows, permissionRows, auditRows,
   ] = await db.transaction(
     async (tx) => Promise.all([
       tx.select().from(users), tx.select().from(classes), tx.select().from(classMembers),
@@ -24,7 +24,7 @@ export async function createBackupExport(createdBy?: { id: number; username: str
       tx.select().from(teachBackNotes), tx.select().from(mistakes), tx.select().from(wordProgress),
       tx.select().from(setReviewProgress), tx.select().from(reviewSessions),
       tx.select().from(wordBookmarks), tx.select().from(studySessions), tx.select().from(learningGoals),
-      tx.select().from(dailyActivities), tx.select().from(appSettings),
+      tx.select().from(dailyActivities), tx.select().from(appSettings), tx.select().from(adminPermissionOverrides), tx.select().from(adminAuditLogs),
     ]),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -37,7 +37,7 @@ export async function createBackupExport(createdBy?: { id: number; username: str
     teachBackNotes: teachBackRows, mistakes: mistakeRows, wordProgress: progressRows,
     setReviewProgress: setReviewRows, reviewSessions: reviewSessionRows,
     wordBookmarks: bookmarkRows, studySessions: sessionRows, learningGoals: goalRows,
-    dailyActivities: activityRows, appSettings: settingRows,
+    dailyActivities: activityRows, appSettings: settingRows, adminPermissionOverrides: permissionRows, adminAuditLogs: auditRows,
   };
   const counts = Object.fromEntries(Object.entries(data).map(([name, rows]) => [name, rows.length]));
   const now = new Date();

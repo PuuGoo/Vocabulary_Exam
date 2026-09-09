@@ -1,7 +1,7 @@
 ﻿import { randomBytes } from "node:crypto";
 import { db } from "@/db";
 import {
-  appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
+  adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
   wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
 } from "@/db/schema";
@@ -9,6 +9,7 @@ import { hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
 import { verifyBackupChecksum } from "@/lib/backupIntegrity";
 import { documentContentLooksValid, documentMimeType, isSupportedDocument } from "@/lib/categoryDocumentFile";
+import { isAdminProfile } from "@/lib/adminPermissions";
 
 export const CONFIRMATION_WORD = "KHOI PHUC";
 export const MAX_FILE_BYTES = 400 * 1024 * 1024; // Leaves room for base64 inside the 600 MB JSON envelope.
@@ -96,13 +97,30 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
         const role = text(row, "role") === "admin" ? "admin" : "student";
         const [created] = await tx.insert(users).values({
           username, email: nullableText(row, "email"), passwordHash: lockedPasswordHash,
-          displayName: text(row, "displayName", username).trim() || username, role, createdAt: date(row, "createdAt"),
+          displayName: text(row, "displayName", username).trim() || username,
+          role,
+          adminProfile: role === "admin"
+            ? (isAdminProfile(text(row, "adminProfile")) ? text(row, "adminProfile") : (username.toLocaleLowerCase("vi") === "admin" ? "owner" : "manager"))
+            : null,
+          createdAt: date(row, "createdAt"),
         }).returning({ id: users.id });
         mapped = created.id; usersByName.set(username.toLocaleLowerCase("vi"), mapped); report.added.users++;
       } else report.skipped.users++;
       userMap.set(id, mapped);
     }
     if (unknownUsers.length) report.warnings.push(`${unknownUsers.length} tài khoản đã được tạo lại ở trạng thái khóa mật khẩu: ${unknownUsers.slice(0, 5).join(", ")}${unknownUsers.length > 5 ? "…" : ""}. Hãy tạo liên kết đặt lại mật khẩu trong mục Người dùng để họ đăng nhập lại.`);
+
+    const existingOverrides = await tx.select().from(adminPermissionOverrides);
+    const overrideKeys = new Set(existingOverrides.map((item) => `${item.userId}:${item.permission}`));
+    for (const row of backup.data.adminPermissionOverrides) {
+      const userId = userMap.get(number(row, "userId", -1)); const permission = text(row, "permission"); const key = `${userId}:${permission}`;
+      if (userId == null || !permission || overrideKeys.has(key)) { report.skipped.adminPermissionOverrides++; continue; }
+      await tx.insert(adminPermissionOverrides).values({ userId, permission, allowed: bool(row, "allowed"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") }); overrideKeys.add(key); report.added.adminPermissionOverrides++;
+    }
+    for (const row of backup.data.adminAuditLogs) {
+      const oldActor = nullableNumber(row, "actorUserId"); const oldTarget = nullableNumber(row, "targetUserId");
+      await tx.insert(adminAuditLogs).values({ actorUserId: oldActor == null ? null : userMap.get(oldActor) ?? null, actorDisplayName: nullableText(row, "actorDisplayName"), action: text(row, "action", "backup.restored_audit"), resourceType: text(row, "resourceType", "unknown"), resourceId: nullableText(row, "resourceId"), targetUserId: oldTarget == null ? null : userMap.get(oldTarget) ?? null, metadata: text(row, "metadata", "{}"), createdAt: date(row, "createdAt") }); report.added.adminAuditLogs++;
+    }
 
     const classMap = new Map<number, number>();
     const existingClasses = await tx.select().from(classes);

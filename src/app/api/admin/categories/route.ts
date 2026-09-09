@@ -3,16 +3,12 @@ import { asc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { categoryDocuments, vocabCategories, vocabSets } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
+import { writeAdminAudit } from "@/lib/adminAudit";
 
 const nameSchema = z.object({ name: z.string().trim().min(1).max(128) });
 const categoryPathSchema = nameSchema.extend({ parentPath: z.string().trim().max(256).nullable().optional() });
-
-async function requireAdmin() {
-  const session = await getSession();
-  return session?.role === "admin" ? session : null;
-}
 
 async function findDuplicate(name: string, excludedId?: number) {
   const matches = await db.select({ id: vocabCategories.id }).from(vocabCategories).where(ilike(vocabCategories.name, name)).limit(2);
@@ -80,7 +76,7 @@ async function nextCategoryNumber(parentPath?: string | null) {
 }
 
 export async function GET() {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.view"); if (isAuthorizationError(access)) return access;
 
   // Register categories from older vocab sets so the manager remains compatible
   // with data created before the category registry existed.
@@ -110,8 +106,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.create"); if (isAuthorizationError(access)) return access;
   const parsed = categoryPathSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Tên danh mục phải có từ 1 đến 128 ký tự." }, { status: 400 });
   const number = await nextCategoryNumber(parsed.data.parentPath);
@@ -119,12 +114,12 @@ export async function POST(request: NextRequest) {
   const name = buildPath(`${String(number).padStart(2, "0")}_${leaf}`, parsed.data.parentPath);
   if (name.length > 128) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
   if (await findDuplicate(name)) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
-  const [category] = await db.insert(vocabCategories).values({ name, createdBy: session.userId }).returning();
+  const [category] = await db.insert(vocabCategories).values({ name, createdBy: access.userId }).returning();
   return NextResponse.json({ category }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.edit"); if (isAuthorizationError(access)) return access;
   const body = await request.json().catch(() => null);
   const parsed = nameSchema.extend({ id: z.number().int().positive() }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu danh mục không hợp lệ." }, { status: 400 });
@@ -159,7 +154,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.delete"); if (isAuthorizationError(access)) return access;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Danh mục không hợp lệ." }, { status: 400 });
 
@@ -175,5 +170,6 @@ export async function DELETE(request: NextRequest) {
     return { name: current.name, movedSets: count };
   });
   if (!result) return NextResponse.json({ error: "Không tìm thấy danh mục." }, { status: 404 });
+  await writeAdminAudit({ actorUserId: access.userId, action: "category.delete", resourceType: "category", resourceId: id, metadata: result });
   return NextResponse.json(result);
 }

@@ -3,16 +3,14 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { words } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { deleteWordsAndNormalize } from "@/lib/wordOrder.server";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.delete");
+  if (isAuthorizationError(access)) return access;
   const wordId = Number(params.id);
   if (!Number.isInteger(wordId) || wordId < 1) return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
   const result = await deleteWordsAndNormalize([wordId]);
@@ -35,10 +33,8 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.edit");
+  if (isAuthorizationError(access)) return access;
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });

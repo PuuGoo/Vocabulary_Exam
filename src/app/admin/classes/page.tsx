@@ -5,11 +5,13 @@ import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
 import ConfirmDialog, { type ConfirmOptions } from "@/components/ConfirmDialog";
+import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 
 type ClassRow = { id: number; name: string; memberCount: number };
 type StudentRow = { id: number; username: string; displayName: string; isMember: boolean };
 
 export default function AdminClassesPage() {
+  const access = useAdminPermissions();
   const [classesList, setClassesList] = useState<ClassRow[] | null>(null);
   const [newName, setNewName] = useState("");
   const [openClassId, setOpenClassId] = useState<number | null>(null);
@@ -108,10 +110,10 @@ export default function AdminClassesPage() {
     <div className={cx.panel}>
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><h2 className={cx.h2}>Lớp học</h2><p className={cx.desc + " !mb-0"}>Tạo lớp và thêm học sinh; bộ từ gán lớp chỉ hiển thị cho lớp đó.</p></div>
-        <div className="flex gap-2">
+        {access.can("classes.create") && <div className="flex gap-2">
           <input className={`${cx.input} !mb-0 max-w-xs`} placeholder="Tên lớp, VD: IELTS 6.5" value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void createClass(); }} />
           <button className={`${cx.btn} ${cx.btnGold}`} disabled={creating} onClick={() => void createClass()}>{creating ? "Đang tạo..." : "+ Tạo lớp"}</button>
-        </div>
+        </div>}
       </div>
 
       {classesList === null ? (
@@ -127,8 +129,8 @@ export default function AdminClassesPage() {
                 <div className="text-[0.78rem] text-muted">{c.memberCount} học sinh</div>
               </div>
               <div className="flex gap-2">
-                <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => openMembers(c.id)}>Quản lý học sinh ›</button>
-                <button className={`${cx.btn} ${cx.btnDanger} !px-3 !py-1.5`} onClick={() => confirmDelete(c)}>Xóa</button>
+                {access.can("classes.members") && <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => openMembers(c.id)}>Quản lý học sinh ›</button>}
+                {access.can("classes.delete") && <button className={`${cx.btn} ${cx.btnDanger} !px-3 !py-1.5`} onClick={() => confirmDelete(c)}>Xóa</button>}
               </div>
             </div>
           ))}

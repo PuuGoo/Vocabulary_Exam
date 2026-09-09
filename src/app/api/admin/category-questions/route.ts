@@ -3,9 +3,10 @@ import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { categoryQuestions, vocabCategories } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { ensureQuestionImportSchema } from "@/lib/questionImportDb";
 import { ensureQuestionShuffleSchema } from "@/lib/questionShuffleDb";
+import { writeAdminAudit } from "@/lib/adminAudit";
 
 const listSchema = z.object({ category: z.string().trim().min(1).max(128) });
 const createSchema = z.object({
@@ -80,14 +81,9 @@ async function ensureTable() {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "category_questions_category_idx" ON "category_questions" USING btree ("category");`);
   } catch { /* index may already exist */ }
 }
-async function requireAdmin() {
-  const session = await getSession();
-  return session?.role === "admin" ? session : null;
-}
-
 export async function GET(request: NextRequest) {
   await ensureTable();
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.view"); if (isAuthorizationError(access)) return access;
   const { searchParams } = new URL(request.url);
   const parsed = listSchema.safeParse({ category: searchParams.get("category") });
   if (!parsed.success) return NextResponse.json({ error: "Thiếu tham số category." }, { status: 400 });
@@ -101,8 +97,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   await ensureTable();
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.create"); if (isAuthorizationError(access)) return access;
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu câu hỏi không hợp lệ." }, { status: 400 });
   const [maxRow] = await db
@@ -114,7 +109,7 @@ export async function POST(request: NextRequest) {
   const nextOrder = (maxRow?.maxOrder ?? -1) + 1;
   const [question] = await db
     .insert(categoryQuestions)
-    .values({ ...parsed.data, options: JSON.stringify(parsed.data.options), correctOptions: JSON.stringify(parsed.data.correctOptions.length ? parsed.data.correctOptions : parsed.data.correctOption ? [parsed.data.correctOption] : []), tags: JSON.stringify(parsed.data.tags), order: nextOrder, createdBy: session.userId })
+    .values({ ...parsed.data, options: JSON.stringify(parsed.data.options), correctOptions: JSON.stringify(parsed.data.correctOptions.length ? parsed.data.correctOptions : parsed.data.correctOption ? [parsed.data.correctOption] : []), tags: JSON.stringify(parsed.data.tags), order: nextOrder, createdBy: access.userId })
     .returning();
   return NextResponse.json({ question }, { status: 201 });
 }
@@ -122,7 +117,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   await ensureTable();
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.edit"); if (isAuthorizationError(access)) return access;
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu cập nhật không hợp lệ." }, { status: 400 });
   const { id, options, correctOptions, tags, ...update } = parsed.data;
@@ -139,18 +134,19 @@ export async function PATCH(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   await ensureTable();
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.delete"); if (isAuthorizationError(access)) return access;
   const body = await request.json().catch(() => null);
   const parsed = deleteSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Danh sách câu hỏi không hợp lệ." }, { status: 400 });
   const ids = [...new Set(parsed.data.ids)];
   const deleted = await db.delete(categoryQuestions).where(inArray(categoryQuestions.id, ids)).returning({ id: categoryQuestions.id });
+  await writeAdminAudit({ actorUserId: access.userId, action: "questions.delete", resourceType: "question", metadata: { ids: deleted.map((item) => item.id) } });
   return NextResponse.json({ ok: true, deleted: deleted.length });
 }
 
 export async function PUT(request: NextRequest) {
   await ensureTable();
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.reorder"); if (isAuthorizationError(access)) return access;
   const parsed = reorderSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu sắp xếp không hợp lệ." }, { status: 400 });
   const { category, orderedIds } = parsed.data;

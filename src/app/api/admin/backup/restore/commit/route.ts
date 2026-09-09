@@ -2,16 +2,16 @@
 import { runRestore } from "@/lib/restoreCore";
 import { assembleSession, deleteSession, readSession, maxDecompressedChars } from "@/lib/restoreSession";
 import { gunzipSync } from "node:zlib";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { writeAdminAudit } from "@/lib/adminAudit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return Response.json({ error: "Bạn không có quyền khôi phục dữ liệu." }, { status: 403 });
-  }
+  const access = await requireAdminPermission("backup.restore");
+  if (isAuthorizationError(access)) return access;
 
   let body: { sessionId?: unknown; action?: unknown; confirmation?: unknown };
   try {
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
         unknownUsers: result.unknownUsers, strategy: "merge-only",
       });
     }
+    await writeAdminAudit({ actorUserId: access.userId, action: "backup.restore", resourceType: "database", metadata: { added: result.report.added } });
     return Response.json({ ok: true, report: result.report });
   } catch (error) {
     await deleteSession(sessionId).catch(() => undefined);

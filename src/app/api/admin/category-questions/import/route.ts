@@ -3,12 +3,14 @@ import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryQuestions, questionImportBatches } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { ensureQuestionImportSchema } from "@/lib/questionImportDb";
 import { normalizeQuestionIdentity } from "@/lib/questionImportParser";
 import { questionImportRequestSchema } from "@/lib/questionImportValidation";
 
 export async function POST(request: NextRequest) {
-  const session = await getSession(); if (session?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.import"); if (isAuthorizationError(access)) return access;
+  const session = { userId: access.userId };
   await ensureQuestionImportSchema();
   const parsed = questionImportRequestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu import không hợp lệ.", details: parsed.error.issues }, { status: 400 });

@@ -6,10 +6,14 @@ import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { z } from "zod";
+import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.role === "admin" && !(await getAdminAccess(session))?.can("vocab.view")) {
+    return NextResponse.json({ error: "Forbidden", code: "ADMIN_PERMISSION_REQUIRED", permission: "vocab.view" }, { status: 403 });
+  }
 
   let classFilter;
   if (session.role !== "admin") {
@@ -62,10 +66,8 @@ const createSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.create");
+  if (isAuthorizationError(access)) return access;
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
   const category = parsed.data.category ? normalizeText(parsed.data.category) : null;
   const [set] = await db.transaction(async (tx) => {
     if (category) {
-      await tx.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
+      await tx.insert(vocabCategories).values({ name: category, createdBy: access.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
     const normalizedName = normalizeText(parsed.data.name);
     const setName = category ? formatCategorySetName(await nextCategoryOrder(tx, category), normalizedName) : normalizedName;
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest) {
       category,
       type: parsed.data.type,
       classId: parsed.data.classId ?? null,
-      createdBy: session.userId,
+      createdBy: access.userId,
     }).returning();
   });
   return NextResponse.json({ set });

@@ -2,13 +2,11 @@ import { NextResponse } from "next/server";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { attempts, users } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("results.view");
+  if (isAuthorizationError(access)) return access;
 
   const rows = await db
     .select({

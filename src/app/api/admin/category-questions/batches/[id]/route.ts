@@ -3,10 +3,11 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryQuestions, questionImportBatches } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { ensureQuestionImportSchema } from "@/lib/questionImportDb";
 
 export async function DELETE(_: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession(); if (session?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.delete"); if (isAuthorizationError(access)) return access;
   const id = Number(params.id); if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Batch không hợp lệ." }, { status: 400 });
   await ensureQuestionImportSchema();
   const result = await db.transaction(async (tx) => {

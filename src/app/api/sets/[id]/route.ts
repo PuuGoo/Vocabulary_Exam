@@ -6,10 +6,13 @@ import { vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
+import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { writeAdminAudit } from "@/lib/adminAudit";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.role === "admin" && !(await getAdminAccess(session))?.can("vocab.view")) return NextResponse.json({ error: "Forbidden", code: "ADMIN_PERMISSION_REQUIRED", permission: "vocab.view" }, { status: 403 });
 
   const setId = Number(params.id);
   const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
@@ -41,10 +44,8 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.edit");
+  if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
   const body = await req.json().catch(() => null);
   const parsed = patchSchema.safeParse(body);
@@ -82,7 +83,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       if (duplicate) return { conflict: true as const, prefixNumber, category: nextCategory };
     }
     if (patch.category) {
-      await tx.insert(vocabCategories).values({ name: patch.category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
+      await tx.insert(vocabCategories).values({ name: patch.category, createdBy: access.userId }).onConflictDoNothing({ target: vocabCategories.name });
     }
     await tx.update(vocabSets).set(patch).where(eq(vocabSets.id, setId));
     return { set: await tx.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) }) };
@@ -97,11 +98,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.delete");
+  if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
   await db.delete(vocabSets).where(eq(vocabSets.id, setId));
+  await writeAdminAudit({ actorUserId: access.userId, action: "vocab.set.delete", resourceType: "vocab_set", resourceId: setId });
   return NextResponse.json({ ok: true });
 }

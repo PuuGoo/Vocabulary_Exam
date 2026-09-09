@@ -3,15 +3,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { fetchIpaBatch, isGeminiConfigured } from "@/lib/gemini";
 
 const BATCH_SIZE = 40;
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.edit");
+  if (isAuthorizationError(access)) return access;
   if (!isGeminiConfigured()) {
     return NextResponse.json(
       { error: "Chưa cấu hình GEMINI_API_KEY trên server. Xem README để biết cách lấy API key miễn phí." },
@@ -78,10 +77,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
 // Allow looking up which words in a set still lack IPA, for the "X/Y đã có phiên âm" progress display.
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.view");
+  if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
   const allWords = await db.select().from(words).where(eq(words.setId, setId));
   const withIpa = allWords.filter((w) => w.term ? Boolean(w.ipa) : Boolean(w.ipaV1 && w.ipaV2 && w.ipaV3)).length;

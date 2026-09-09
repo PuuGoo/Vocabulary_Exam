@@ -4,6 +4,7 @@ import { createAndSendBackupEmail } from "@/lib/backupEmail";
 import { getBackupEmailSchedule, saveBackupEmailSchedule } from "@/lib/backupSchedule";
 import { getEmailConfigStatus, verifyEmailTransport } from "@/lib/mailer";
 import { isBackupStorageConfigured } from "@/lib/backupStorage";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,13 +19,8 @@ const scheduleSchema = z.object({
   timezone: z.literal("Asia/Ho_Chi_Minh").optional().default("Asia/Ho_Chi_Minh"),
 });
 
-async function requireAdmin() {
-  const session = await getSession();
-  return session?.role === "admin" ? session : null;
-}
-
 export async function GET(request: Request) {
-  if (!await requireAdmin()) return Response.json({ error: "Bạn không có quyền xem lịch sao lưu." }, { status: 403 });
+  const access = await requireAdminPermission("backup.create"); if (isAuthorizationError(access)) return access;
   const email = getEmailConfigStatus();
   const verify = new URL(request.url).searchParams.get("verify") === "1";
   return Response.json({
@@ -37,7 +33,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!await requireAdmin()) return Response.json({ error: "Bạn không có quyền sửa lịch sao lưu." }, { status: 403 });
+  const access = await requireAdminPermission("backup.create"); if (isAuthorizationError(access)) return access;
   const parsed = scheduleSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Cấu hình không hợp lệ." }, { status: 400 });
   await saveBackupEmailSchedule({
@@ -50,7 +46,7 @@ export async function PUT(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!await requireAdmin()) return Response.json({ error: "Bạn không có quyền gửi bản sao lưu." }, { status: 403 });
+  const access = await requireAdminPermission("backup.create"); if (isAuthorizationError(access)) return access;
   const body = await request.json().catch(() => null) as { recipient?: unknown } | null;
   const email = z.string().trim().email().max(256).safeParse(body?.recipient);
   if (!email.success) return Response.json({ error: "Email nhận không hợp lệ." }, { status: 400 });

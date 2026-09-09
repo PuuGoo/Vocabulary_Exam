@@ -15,6 +15,7 @@ import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
 import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLetter, planPermanentOptionShuffle, type PermanentShufflePlan, type QuestionShuffleMode, type QuestionShuffleSettings, type ShuffleQuestion } from "@/lib/questionShuffle";
 import { getFillPatternValidationError, parseFillAnswerGroups } from "@/lib/fillAnswer";
 import { moveWordIdByOffset, moveWordIdToPosition } from "@/lib/wordOrder";
+import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -79,6 +80,7 @@ function toShuffleQuestion(question: any): AdminShuffleQuestion {
 
 export default function AdminSetsPage() {
   const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
+  const adminAccess = useAdminPermissions();
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategorySummary[]>([]);
@@ -1277,7 +1279,7 @@ export default function AdminSetsPage() {
   }
 
   return (
-    <div className={cx.panel}>
+    <div className={`${cx.panel} ${!adminAccess.can("vocab.edit") && !adminAccess.can("questions.edit") && !adminAccess.can("documents.edit") ? "admin-content-readonly" : ""}`}>
       {confirmDialog}
       <h2 className={cx.h2}>Các bộ từ vựng</h2>
       <div className={cx.desc}>
@@ -1298,12 +1300,12 @@ export default function AdminSetsPage() {
           />
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShowCategoryManager(true)}>
+          {adminAccess.can("vocab.edit") && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShowCategoryManager(true)}>
             📁 Quản lý danh mục
-          </button>
-          <button className={`${cx.btn} ${cx.btnGold}`} onClick={openNewSetForm}>
+          </button>}
+          {adminAccess.can("vocab.create") && <button className={`${cx.btn} ${cx.btnGold}`} onClick={openNewSetForm}>
             + Tạo bộ từ vựng mới
-          </button>
+          </button>}
         </div>
       </div>
       {sets && categories.length > 0 && (
@@ -1369,7 +1371,7 @@ export default function AdminSetsPage() {
             <div><h3 className="text-sm font-bold text-ink">Ngân hàng câu hỏi</h3><p className="mt-1 text-xs text-muted">Hỗ trợ IELTS Speaking, trắc nghiệm A–D và tự luận có đáp án mẫu.</p></div>
             <div className="flex items-center gap-2"><button type="button" role="switch" aria-checked={spellCheckEnabled} onClick={() => changeSpellCheck(!spellCheckEnabled)} className={`min-h-8 rounded-lg border px-2.5 text-xs font-bold ${spellCheckEnabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`}>Chính tả: {spellCheckEnabled ? "Bật" : "Tắt"}</button><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{questionsLoading ? "..." : categoryQuestions.length + " câu hỏi"}</span></div>
           </div>
-          <div className="mb-4 rounded-xl border border-[#DDD8FF] bg-[#F8F7FF] p-3"><div className="mb-2"><b className="text-xs text-ink">Smart Bulk Import / Export</b><p className="mt-0.5 text-[0.7rem] text-muted">Paste thông minh, Excel, PDF, lịch sử batch và Undo Import.</p></div><QuestionImportExportTools category={selectedCategory} questions={categoryQuestions} onChanged={refreshCategoryQuestions} /></div>
+          {(adminAccess.can("questions.import") || adminAccess.can("questions.export")) && <div className="mb-4 rounded-xl border border-[#DDD8FF] bg-[#F8F7FF] p-3"><div className="mb-2"><b className="text-xs text-ink">Smart Bulk Import / Export</b><p className="mt-0.5 text-[0.7rem] text-muted">Paste thông minh, Excel, PDF, lịch sử batch và Undo Import.</p></div><QuestionImportExportTools category={selectedCategory} questions={categoryQuestions} onChanged={refreshCategoryQuestions} /></div>}
           <div className="mb-4 rounded-xl border border-[#D8E7E0] bg-[#F7FCF9] p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div><b className="text-xs text-ink">Xáo trộn khi làm bài</b><p className="mt-0.5 text-[0.7rem] text-muted">Thứ tự được tạo một lần cho từng lượt làm và giữ nguyên khi tải lại trang.</p></div>
@@ -1753,7 +1755,7 @@ export default function AdminSetsPage() {
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
-              <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type })}>Chia sẻ</button>
+              {adminAccess.can("sharing.manage") && <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type })}>Chia sẻ</button>}
               <div className="relative" data-preview-menu>
                 <button
                   type="button"
@@ -1964,18 +1966,18 @@ export default function AdminSetsPage() {
             {reorderingWords && <p className="mt-2 text-xs font-semibold text-golddark" role="status">Đang lưu thứ tự...</p>}
           </div>
           <div className="flex gap-2.5 mb-3 flex-wrap">
-            <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
+            {adminAccess.can("vocab.create") && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setShowAddWord((v) => !v)}>
               + Thêm từ thủ công
-            </button>
-            <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}&returnTo=${encodeURIComponent(`/admin/sets?openSet=${detail.id}${detail.category ? `&category=${encodeURIComponent(detail.category)}` : ""}`)}`}>
+            </button>}
+            {adminAccess.can("vocab.import") && <Link className={`${cx.btn} ${cx.btnGhost}`} href={`/admin/import?target=${detail.id}&returnTo=${encodeURIComponent(`/admin/sets?openSet=${detail.id}${detail.category ? `&category=${encodeURIComponent(detail.category)}` : ""}`)}`}>
               ↑ Nhập CSV / Excel vào bộ này
-            </Link>
-            <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(false)}>
+            </Link>}
+            {adminAccess.can("vocab.edit") && <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(false)}>
               {bulkIpaLoading ? "Đang lấy phiên âm..." : "🔤 Lấy phiên âm còn thiếu (Gemini)"}
-            </button>
-            <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(true)}>
+            </button>}
+            {adminAccess.can("vocab.edit") && <button className={`${cx.btn} ${cx.btnGhost}`} disabled={bulkIpaLoading} onClick={() => fetchIpaForSet(true)}>
               🔤 Lấy lại phiên âm cho tất cả
-            </button>
+            </button>}
             <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setDetail(null)}>
               Đóng
             </button>
@@ -2135,15 +2137,15 @@ export default function AdminSetsPage() {
                     </td>
                     <td className={cx.td}>
                       <div className="flex flex-wrap gap-1.5">
-                        <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} disabled={reorderingWords} onClick={() => moveWordToExactPosition(w)}>
+                        {adminAccess.can("vocab.reorder") && <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} disabled={reorderingWords} onClick={() => moveWordToExactPosition(w)}>
                           Chuyển đến STT…
-                        </button>
-                        <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
+                        </button>}
+                        {adminAccess.can("vocab.edit") && <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
                           Sửa
-                        </button>
-                        <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
+                        </button>}
+                        {adminAccess.can("vocab.delete") && <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
                           Xoá
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>

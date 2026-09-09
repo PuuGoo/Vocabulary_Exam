@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { cx } from "@/components/ui";
+import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 
 type ResultRow = {
   id: number;
@@ -34,6 +35,7 @@ function modeLabel(r: Pick<ResultRow, "mode" | "timed">) {
 }
 
 export default function AdminResultsPage() {
+  const access = useAdminPermissions();
   const [rows, setRows] = useState<ResultRow[] | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [studentFilter, setStudentFilter] = useState("");
@@ -109,8 +111,8 @@ export default function AdminResultsPage() {
           <p className={cx.desc}>Tổng hợp toàn bộ lượt kiểm tra từ vựng của học sinh.</p>
         </div>
         <div className="flex gap-2">
-          <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => void exportExcel()} disabled={!rows || rows.length === 0}>📊 Xuất Excel</button>
-          <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => window.print()} disabled={!rows || rows.length === 0}>🖨️ In / PDF</button>
+          {access.can("results.export") && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => void exportExcel()} disabled={!rows || rows.length === 0}>📊 Xuất Excel</button>}
+          {access.can("results.export") && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => window.print()} disabled={!rows || rows.length === 0}>🖨️ In / PDF</button>}
         </div>
       </div>
 

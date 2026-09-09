@@ -3,13 +3,13 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { assignmentExtensions, assignmentSubmissions, assignments, attempts, classes, classMembers, users, vocabSets } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { assignmentProgress } from "@/lib/assignments";
 import { normalizeText } from "@/lib/text";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("assignments.view");
+  if (isAuthorizationError(access)) return access;
   const id = Number(params.id);
   if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Mã bài tập không hợp lệ." }, { status: 400 });
   const [assignment] = await db
@@ -73,8 +73,8 @@ const patchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("assignments.edit");
+  if (isAuthorizationError(access)) return access;
   const id = Number(params.id);
   if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Mã bài tập không hợp lệ." }, { status: 400 });
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));

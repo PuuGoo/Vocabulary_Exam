@@ -2,16 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { asc, eq, inArray, like, or } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryDocuments, vocabCategories } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { DOCUMENT_CHUNK_BYTES, documentContentLooksValid, documentExtension, documentMimeType, isSupportedDocument, stripDocumentExtension } from "@/lib/categoryDocumentFile";
+import { writeAdminAudit } from "@/lib/adminAudit";
 
 export const runtime = "nodejs";
-
-async function requireAdmin() {
-  const session = await getSession();
-  return session?.role === "admin" ? session : null;
-}
 
 function removeDocumentPrefix(value: string) {
   return value.replace(/^\s*\d+\s*[._-]?\s*/, "").trim();
@@ -43,7 +39,7 @@ const summaryFields = {
 };
 
 export async function GET(request: NextRequest) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.view"); if (isAuthorizationError(access)) return access;
   const category = request.nextUrl.searchParams.get("category")?.trim();
   if (!category) return NextResponse.json({ documents: [] });
   const documentCategories = await db.selectDistinct({ category: categoryDocuments.category }).from(categoryDocuments).where(or(
@@ -59,8 +55,7 @@ export async function GET(request: NextRequest) {
 // Compatibility endpoint for old clients. The new UI uses chunked uploads so
 // large files never need to fit in one Vercel request.
 export async function POST(request: NextRequest) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.upload"); if (isAuthorizationError(access)) return access;
   const form = await request.formData();
   const category = normalizeText(String(form.get("category") || "").trim());
   const files = form.getAll("files").filter((item): item is File => item instanceof File);
@@ -80,7 +75,7 @@ export async function POST(request: NextRequest) {
     const title = files.length === 1 && requestedTitle ? requestedTitle : stripDocumentExtension(file.name);
     const [document] = await db.insert(categoryDocuments).values({
       category, title: title.slice(0, 256), fileName: normalizeText(file.name).slice(0, 256),
-      fileType: documentMimeType(file.name, file.type), fileSize: fileData.byteLength, fileData, createdBy: session.userId,
+      fileType: documentMimeType(file.name, file.type), fileSize: fileData.byteLength, fileData, createdBy: access.userId,
     }).returning({ id: categoryDocuments.id });
     documentIds.push(document.id);
   }
@@ -90,7 +85,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.edit"); if (isAuthorizationError(access)) return access;
   const body = await request.json().catch(() => null);
   const id = Number(body?.id);
   const title = normalizeText(String(body?.title || "").trim());
@@ -109,7 +104,7 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.edit"); if (isAuthorizationError(access)) return access;
   const form = await request.formData();
   const id = Number(form.get("id"));
   const file = form.get("file");
@@ -127,11 +122,12 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.delete"); if (isAuthorizationError(access)) return access;
   const id = Number(request.nextUrl.searchParams.get("id"));
   if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Tài liệu không hợp lệ." }, { status: 400 });
   const deleted = await db.delete(categoryDocuments).where(eq(categoryDocuments.id, id)).returning({ id: categoryDocuments.id, category: categoryDocuments.category });
   if (!deleted.length) return NextResponse.json({ error: "Không tìm thấy tài liệu." }, { status: 404 });
   await renumberCategoryDocuments(db, deleted[0].category);
+  await writeAdminAudit({ actorUserId: access.userId, action: "documents.delete", resourceType: "document", resourceId: id, metadata: { category: deleted[0].category } });
   return NextResponse.json({ ok: true });
 }

@@ -284,6 +284,11 @@ html.lexora-native-app :is(a, button, [role="button"]) {
   animation: lexora-undo-countdown 5s linear both;
 }
 
+.admin-content-readonly button[draggable="true"],
+.admin-content-readonly input[type="checkbox"] {
+  display: none;
+}
+
 /* Focus mode budgets vertical space by viewport height. The document stays
    stable; only unusually long feedback may scroll inside the question card. */
 @media (min-width: 768px) and (max-height: 800px) {

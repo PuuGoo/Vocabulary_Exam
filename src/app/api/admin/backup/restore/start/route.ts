@@ -1,15 +1,14 @@
 ﻿import { getSession } from "@/lib/auth";
 import { CHUNK_SIZE, createSession, maxRestoreBytes, pruneSessions } from "@/lib/restoreSession";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return Response.json({ error: "Bạn không có quyền khôi phục dữ liệu." }, { status: 403 });
-  }
+  const access = await requireAdminPermission("backup.restore");
+  if (isAuthorizationError(access)) return access;
   const body = await request.json().catch(() => null) as { originalName?: unknown; totalBytes?: unknown } | null;
   const totalBytes = Number(body?.totalBytes);
   const originalName = typeof body?.originalName === "string" ? body.originalName : "restore.json";

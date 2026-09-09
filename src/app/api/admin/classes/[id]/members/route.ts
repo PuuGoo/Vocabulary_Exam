@@ -3,13 +3,11 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { classMembers, users } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("classes.view");
+  if (isAuthorizationError(access)) return access;
   const classId = Number(params.id);
   const students = await db.select().from(users).where(eq(users.role, "student"));
   const members = await db.select().from(classMembers).where(eq(classMembers.classId, classId));
@@ -26,10 +24,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 const schema = z.object({ userId: z.number().int() });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("classes.members");
+  if (isAuthorizationError(access)) return access;
   const classId = Number(params.id);
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
@@ -43,10 +39,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("classes.members");
+  if (isAuthorizationError(access)) return access;
   const classId = Number(params.id);
   const userId = Number(req.nextUrl.searchParams.get("userId"));
   if (!userId) return NextResponse.json({ error: "Thiếu userId." }, { status: 400 });

@@ -3,13 +3,13 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { assignmentExtensions, assignments, attempts, classes, classMembers, vocabSets } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { assignmentProgress, ASSIGNMENT_MODES, modesForSetType } from "@/lib/assignments";
 import { normalizeText } from "@/lib/text";
 
 export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("assignments.view");
+  if (isAuthorizationError(access)) return access;
   const includeArchived = req.nextUrl.searchParams.get("archived") === "1";
   const rows = await db
     .select({
@@ -83,8 +83,8 @@ const createSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("assignments.create");
+  if (isAuthorizationError(access)) return access;
   const parsed = createSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Dữ liệu không hợp lệ." }, { status: 400 });
 
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
     minScore: parsed.data.minScore,
     dueAt: parsed.data.dueAt ? new Date(parsed.data.dueAt) : null,
     timeLimitMinutes: parsed.data.mode === "timed" ? parsed.data.timeLimitMinutes : null,
-    createdBy: session.userId,
+    createdBy: access.userId,
   }))).returning();
   return NextResponse.json({ assignment: rows[0], assignments: rows, createdCount: rows.length });
 }

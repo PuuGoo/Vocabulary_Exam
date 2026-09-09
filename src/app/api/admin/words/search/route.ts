@@ -3,16 +3,15 @@ import { asc, eq, ilike, or } from "drizzle-orm";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
 }
 
 export async function GET(request: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.view");
+  if (isAuthorizationError(access)) return access;
 
   const query = request.nextUrl.searchParams.get("q")?.trim() || "";
   if (query.length < 2) return NextResponse.json({ matches: [] });

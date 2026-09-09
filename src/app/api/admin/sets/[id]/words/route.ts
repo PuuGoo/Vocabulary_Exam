@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { appendWord } from "@/lib/wordOrder.server";
@@ -26,10 +26,8 @@ const vocabSchema = z.object({
 });
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.create");
+  if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
   const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
   if (!set) return NextResponse.json({ error: "Không tìm thấy bộ từ vựng." }, { status: 404 });

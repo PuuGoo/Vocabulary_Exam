@@ -6,6 +6,7 @@ import { categoryDocuments, categoryDocumentUploads, vocabCategories } from "@/d
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { DOCUMENT_CHUNK_BYTES, documentMimeType, isSupportedDocument, stripDocumentExtension } from "@/lib/categoryDocumentFile";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 
@@ -19,10 +20,10 @@ const schema = z.object({
 });
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Forbidden" }, { status: 403 });
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: parsed.error.issues[0]?.message || "Thông tin file không hợp lệ." }, { status: 400 });
+  const access = await requireAdminPermission(parsed.data.targetDocumentId ? "documents.edit" : "documents.upload");
+  if (isAuthorizationError(access)) return access;
   const input = parsed.data;
   if (!isSupportedDocument(input.fileName, input.fileType)) return Response.json({ error: "Chỉ chấp nhận file PDF, DOCX hoặc DOC." }, { status: 415 });
 
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
     fileSize: input.fileSize,
     chunkCount,
     targetDocumentId: input.targetDocumentId ?? null,
-    createdBy: session.userId,
+    createdBy: access.userId,
   });
   return Response.json({ uploadId, chunkBytes: DOCUMENT_CHUNK_BYTES, chunkCount });
 }

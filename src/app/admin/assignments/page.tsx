@@ -9,6 +9,7 @@ import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { ASSIGNMENT_MODE_LABELS, AssignmentMode, AssignmentStatus, assignmentHref, modesForSetType } from "@/lib/assignments";
 import { buildCsv } from "@/lib/csv";
+import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 
 type ClassRow = { id: number; name: string; memberCount: number };
 type SetRow = { id: number; name: string; type: string; classId: number | null; count: number };
@@ -32,6 +33,7 @@ function toLocalInput(value: string | null) {
   return local.toISOString().slice(0, 16);
 }
 export default function AdminAssignmentsPage() {
+  const access = useAdminPermissions();
   const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
   const [rows, setRows] = useState<AssignmentRow[] | null>(null);
   const [classes, setClasses] = useState<ClassRow[]>([]);
@@ -232,7 +234,7 @@ export default function AdminAssignmentsPage() {
       {confirmDialog}
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div><h2 className={cx.h2}>Giao bài theo lớp</h2><p className={cx.desc + " !mb-0"}>Chọn bộ từ và chế độ; hệ thống tự ghi nhận khi học sinh đạt điểm yêu cầu.</p></div>
-        <button className={`${cx.btn} ${cx.btnGold}`} onClick={openCreate}>+ Giao bài mới</button>
+        {access.can("assignments.create") && <button className={`${cx.btn} ${cx.btnGold}`} onClick={openCreate}>+ Giao bài mới</button>}
       </div>
       <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-white px-3 py-2">
         <span className="text-sm">{archived ? "Bài đã lưu trữ" : "Bài đang hoạt động"}</span>
@@ -253,7 +255,7 @@ export default function AdminAssignmentsPage() {
             <div><b className="block text-base">{row.summary.excused}</b><span className="text-muted">được miễn</span></div>
           </div>
           <div className="mt-3 text-[0.8rem] text-muted">Hạn: <span className="text-ink">{dateText(row.dueAt)}</span> · Đạt từ <span className="text-ink">{row.minScore}%</span>{row.timeLimitMinutes ? ` · ${row.timeLimitMinutes} phút` : ""}</div>
-          <div className="mt-4 flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnDark} !px-3 !py-1.5`} onClick={() => void openDetail(row)}>Xem tiến độ</button><button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => openEdit(row)}>Sửa</button><button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => openDuplicate(row)}>Nhân bản</button><Link target="_blank" href={assignmentHref(row)} className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`}>Xem thử</Link><button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5 ml-auto`} onClick={() => void toggleArchive(row)}>{row.archived ? "Khôi phục" : "Lưu trữ"}</button></div>
+          <div className="mt-4 flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnDark} !px-3 !py-1.5`} onClick={() => void openDetail(row)}>Xem tiến độ</button>{access.can("assignments.edit") && <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => openEdit(row)}>Sửa</button>}{access.can("assignments.create") && <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => openDuplicate(row)}>Nhân bản</button>}<Link target="_blank" href={assignmentHref(row)} className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`}>Xem thử</Link>{access.can("assignments.edit") && <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5 ml-auto`} onClick={() => void toggleArchive(row)}>{row.archived ? "Khôi phục" : "Lưu trữ"}</button>}</div>
         </article>)}</div>}
 
       {formOpen && <Modal title={editing ? "Sửa bài tập" : duplicating ? "Nhân bản và giao lại" : "Giao bài mới"} onClose={() => !saving && setFormOpen(false)}>

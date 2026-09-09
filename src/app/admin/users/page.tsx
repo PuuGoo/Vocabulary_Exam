@@ -1,224 +1,131 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { cx } from "@/components/ui";
-import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
-import ConfirmDialog, { type ConfirmOptions } from "@/components/ConfirmDialog";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { toast } from "@/components/Toast";
+import { cx } from "@/components/ui";
+import { useAdminPermissions } from "@/components/AdminPermissionProvider";
+import {
+  ADMIN_PERMISSION_GROUPS, ADMIN_PERMISSION_LABELS, ADMIN_PROFILES,
+  ADMIN_PROFILE_LABELS, ADMIN_PROFILE_PERMISSIONS, normalizePermissionSelection,
+  type AdminPermission, type AdminProfile,
+} from "@/lib/adminPermissions";
 
-type UserRow = { id: number; username: string; displayName: string; role: "admin" | "student" };
-type Pending = { options: ConfirmOptions; action: "delete-user" | "close-registration"; userId?: number };
+type UserRow = { id: number; username: string; displayName: string; role: "admin" | "student"; adminProfile: AdminProfile | null; permissions: AdminPermission[] };
+const emptyForm = { username: "", displayName: "", password: "", role: "student" as "admin" | "student", adminProfile: "viewer" as AdminProfile };
 
 export default function AdminUsersPage() {
+  const access = useAdminPermissions();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog();
   const [users, setUsers] = useState<UserRow[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | "admin" | "student">("all");
-  const [addOpen, setAddOpen] = useState(false);
-  const [form, setForm] = useState({ username: "", displayName: "", password: "", role: "student" as "admin" | "student" });
-  const [menuFor, setMenuFor] = useState<number | null>(null);
-  const [confirm, setConfirm] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
-  const [registrationOpen, setRegistrationOpen] = useState<boolean | null>(null);
-  const [savingRegistration, setSavingRegistration] = useState(false);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [addOpen, setAddOpen] = useState(false);
+  const [permissionUser, setPermissionUser] = useState<UserRow | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [profile, setProfile] = useState<AdminProfile>("viewer");
+  const [permissions, setPermissions] = useState<AdminPermission[]>([]);
+  const [registration, setRegistration] = useState<boolean | null>(null);
 
   async function load() {
-    const res = await fetch("/api/admin/users");
-    const data = await res.json();
-    setUsers(data.users || []);
+    const response = await fetch("/api/admin/users");
+    const data = await response.json().catch(() => ({}));
+    if (response.ok) setUsers(data.users || []);
   }
-
   useEffect(() => {
-    load();
-    fetch("/api/admin/registration-settings").then((res) => res.ok ? res.json() : null).then((data) => { if (data) setRegistrationOpen(data.open); });
+    void load();
+    if (access.can("registration.view")) void fetch("/api/admin/registration-settings").then((response) => response.ok ? response.json() : null).then((data) => data && setRegistration(data.open));
   }, []);
 
-  async function saveRegistration(next: boolean) {
-    setSavingRegistration(true);
-    try {
-      const res = await fetch("/api/admin/registration-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ open: next }) });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return toast(data.error || "Không thể cập nhật trạng thái đăng ký.");
-      setRegistrationOpen(data.open);
-      toast(data.open ? "Đã mở đăng ký tài khoản học sinh." : "Đã khóa đăng ký công khai.");
-    } finally {
-      setSavingRegistration(false);
-      setConfirm(null);
-    }
-  }
-
-  function toggleRegistration() {
-    if (registrationOpen === null || savingRegistration) return;
-    const next = !registrationOpen;
-    if (!next) {
-      setConfirm({ options: { title: "Khóa đăng ký công khai?", description: "Học sinh mới sẽ không thể tự tạo tài khoản, nhưng admin vẫn có thể tạo tài khoản tại trang này.", confirmLabel: "Khóa đăng ký", tone: "warning" }, action: "close-registration" });
-      return;
-    }
-    void saveRegistration(true);
-  }
+  const filtered = useMemo(() => users.filter((user) => {
+    const matchesRole = roleFilter === "all" || user.role === roleFilter || user.adminProfile === roleFilter;
+    return matchesRole && `${user.displayName} ${user.username}`.toLocaleLowerCase("vi").includes(search.trim().toLocaleLowerCase("vi"));
+  }), [users, roleFilter, search]);
 
   async function addUser() {
-    if (!form.username.trim() || !form.password) return toast("Vui lòng nhập tên đăng nhập và mật khẩu.");
-    setBusy(true);
-    const res = await fetch("/api/admin/users", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, displayName: form.displayName || form.username }),
-    });
-    const data = await res.json();
-    setBusy(false);
-    if (!res.ok) return toast(data.error || "Không thể thêm người dùng.");
-    toast("Đã thêm người dùng.");
-    setAddOpen(false);
-    setForm({ username: "", displayName: "", password: "", role: "student" });
-    load();
-  }
-
-  function confirmDelete(user: UserRow) {
-    setMenuFor(null);
-    setConfirm({ options: { title: "Xóa người dùng?", description: `${user.displayName} (${user.username}) sẽ không thể đăng nhập. Hành động này không thể hoàn tác.`, confirmLabel: "Xóa người dùng", tone: "danger" }, action: "delete-user", userId: user.id });
-  }
-
-  async function deleteUser(id: number) {
+    if (form.role === "admin" && form.adminProfile === "owner") {
+      const accepted = await confirm({ title: "Cấp toàn quyền Owner?", description: "Người này sẽ có thể thay đổi quyền của mọi quản trị viên và khôi phục dữ liệu.", confirmLabel: "Cấp quyền Owner", tone: "warning" });
+      if (!accepted) return;
+    }
     setBusy(true);
     try {
-      const res = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) return toast(data.error || "Không thể xoá.");
-      toast("Đã xóa người dùng.");
-      load();
-    } finally {
-      setBusy(false);
-      setConfirm(null);
-    }
+      const response = await fetch("/api/admin/users", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return toast(data.error || "Không thể thêm người dùng.");
+      setAddOpen(false); setForm(emptyForm); await load(); toast("Đã thêm người dùng.");
+    } finally { setBusy(false); }
   }
-
-  async function generateResetLink(id: number) {
-    setMenuFor(null);
-    const res = await fetch(`/api/admin/users/${id}/reset-link`, { method: "POST" });
-    const data = await res.json();
-    if (!res.ok) return toast(data.error || "Không thể tạo link.");
+  async function remove(user: UserRow) {
+    const accepted = await confirm({ title: "Xóa tài khoản?", description: `${user.displayName} (@${user.username}) sẽ bị xóa.`, confirmLabel: "Xóa tài khoản", tone: "danger" });
+    if (!accepted) return;
+    const response = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return toast(data.error || "Không thể xóa.");
+    await load();
+  }
+  async function reset(user: UserRow) {
+    const response = await fetch(`/api/admin/users/${user.id}/reset-link`, { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return toast(data.error || "Không thể tạo liên kết.");
+    await navigator.clipboard.writeText(data.resetUrl); toast("Đã sao chép liên kết đặt lại mật khẩu.");
+  }
+  function editPermissions(user: UserRow) { setPermissionUser(user); setProfile(user.adminProfile || "viewer"); setPermissions(user.permissions || []); }
+  function chooseProfile(next: AdminProfile) { setProfile(next); setPermissions([...ADMIN_PROFILE_PERMISSIONS[next]]); }
+  function toggle(permission: AdminPermission) {
+    setProfile("custom");
+    const removing = permissions.includes(permission);
+    const prefix = `${permission.split(".")[0]}.`;
+    const next = removing && permission.endsWith(".view") ? permissions.filter((item) => !item.startsWith(prefix)) : removing ? permissions.filter((item) => item !== permission) : [...permissions, permission];
+    setPermissions(normalizePermissionSelection(next));
+  }
+  function toggleGroup(groupPermissions: readonly AdminPermission[]) {
+    setProfile("custom");
+    const allEnabled = groupPermissions.every((permission) => permissions.includes(permission));
+    const group = new Set(groupPermissions);
+    setPermissions(normalizePermissionSelection(allEnabled ? permissions.filter((permission) => !group.has(permission)) : [...permissions, ...groupPermissions]));
+  }
+  async function savePermissions() {
+    if (!permissionUser) return;
+    if (profile === "owner" || permissions.includes("permissions.manage") || permissions.includes("backup.restore")) {
+      const accepted = await confirm({ title: profile === "owner" ? "Cấp toàn quyền Owner?" : "Cấp quyền quản trị nhạy cảm?", description: "Thay đổi này cho phép quản lý quyền hoặc khôi phục dữ liệu. Hãy xác nhận người nhận thực sự cần quyền này.", confirmLabel: "Xác nhận cấp quyền", tone: "warning" });
+      if (!accepted) return;
+    }
+    setBusy(true);
     try {
-      await navigator.clipboard.writeText(data.resetUrl);
-      toast("Đã sao chép link đặt lại mật khẩu — gửi cho học sinh (Zalo/email...). Link hết hạn sau 1 giờ.");
-    } catch {
-      prompt("Sao chép link đặt lại mật khẩu (hết hạn sau 1 giờ):", data.resetUrl);
-    }
+      const response = await fetch(`/api/admin/users/${permissionUser.id}/permissions`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ profile, permissions }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return toast(data.error || "Không thể lưu quyền.");
+      setPermissionUser(null); await load(); toast("Đã cập nhật quyền quản trị.");
+    } finally { setBusy(false); }
+  }
+  async function toggleRegistration() {
+    if (registration == null || !access.can("registration.manage")) return;
+    const response = await fetch("/api/admin/registration-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ open: !registration }) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) return toast(data.error || "Không thể cập nhật.");
+    setRegistration(data.open);
   }
 
-  const filteredUsers = useMemo(() => {
-    const q = searchQuery.trim().toLocaleLowerCase("vi");
-    return users.filter((u) => {
-      const matchText = !q || `${u.displayName} ${u.username}`.toLocaleLowerCase("vi").includes(q);
-      const matchRole = roleFilter === "all" || u.role === roleFilter;
-      return matchText && matchRole;
-    });
-  }, [searchQuery, roleFilter, users]);
+  const actions = (user: UserRow) => <div className="flex flex-wrap gap-1">
+    {access.can("users.reset_password") && <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1 text-xs`} onClick={() => void reset(user)}>Đặt lại MK</button>}
+    {user.role === "admin" && access.can("permissions.manage") && <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1 text-xs`} onClick={() => editPermissions(user)}>Phân quyền</button>}
+    {access.can("users.delete") && <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1 text-xs`} onClick={() => void remove(user)}>Xóa</button>}
+  </div>;
 
-  const total = users.length;
-  const admins = users.filter((u) => u.role === "admin").length;
-  const students = total - admins;
-
-  return (
-    <div className={cx.panel}>
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
-        <div><h2 className={cx.h2}>Người dùng</h2><p className={cx.desc + " !mb-0"}>Quản lý tài khoản học sinh và admin.</p></div>
-        <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setAddOpen(true)}>+ Thêm người dùng</button>
-      </div>
-
-      <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3">
-        <Stat value={total} label="Tổng số" />
-        <Stat value={students} label="Học sinh" tone="ok" />
-        <Stat value={admins} label="Admin" />
-      </div>
-
-      <div className="mb-4 flex flex-wrap gap-2">
-        <input type="search" className={`${cx.input} !mb-0 min-w-[220px] flex-1`} placeholder="Tìm tên hoặc tài khoản..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-        <select className={`${cx.input} !mb-0 !w-auto`} value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as typeof roleFilter)}>
-          <option value="all">Mọi vai trò</option>
-          <option value="student">Học sinh</option>
-          <option value="admin">Admin</option>
-        </select>
-      </div>
-
-      <section id="registration-settings" className={`mb-5 scroll-mt-24 rounded-[16px] border p-4 sm:p-5 ${registrationOpen === false ? "border-[#F0B7B7] bg-[#FFF7F7]" : "border-[#CFC7FF] bg-[#F8F6FF]"}`}>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] text-lg ${registrationOpen === false ? "bg-[#FFE4E7]" : "bg-white"}`} aria-hidden="true">{registrationOpen === false ? "🔒" : "🔓"}</span><div><p className="text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#6550DB]">Bảo mật đăng ký</p><h3 className="mt-1 text-base font-extrabold text-ink">Cho phép học sinh tự đăng ký</h3><p className="mt-1 text-xs leading-5 text-muted">Khi tắt, trang đăng ký sẽ bị khóa; admin vẫn tạo được tài khoản tại trang này.</p></div></div>
-        <button type="button" role="switch" aria-checked={registrationOpen ?? false} disabled={registrationOpen === null || savingRegistration} onClick={toggleRegistration} className={`flex min-h-12 shrink-0 items-center justify-between gap-3 rounded-full border px-3 pl-4 text-sm font-bold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#7865EE]/15 ${registrationOpen ? "border-[#B6DEC8] bg-[#EEFBF3] text-[#277A4B]" : "border-[#F0B7B7] bg-white text-[#B64242]"}`}><span>{savingRegistration ? "Đang lưu…" : registrationOpen === null ? "Đang tải…" : registrationOpen ? "Đang mở" : "Đã khóa"}</span><span className={`relative h-7 w-12 rounded-full transition ${registrationOpen ? "bg-[#36A36B]" : "bg-[#D8A0A8]"}`}><span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform ${registrationOpen ? "translate-x-6" : "translate-x-1"}`} /></span></button></div>
-      </section>
-
-      {filteredUsers.length === 0 ? (
-        <div className={cx.empty}>Không tìm thấy người dùng phù hợp.</div>
-      ) : (
-        <div className="hidden overflow-x-auto rounded-lg border border-line md:block">
-          <table className={cx.table}>
-            <thead><tr><th className={cx.th}>Tên</th><th className={cx.th}>Tài khoản</th><th className={cx.th}>Vai trò</th><th className={cx.th}></th></tr></thead>
-            <tbody>
-              {filteredUsers.map((u) => (
-                <tr key={u.id}>
-                  <td className={cx.td}>{u.displayName}</td>
-                  <td className={cx.td}>@{u.username}</td>
-                  <td className={cx.td}><span className={u.role === "admin" ? cx.badgeGold : cx.badgeBlue}>{u.role === "admin" ? "Admin" : "Học sinh"}</span></td>
-                  <td className={cx.td}>
-                    <div className="relative">
-                      <button type="button" aria-haspopup="menu" aria-expanded={menuFor === u.id} onClick={() => setMenuFor(menuFor === u.id ? null : u.id)} className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1`}>•••</button>
-                      {menuFor === u.id && (
-                        <div role="menu" className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-line bg-white p-1.5 shadow-lg">
-                          <button type="button" role="menuitem" onClick={() => generateResetLink(u.id)} className="block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-goldpale/40">Tạo link đặt lại mật khẩu</button>
-                          {u.username !== "admin" && <button type="button" role="menuitem" onClick={() => confirmDelete(u)} className="block w-full rounded-md px-3 py-2 text-left text-sm text-bad hover:bg-badbg">Xóa người dùng</button>}
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      <div className="space-y-3 md:hidden">
-        {filteredUsers.map((u) => (
-          <article key={u.id} className="rounded-[13px] border border-line bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div><b>{u.displayName}</b><p className="text-xs text-muted">@{u.username}</p></div>
-              <span className={u.role === "admin" ? cx.badgeGold : cx.badgeBlue}>{u.role === "admin" ? "Admin" : "Học sinh"}</span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1 text-xs`} onClick={() => generateResetLink(u.id)}>Đặt lại mật khẩu</button>
-              {u.username !== "admin" && <button className={`${cx.btn} ${cx.btnDanger} !px-3 !py-1 text-xs`} onClick={() => confirmDelete(u)}>Xóa</button>}
-            </div>
-          </article>
-        ))}
-      </div>
-
-      {addOpen && (
-        <Modal title="Thêm người dùng" onClose={() => !busy && setAddOpen(false)}>
-          <div className="grid grid-cols-1 gap-3">
-            <label><span className={cx.label}>Tên đăng nhập *</span><input className={cx.input} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} /></label>
-            <label><span className={cx.label}>Tên hiển thị</span><input className={cx.input} value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} /></label>
-            <label><span className={cx.label}>Mật khẩu *</span><input className={cx.input} type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
-            <label><span className={cx.label}>Vai trò</span><select className={cx.input} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as "admin" | "student" })}><option value="student">Học sinh</option><option value="admin">Admin</option></select></label>
-          </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <button className={`${cx.btn} ${cx.btnGhost}`} disabled={busy} onClick={() => setAddOpen(false)}>Hủy</button>
-            <button className={`${cx.btn} ${cx.btnGold}`} disabled={busy} onClick={() => void addUser()}>{busy ? "Đang thêm..." : "Thêm người dùng"}</button>
-          </div>
-        </Modal>
-      )}
-
-      <ConfirmDialog
-        open={Boolean(confirm)}
-        options={confirm?.options || null}
-        busy={busy || savingRegistration}
-        onConfirm={() => {
-          if (confirm?.action === "close-registration") void saveRegistration(false);
-          else if (confirm?.action === "delete-user" && confirm.userId) void deleteUser(confirm.userId);
-        }}
-        onCancel={() => setConfirm(null)}
-      />
-    </div>
-  );
+  return <div className={cx.panel}>
+    {confirmDialog}
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3"><div><h2 className={cx.h2}>Người dùng & phân quyền</h2><p className={cx.desc}>Quản lý tài khoản và quyền truy cập khu vực Admin.</p></div>{access.can("users.create") && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => setAddOpen(true)}>+ Thêm người dùng</button>}</div>
+    {access.can("registration.view") && <section className="mb-5 flex items-center justify-between rounded-2xl border border-line bg-[#F8F6FF] p-4"><div><b>Đăng ký công khai</b><p className="text-xs text-muted">Cho phép học sinh tự tạo tài khoản.</p></div><button type="button" role="switch" aria-checked={registration || false} disabled={!access.can("registration.manage") || registration == null} onClick={() => void toggleRegistration()} className={`${cx.btn} ${registration ? cx.btnGold : cx.btnGhost}`}>{registration == null ? "Đang tải…" : registration ? "Đang mở" : "Đã khóa"}</button></section>}
+    <div className="mb-4 flex flex-wrap gap-2"><input className={`${cx.input} !mb-0 min-w-52 flex-1`} type="search" placeholder="Tìm tên hoặc tài khoản…" value={search} onChange={(event) => setSearch(event.target.value)} /><select aria-label="Lọc loại tài khoản" className={`${cx.input} !mb-0 !w-auto`} value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}><option value="all">Tất cả</option><option value="student">Học sinh</option><option value="admin">Admin</option>{ADMIN_PROFILES.map((item) => <option key={item} value={item}>{ADMIN_PROFILE_LABELS[item]}</option>)}</select></div>
+    <div className="space-y-2 md:hidden">{filtered.map((user) => <article key={user.id} className="rounded-xl border border-line bg-white p-4"><div className="flex items-start justify-between gap-2"><div><b>{user.displayName}</b><p className="text-xs text-muted">@{user.username}</p></div><ProfileBadge user={user} /></div><div className="mt-3">{actions(user)}</div></article>)}</div>
+    <div className="hidden overflow-x-auto rounded-xl border border-line md:block"><table className={cx.table}><thead><tr><th className={cx.th}>Tên</th><th className={cx.th}>Tài khoản</th><th className={cx.th}>Loại</th><th className={cx.th}>Quyền quản trị</th><th className={cx.th}>Actions</th></tr></thead><tbody>{filtered.map((user) => <tr key={user.id}><td className={cx.td}><b>{user.displayName}</b></td><td className={cx.td}>@{user.username}</td><td className={cx.td}>{user.role === "admin" ? "Admin" : "Học sinh"}</td><td className={cx.td}><ProfileBadge user={user} /></td><td className={cx.td}>{actions(user)}</td></tr>)}</tbody></table></div>
+    {addOpen && <Modal title="Thêm người dùng" onClose={() => !busy && setAddOpen(false)}><div className="space-y-3"><Field label="Tên đăng nhập"><input className={cx.input} value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></Field><Field label="Tên hiển thị"><input className={cx.input} value={form.displayName} onChange={(event) => setForm({ ...form, displayName: event.target.value })} /></Field><Field label="Mật khẩu"><input className={cx.input} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></Field><Field label="Loại tài khoản"><select className={cx.input} value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as "admin" | "student" })}><option value="student">Học sinh</option><option value="admin" disabled={!access.can("permissions.manage")}>Admin</option></select></Field>{form.role === "admin" && <Field label="Quyền quản trị"><select className={cx.input} value={form.adminProfile} onChange={(event) => setForm({ ...form, adminProfile: event.target.value as AdminProfile })}>{ADMIN_PROFILES.map((item) => <option key={item} value={item}>{ADMIN_PROFILE_LABELS[item]}</option>)}</select></Field>}</div><Actions busy={busy} cancel={() => setAddOpen(false)} save={() => void addUser()} /></Modal>}
+    {permissionUser && <Modal title={`Phân quyền · ${permissionUser.displayName}`} onClose={() => !busy && setPermissionUser(null)}><Field label="Profile"><select className={cx.input} value={profile} onChange={(event) => chooseProfile(event.target.value as AdminProfile)}>{ADMIN_PROFILES.map((item) => <option key={item} value={item}>{ADMIN_PROFILE_LABELS[item]}</option>)}</select></Field>{profile === "owner" ? <p className="rounded-xl border border-[#E8D99B] bg-[#FFF9DF] p-3 text-sm">Owner có toàn bộ quyền, bao gồm phân quyền và khôi phục dữ liệu.</p> : <div className="max-h-[55vh] space-y-3 overflow-y-auto">{ADMIN_PERMISSION_GROUPS.map((group) => { const allEnabled = group.permissions.every((permission) => permissions.includes(permission)); return <fieldset key={group.label} className="rounded-xl border border-line p-3"><legend className="px-1 text-sm font-extrabold">{group.label}</legend><button type="button" className="mb-2 text-xs font-bold text-gold hover:underline" onClick={() => toggleGroup(group.permissions)}>{allEnabled ? "Tắt cả nhóm" : "Bật tất cả"}</button><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{group.permissions.map((permission) => <label key={permission} className="flex min-h-10 items-center gap-2 rounded-lg bg-[#F8F7FC] px-3 text-sm"><input type="checkbox" checked={permissions.includes(permission)} onChange={() => toggle(permission)} /><span>{ADMIN_PERMISSION_LABELS[permission]}</span></label>)}</div></fieldset>; })}</div>}<Actions busy={busy} cancel={() => setPermissionUser(null)} save={() => void savePermissions()} /></Modal>}
+  </div>;
 }
 
-function Stat({ value, label, tone }: { value: string | number; label: string; tone?: "ok" | "bad" }) {
-  return <div className="rounded-lg border border-line bg-white p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
-}
+function ProfileBadge({ user }: { user: UserRow }) { return user.adminProfile ? <span className={user.adminProfile === "owner" ? cx.badgeGold : cx.badgeBlue}>{ADMIN_PROFILE_LABELS[user.adminProfile]}</span> : <span>—</span>; }
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <label><span className={cx.label}>{label}</span>{children}</label>; }
+function Actions({ busy, cancel, save }: { busy: boolean; cancel(): void; save(): void }) { return <div className="mt-4 flex justify-end gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} disabled={busy} onClick={cancel}>Hủy</button><button className={`${cx.btn} ${cx.btnGold}`} disabled={busy} onClick={save}>{busy ? "Đang lưu…" : "Lưu"}</button></div>; }

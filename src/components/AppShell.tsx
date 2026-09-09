@@ -11,6 +11,7 @@ import {
   ADMIN_NAV_SECTIONS,
   STUDENT_PRIMARY_NAV,
   type NavigationItem,
+  type NavigationSection,
 } from "@/lib/navigation";
 import { breadcrumbsForPath, routePageTitle } from "@/lib/routeMeta";
 
@@ -41,12 +42,16 @@ export default function AppShell({
   tabs,
   mode,
   children,
+  navigationSections,
+  adminProfileLabel,
 }: {
   displayName: string;
   roleLabel: string;
   tabs: Tab[];
   mode: "student" | "admin";
   children: React.ReactNode;
+  navigationSections?: NavigationSection[];
+  adminProfileLabel?: string;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -56,9 +61,10 @@ export default function AppShell({
   const isAdminUser = roleLabel === "Admin";
   const isAdminMode = mode === "admin";
   const sections = isAdminMode
-    ? ADMIN_NAV_SECTIONS
+    ? navigationSections ?? ADMIN_NAV_SECTIONS
     : [{ items: STUDENT_PRIMARY_NAV }];
   const items = sections.flatMap((section) => section.items);
+  const adminPageAllowed = !isAdminMode || items.some((item) => item.href === "/admin" ? pathname === "/admin" : pathname === item.href || pathname.startsWith(item.href + "/"));
   function active(item: NavigationItem) {
     if (item.href === "/admin") return pathname === "/admin";
     if (item.href === "/study")
@@ -159,7 +165,7 @@ export default function AppShell({
           <div className="hidden min-w-0 lg:block">
             <b className="block truncate text-xs">{displayName}</b>
             <span className="text-[0.68rem] text-muted">
-              {isAdminUser ? "Quản trị viên" : "Học viên IELTS"}
+              {isAdminUser ? adminProfileLabel || "Quản trị viên" : "Học viên IELTS"}
             </span>
           </div>
         </div>
@@ -216,6 +222,7 @@ export default function AppShell({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isAdminMode && adminProfileLabel === "Chỉ xem" && <span className="hidden rounded-full border border-[#D8D2F4] bg-[#F5F2FF] px-3 py-1 text-xs font-bold text-[#6550DB] sm:inline">Chế độ chỉ xem</span>}
             <button
               type="button"
               onClick={() => setQuickOpen(true)}
@@ -244,7 +251,7 @@ export default function AppShell({
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1536px] p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 lg:p-8 lg:pb-8">
-          {children}
+          {adminPageAllowed ? children : <section className="mx-auto max-w-xl rounded-[18px] border border-line bg-white p-8 text-center"><div className="text-4xl font-black text-[#6550DB]">403</div><h1 className="mt-3 text-xl font-extrabold">Bạn không có quyền truy cập khu vực này.</h1><Link href="/admin" className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-[#6550DB] px-5 font-bold text-white">Quay lại Admin</Link></section>}
         </main>
       </div>
       {!isAdminMode && (

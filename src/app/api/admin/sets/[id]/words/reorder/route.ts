@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { reorderWords } from "@/lib/wordOrder.server";
 
 const schema = z.object({
@@ -7,8 +7,8 @@ const schema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.reorder");
+  if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
   if (!Number.isInteger(setId) || setId < 1) return Response.json({ error: "Không tìm thấy bộ từ." }, { status: 404 });
   const parsed = schema.safeParse(await request.json().catch(() => null));

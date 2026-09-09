@@ -29,6 +29,7 @@ export const users = pgTable(
     passwordHash: text("password_hash").notNull(),
     displayName: varchar("display_name", { length: 128 }).notNull(),
     role: varchar("role", { length: 16 }).notNull().default("student"), // 'admin' | 'student'
+    adminProfile: varchar("admin_profile", { length: 32 }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({
@@ -121,6 +122,35 @@ export const shareLinks = pgTable(
       targetIdx: index("share_links_target_idx").on(table.targetType, table.targetId),
       creatorIdx: index("share_links_creator_idx").on(table.createdByUserId),
   }),
+);
+
+export const adminPermissionOverrides = pgTable(
+  "admin_permission_overrides",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    permission: varchar("permission", { length: 64 }).notNull(),
+    allowed: boolean("allowed").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({ userPermissionIdx: uniqueIndex("admin_permission_overrides_user_permission_idx").on(table.userId, table.permission) }),
+);
+
+export const adminAuditLogs = pgTable(
+  "admin_audit_logs",
+  {
+    id: serial("id").primaryKey(),
+    actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    actorDisplayName: varchar("actor_display_name", { length: 128 }),
+    action: varchar("action", { length: 96 }).notNull(),
+    resourceType: varchar("resource_type", { length: 64 }).notNull(),
+    resourceId: varchar("resource_id", { length: 128 }),
+    targetUserId: integer("target_user_id").references(() => users.id, { onDelete: "set null" }),
+    metadata: text("metadata").notNull().default("{}"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({ actorIdx: index("admin_audit_logs_actor_idx").on(table.actorUserId), actionIdx: index("admin_audit_logs_action_idx").on(table.action), createdIdx: index("admin_audit_logs_created_idx").on(table.createdAt) }),
 );
 
 export const categoryDocuments = pgTable(
@@ -483,6 +513,11 @@ export const usersRelations = relations(users, ({ many }) => ({
   attempts: many(attempts),
   sets: many(vocabSets),
   classMemberships: many(classMembers),
+  adminPermissionOverrides: many(adminPermissionOverrides),
+}));
+
+export const adminPermissionOverridesRelations = relations(adminPermissionOverrides, ({ one }) => ({
+  user: one(users, { fields: [adminPermissionOverrides.userId], references: [users.id] }),
 }));
 
 export const classesRelations = relations(classes, ({ many }) => ({
@@ -565,6 +600,8 @@ export const categoryDocumentUploadChunks = pgTable(
 
 
 export type User = typeof users.$inferSelect;
+export type AdminPermissionOverride = typeof adminPermissionOverrides.$inferSelect;
+export type AdminAuditLog = typeof adminAuditLogs.$inferSelect;
 export type VocabSet = typeof vocabSets.$inferSelect;
 export type Word = typeof words.$inferSelect;
 export type Attempt = typeof attempts.$inferSelect;

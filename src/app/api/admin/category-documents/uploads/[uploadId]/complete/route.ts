@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { categoryDocuments, categoryDocumentUploadChunks, categoryDocumentUploads } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { documentContentLooksValid, documentExtension } from "@/lib/categoryDocumentFile";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -19,10 +20,10 @@ function numbered(order: number, value: string, keepExtension = false) {
 }
 
 export async function POST(_request: Request, { params }: { params: { uploadId: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.upload");
+  if (isAuthorizationError(access)) return access;
   const [upload] = await db.select().from(categoryDocumentUploads).where(and(
-    eq(categoryDocumentUploads.id, params.uploadId), eq(categoryDocumentUploads.createdBy, session.userId),
+    eq(categoryDocumentUploads.id, params.uploadId), eq(categoryDocumentUploads.createdBy, access.userId),
   )).limit(1);
   if (!upload) return Response.json({ error: "Phiên tải lên đã hết hạn hoặc không tồn tại." }, { status: 404 });
   const chunks = await db.select({
@@ -56,7 +57,7 @@ export async function POST(_request: Request, { params }: { params: { uploadId: 
     } else {
       [saved] = await tx.insert(categoryDocuments).values({
         category: upload.category, title: upload.title, fileName: upload.fileName, fileType: upload.fileType,
-        fileSize: upload.fileSize, fileData: assembledFile, createdBy: session.userId,
+        fileSize: upload.fileSize, fileData: assembledFile, createdBy: access.userId,
       }).returning({ id: categoryDocuments.id, category: categoryDocuments.category });
     }
     const rows = await tx.select({ id: categoryDocuments.id, title: categoryDocuments.title, fileName: categoryDocuments.fileName })

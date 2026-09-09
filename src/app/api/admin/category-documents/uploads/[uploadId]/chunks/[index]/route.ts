@@ -3,17 +3,18 @@ import { db } from "@/db";
 import { categoryDocumentUploadChunks, categoryDocumentUploads } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { DOCUMENT_CHUNK_BYTES } from "@/lib/categoryDocumentFile";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function PUT(request: Request, { params }: { params: { uploadId: string; index: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("documents.upload");
+  if (isAuthorizationError(access)) return access;
   const chunkIndex = Number(params.index);
   if (!Number.isInteger(chunkIndex) || chunkIndex < 0) return Response.json({ error: "Thứ tự khối dữ liệu không hợp lệ." }, { status: 400 });
   const [upload] = await db.select().from(categoryDocumentUploads).where(and(
-    eq(categoryDocumentUploads.id, params.uploadId), eq(categoryDocumentUploads.createdBy, session.userId),
+    eq(categoryDocumentUploads.id, params.uploadId), eq(categoryDocumentUploads.createdBy, access.userId),
   )).limit(1);
   if (!upload) return Response.json({ error: "Phiên tải lên đã hết hạn hoặc không tồn tại." }, { status: 404 });
   if (chunkIndex >= upload.chunkCount) return Response.json({ error: "Khối dữ liệu vượt ngoài phạm vi file." }, { status: 400 });

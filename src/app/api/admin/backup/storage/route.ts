@@ -1,12 +1,13 @@
 import { getSession } from "@/lib/auth";
 import { isBackupStorageConfigured, listStoredBackups, safeStorageError } from "@/lib/backupStorage";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const session = await getSession();
-  if (session?.role !== "admin") return Response.json({ error: "Bạn không có quyền xem backup đám mây." }, { status: 403 });
+  const access = await requireAdminPermission("backup.create");
+  if (isAuthorizationError(access)) return access;
   if (!isBackupStorageConfigured()) return Response.json({ configured: false, backups: [] });
   try { return Response.json({ configured: true, backups: await listStoredBackups(20) }); }
   catch (error) {

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { categoryQuestions, vocabCategories } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { parseJsonArray } from "@/lib/questionImportDb";
 import { applyPermanentOptionOrder, correctAnswerDistribution } from "@/lib/questionShuffle";
 import { ensureQuestionShuffleSchema } from "@/lib/questionShuffleDb";
@@ -15,8 +16,8 @@ const schema = z.discriminatedUnion("action", [
 ]);
 
 export async function PATCH(request: NextRequest) {
-  const session = await getSession();
-  if (session?.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("questions.reorder");
+  if (isAuthorizationError(access)) return access;
   await ensureQuestionShuffleSchema();
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu shuffle không hợp lệ.", issues: parsed.error.flatten() }, { status: 400 });

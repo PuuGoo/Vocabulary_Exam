@@ -3,13 +3,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { words, vocabSets } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { fetchIpaSingle, isGeminiConfigured } from "@/lib/gemini";
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const access = await requireAdminPermission("vocab.edit");
+  if (isAuthorizationError(access)) return access;
   if (!isGeminiConfigured()) {
     return NextResponse.json(
       { error: "Chưa cấu hình GEMINI_API_KEY trên server." },

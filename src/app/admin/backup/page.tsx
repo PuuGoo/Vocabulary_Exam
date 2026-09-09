@@ -3,6 +3,7 @@
 import { ChangeEvent, useEffect, useState } from "react";
 import { toast } from "@/components/Toast";
 import { BACKUP_COLLECTIONS, BackupCollection } from "@/lib/backup";
+import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 
 const STORAGE_KEY = "lexora_last_backup_at";
 const CONFIRMATION = "KHOI PHUC";
@@ -31,6 +32,8 @@ const LABELS: Record<BackupCollection, string> = {
   learningGoals: "Mục tiêu",
   dailyActivities: "Hoạt động ngày",
   appSettings: "Cấu hình hệ thống",
+  adminPermissionOverrides: "Phân quyền quản trị",
+  adminAuditLogs: "Nhật ký quản trị",
 };
 
 async function uploadFileInChunks(
@@ -148,6 +151,7 @@ function saveBlob(blob: Blob, filename: string) {
 }
 
 export default function BackupPage() {
+  const access = useAdminPermissions();
   const [downloading, setDownloading] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [backup, setBackup] = useState<unknown>(null);
@@ -212,6 +216,11 @@ export default function BackupPage() {
 
   useEffect(() => {
     setLastBackupAt(localStorage.getItem(STORAGE_KEY));
+    if (!access.can("backup.create")) {
+      setScheduleLoading(false);
+      setCloudLoading(false);
+      return;
+    }
     refreshSchedule()
       .catch((error) =>
         toast(
@@ -468,7 +477,7 @@ export default function BackupPage() {
           không ghi đè tài khoản, mật khẩu hay dữ liệu đang có.
         </p>
       </section>
-      <section className={`rounded-[16px] border p-5 sm:p-6 ${emailSchedule.enabled && emailConfigured && cronConfigured && !emailSchedule.lastError ? "border-[#BFE3D2] bg-[#F3FBF7]" : "border-[#F0DDA2] bg-[#FFF9E7]"}`}>
+      {access.can("backup.create") && <section className={`rounded-[16px] border p-5 sm:p-6 ${emailSchedule.enabled && emailConfigured && cronConfigured && !emailSchedule.lastError ? "border-[#BFE3D2] bg-[#F3FBF7]" : "border-[#F0DDA2] bg-[#FFF9E7]"}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-extrabold">{emailSchedule.enabled && emailConfigured && cronConfigured && !emailSchedule.lastError ? "✓ Sao lưu tự động đang hoạt động" : "⚠ Sao lưu tự động đang gặp vấn đề"}</h2>
@@ -481,11 +490,11 @@ export default function BackupPage() {
           <div><dt className="text-xs text-muted">Backup cloud</dt><dd className="mt-1 font-bold">{storageConfigured ? `${cloudBackups.length} bản` : "Chưa cấu hình"}</dd></div>
           <div><dt className="text-xs text-muted">Email</dt><dd className="mt-1 truncate font-bold">{emailSchedule.recipient || "Chưa cấu hình"}</dd></div>
         </dl>
-      </section>
-      {cloudStorageSection}
+      </section>}
+      {access.can("backup.create") && cloudStorageSection}
 
       <section className="grid gap-5 lg:grid-cols-2">
-        <article className="lexora-card overflow-hidden">
+        {access.can("backup.create") && <article className="lexora-card overflow-hidden">
           <div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6">
             <div className="flex items-start gap-4">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EAE7FF] text-xl text-[#6550DB]">
@@ -528,9 +537,9 @@ export default function BackupPage() {
                 : "Tải bản sao lưu an toàn"}
             </button>
           </div>
-        </article>
+        </article>}
 
-        <article className="lexora-card overflow-hidden">
+        {access.can("backup.restore") && <article className="lexora-card overflow-hidden">
           <div className="border-b border-line bg-[#F8F7FC] p-5 sm:p-6">
             <div className="flex items-start gap-4">
               <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#E8F6EF] text-xl text-[#267A52]">
@@ -585,10 +594,10 @@ export default function BackupPage() {
               </p>
             ) : null}
           </div>
-        </article>
+        </article>}
       </section>
 
-      <section className="lexora-card overflow-hidden">
+      {access.can("backup.create") && <section className="lexora-card overflow-hidden">
         <div className="flex flex-col gap-4 border-b border-line bg-[#F8F7FC] p-5 sm:flex-row sm:items-start sm:justify-between sm:p-6">
           <div className="flex items-start gap-4">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-[#EAE7FF] text-xl text-[#6550DB]">
@@ -764,9 +773,9 @@ export default function BackupPage() {
           ) : null}
           </details>
         </div>
-      </section>
+      </section>}
 
-      {preview ? (
+      {access.can("backup.restore") && preview ? (
         <section className="lexora-card p-5 sm:p-6">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
             <div>
@@ -854,7 +863,7 @@ export default function BackupPage() {
         </section>
       ) : null}
 
-      {report ? (
+      {access.can("backup.restore") && report ? (
         <section className="lexora-card border-[#BFE3D2] p-5 sm:p-6">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#E8F6EF] font-extrabold text-[#267A52]">

@@ -2,7 +2,7 @@ import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { vocabSets } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { formatCategorySetName } from "@/lib/categorySequence";
 
 const deleteSchema = z.object({ action: z.literal("delete"), ids: z.array(z.number().int().positive()).min(1).max(500) });
@@ -14,17 +14,19 @@ const reorderSchema = z.object({
 const requestSchema = z.discriminatedUnion("action", [deleteSchema, reorderSchema]);
 
 export async function POST(request: Request) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return Response.json({ error: "Bạn không có quyền thực hiện thao tác này." }, { status: 403 });
-
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Dữ liệu thao tác hàng loạt không hợp lệ." }, { status: 400 });
 
   if (parsed.data.action === "delete") {
+    const access = await requireAdminPermission("vocab.delete");
+    if (isAuthorizationError(access)) return access;
     const uniqueIds = [...new Set(parsed.data.ids)];
     const deleted = await db.delete(vocabSets).where(inArray(vocabSets.id, uniqueIds)).returning({ id: vocabSets.id });
     return Response.json({ ok: true, deleted: deleted.length });
   }
+
+  const access = await requireAdminPermission("vocab.reorder");
+  if (isAuthorizationError(access)) return access;
 
   const category = parsed.data.category;
   const orderedIds = [...new Set(parsed.data.orderedIds)];
