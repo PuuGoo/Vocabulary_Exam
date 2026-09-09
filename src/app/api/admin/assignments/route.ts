@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
   if (setRow.classId !== null && (classIds.length !== 1 || setRow.classId !== classIds[0])) {
     return NextResponse.json({ error: "Bộ từ riêng của lớp không thể giao cho lớp khác." }, { status: 400 });
   }
-  if (!modesForSetType(setRow.type).includes(parsed.data.mode)) return NextResponse.json({ error: "Chế độ không phù hợp với bộ từ." }, { status: 400 });
+  if (!modesForSetType(setRow.type, setRow.languageCode).includes(parsed.data.mode)) return NextResponse.json({ error: "Chế độ không phù hợp với bộ từ." }, { status: 400 });
   if (parsed.data.mode === "timed" && !parsed.data.timeLimitMinutes) return NextResponse.json({ error: "Vui lòng chọn thời gian thi." }, { status: 400 });
 
   const title = normalizeText(parsed.data.title);

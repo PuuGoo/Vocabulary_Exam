@@ -13,8 +13,8 @@ type Availability = "idle" | "checking" | "available" | "taken" | "invalid";
 
 async function safeJson(response: Response): Promise<Record<string, any>> { const text = await response.text(); if (!text) return {}; try { const parsed = JSON.parse(text); return parsed && typeof parsed === "object" ? parsed : {}; } catch { return {}; } }
 
-export default function ShareDialog({ targetType, targetId, title, setType, onClose }: { targetType: ShareTargetType; targetId: number; title: string; setType?: string; onClose: () => void }) {
-  const modes = useMemo(() => targetType === "vocab_set" ? [...modesForSetType(setType || "ielts_vocab")] : [...CATEGORY_SHARE_MODES], [setType, targetType]);
+export default function ShareDialog({ targetType, targetId, title, setType, languageCode, onClose }: { targetType: ShareTargetType; targetId: number; title: string; setType?: string; languageCode?: string; onClose: () => void }) {
+  const modes = useMemo(() => targetType === "vocab_set" ? [...modesForSetType(setType || "ielts_vocab", languageCode)] : [...CATEGORY_SHARE_MODES], [languageCode, setType, targetType]);
   const storageKey = `lexora-share-url-${targetType}-${targetId}`;
   const secureStorageKey = `lexora-share-secure-url-${targetType}-${targetId}`;
   const suggestedSlug = useMemo(() => normalizeShareSlug(title), [title]);

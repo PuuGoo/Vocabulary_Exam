@@ -19,11 +19,13 @@ export function getPublicShareUrl(input: { customSlug?: string | null; rawToken?
   return identifier ? buildShareUrl(identifier, origin) : null;
 }
 
-export function modesForSetType(type: string): readonly string[] {
-  return type === "irregular_verb" ? ["learn", "fill", "mc", "match", "dictation", "timed"] : VOCAB_SHARE_MODES;
+export function modesForSetType(type: string, languageCode = "en"): readonly string[] {
+  if (type === "irregular_verb") return ["learn", "fill", "mc", "match", "dictation", "timed"];
+  return getAvailableModes({ type, languageCode }).filter((mode) => VOCAB_SHARE_MODES.includes(mode as (typeof VOCAB_SHARE_MODES)[number]));
 }
 
 
-export function defaultShareModes(targetType: ShareTargetType, setType?: string) {
-  return [...(targetType === "vocab_set" ? modesForSetType(setType || "ielts_vocab") : CATEGORY_SHARE_MODES)];
+export function defaultShareModes(targetType: ShareTargetType, setType?: string, languageCode?: string) {
+  return [...(targetType === "vocab_set" ? modesForSetType(setType || "ielts_vocab", languageCode) : CATEGORY_SHARE_MODES)];
 }
+import { getAvailableModes } from "@/lib/languages";

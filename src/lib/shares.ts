@@ -137,7 +137,8 @@ export function isShareSlugConflict(error: unknown) {
 }
 
 export async function createOrUpdateShare(input: { targetType: ShareTargetType; targetId: number; createdByUserId: number; accessMode: ShareAccessMode; allowedModes: string[]; contentSelection?: string[]; includeNewContent?: boolean; customSlug?: string | null; passwordEnabled?: boolean; newPassword?: string; origin?: string }) {
-  const modes = defaultShareModes(input.targetType).filter((mode) => input.allowedModes.includes(mode));
+  const targetSet = input.targetType === "vocab_set" ? await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, input.targetId), columns: { type: true, languageCode: true } }) : null;
+  const modes = defaultShareModes(input.targetType, targetSet?.type, targetSet?.languageCode).filter((mode) => input.allowedModes.includes(mode));
   const contentSelection = SHARE_CONTENT_KEYS.filter((key) => (input.contentSelection || SHARE_CONTENT_KEYS).includes(key));
   const includeNewContent = input.includeNewContent ?? true;
   let contentSnapshot: ContentSnapshot = { setIds: [], questionIds: [], documentIds: [] };

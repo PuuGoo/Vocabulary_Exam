@@ -12,7 +12,7 @@ import { buildCsv } from "@/lib/csv";
 import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 
 type ClassRow = { id: number; name: string; memberCount: number };
-type SetRow = { id: number; name: string; type: string; classId: number | null; count: number };
+type SetRow = { id: number; name: string; type: string; languageCode: string; classId: number | null; count: number };
 type AssignmentRow = {
   id: number; classId: number; className: string; setId: number; setName: string; setType: string;
   title: string; instructions: string; mode: AssignmentMode; minScore: number; dueAt: string | null;
@@ -75,7 +75,7 @@ export default function AdminAssignmentsPage() {
     () => sets.filter((item) => bulkMode ? item.classId === null : !form.classId || item.classId === null || item.classId === Number(form.classId)),
     [sets, form.classId, bulkMode]
   );
-  const availableModes = modesForSetType(selectedSet?.type || "ielts_vocab");
+  const availableModes = modesForSetType(selectedSet?.type || "ielts_vocab", selectedSet?.languageCode || "en");
   const filteredRows = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("vi");
     return (rows || []).filter((row) => {
@@ -285,7 +285,7 @@ export default function AdminAssignmentsPage() {
                   sets={sets}
                   mode="single"
                   selected={form.setId ? [Number(form.setId)] : []}
-                  onSelect={(ids) => { const id = ids[0] ?? null; const set = sets.find((item) => item.id === id); update("setId", id == null ? "" : String(id)); update("mode", modesForSetType(set?.type || "ielts_vocab")[0]); if (!form.title && set) update("title", set.name); }}
+                  onSelect={(ids) => { const id = ids[0] ?? null; const set = sets.find((item) => item.id === id); update("setId", id == null ? "" : String(id)); update("mode", modesForSetType(set?.type || "ielts_vocab", set?.languageCode || "en")[0]); if (!form.title && set) update("title", set.name); }}
                   renderTrigger={(count, label) => (
                     <span className={`flex min-h-11 w-full items-center justify-between rounded-[11px] border border-gold/60 bg-goldpale/30 px-4 text-sm font-bold ${count ? "text-golddark" : "text-muted"}`}>
                       {form.setId ? (sets.find((item) => item.id === Number(form.setId))?.name || label) : "Chọn thư mục / bộ từ"}

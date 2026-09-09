@@ -30,10 +30,8 @@ export type AssignmentForProgress = {
 
 export type AssignmentStatus = "pending" | "in_progress" | "overdue" | "completed" | "completed_late" | "excused";
 
-export function modesForSetType(type: string): AssignmentMode[] {
-  return type === "irregular_verb"
-    ? ["fill", "match", "dictation", "pronunciation", "timed"]
-    : ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "timed"];
+export function modesForSetType(type: string, languageCode = "en"): AssignmentMode[] {
+  return getAvailableModes({ type, languageCode }).filter((mode): mode is AssignmentMode => (ASSIGNMENT_MODES as readonly string[]).includes(mode));
 }
 
 export function attemptMatchesMode(attempt: AttemptForAssignment, assignment: AssignmentForProgress) {
@@ -75,3 +73,4 @@ export function assignmentHref(input: { setId: number; mode: string; timeLimitMi
   if (input.mode === "timed") return `/quiz/${setId}?mode=fill&timed=1&minutes=${input.timeLimitMinutes || 15}`;
   return `/quiz/${setId}?mode=fill&session=test`;
 }
+import { getAvailableModes } from "@/lib/languages";

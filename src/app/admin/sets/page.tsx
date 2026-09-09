@@ -123,7 +123,7 @@ export default function AdminSetsPage() {
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
   const [detailWordQuery, setDetailWordQuery] = useState("");
   const [previewSetId, setPreviewSetId] = useState<number | null>(null);
-  const [shareTarget, setShareTarget] = useState<{ targetType: "vocab_set" | "question_collection"; targetId: number; title: string; setType?: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ targetType: "vocab_set" | "question_collection"; targetId: number; title: string; setType?: string; languageCode?: string } | null>(null);
   const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
   const [dragOverSetId, setDragOverSetId] = useState<number | null>(null);
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
@@ -1780,7 +1780,7 @@ export default function AdminSetsPage() {
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
-              {adminAccess.can("sharing.manage") && <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type })}>Chia sẻ</button>}
+              {adminAccess.can("sharing.manage") && <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type, languageCode: s.languageCode })}>Chia sẻ</button>}
               <div className="relative" data-preview-menu>
                 <button
                   type="button"
