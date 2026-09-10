@@ -18,6 +18,7 @@ import { moveWordIdByOffset, moveWordIdToPosition } from "@/lib/wordOrder";
 import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 import { getFillModeLabel, getLanguageConfig } from "@/lib/languages";
 import { getChineseSettings } from "@/lib/languageSettings";
+import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 
 type SetSummary = { id: number; name: string; category: string | null; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -2056,7 +2057,7 @@ export default function AdminSetsPage() {
                       <label className={cx.label}>{getLanguageConfig(detail.languageCode).termLabel}</label>
                       <input lang={detail.languageCode} className={cx.input} value={wForm.term} onChange={(e) => setWForm({ ...wForm, term: e.target.value })} />
                     </div>
-                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Chữ phồn thể</label><input lang="zh-CN" className={cx.input} value={wForm.alternateTerm} onChange={e=>setWForm({...wForm,alternateTerm:e.target.value})}/></div><div><label className={cx.label}>Pinyin</label><input className={cx.input} autoCapitalize="off" value={wForm.pronunciation} onChange={e=>setWForm({...wForm,pronunciation:e.target.value})}/></div></>}
+                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Chữ phồn thể</label><input lang="zh-CN" className={cx.input} value={wForm.alternateTerm} onChange={e=>setWForm({...wForm,alternateTerm:e.target.value})}/></div><div><label className={cx.label}>Pinyin</label><input className={`${cx.input} !mb-1`} autoCapitalize="off" value={wForm.pronunciation} onChange={e=>setWForm({...wForm,pronunciation:e.target.value})} onBlur={()=>setWForm(current=>({...current,pronunciation:canonicalizePinyinDisplay(current.pronunciation)}))}/><p className="text-xs text-muted">Ưu tiên Pinyin có dấu thanh, ví dụ: <b>xuéxí</b>. Có thể nhập <b>xue2xi2</b> để tự chuyển.</p>{wForm.pronunciation && canonicalizePinyinDisplay(wForm.pronunciation)!==wForm.pronunciation && <p className="mt-1 text-xs font-semibold text-[#6550DB]">Dạng có dấu: {canonicalizePinyinDisplay(wForm.pronunciation)}</p>}{wForm.pronunciation && !hasExplicitPinyinTone(wForm.pronunciation) && <p className="mt-1 text-xs font-semibold text-golddark">Pinyin chưa có dấu thanh. Hãy kiểm tra lại nếu đây không phải âm trung tính.</p>}</div></>}
                     <div>
                       <label className={cx.label}>Nghĩa (tiếng Việt)</label>
                       <input className={cx.input} value={wForm.meaning} onChange={(e) => setWForm({ ...wForm, meaning: e.target.value })} />
@@ -2221,7 +2222,7 @@ export default function AdminSetsPage() {
                       <label className={cx.label}>{getLanguageConfig(detail.languageCode).termLabel}</label>
                       <input lang={detail.languageCode} className={`${cx.input} !mb-0`} value={editForm.term} onChange={(e) => setEditForm({ ...editForm, term: e.target.value })} />
                     </div>
-                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Chữ phồn thể</label><input className={`${cx.input} !mb-0`} value={editForm.alternateTerm} onChange={e=>setEditForm({...editForm,alternateTerm:e.target.value})}/></div><div><label className={cx.label}>Pinyin</label><input className={`${cx.input} !mb-0`} value={editForm.pronunciation} onChange={e=>setEditForm({...editForm,pronunciation:e.target.value})}/></div></>}
+                    {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Chữ phồn thể</label><input className={`${cx.input} !mb-0`} value={editForm.alternateTerm} onChange={e=>setEditForm({...editForm,alternateTerm:e.target.value})}/></div><div><label className={cx.label}>Pinyin</label><input className={`${cx.input} !mb-1`} autoCapitalize="off" value={editForm.pronunciation} onChange={e=>setEditForm({...editForm,pronunciation:e.target.value})} onBlur={()=>setEditForm(current=>({...current,pronunciation:canonicalizePinyinDisplay(current.pronunciation)}))}/><p className="text-xs text-muted">Ưu tiên dạng có dấu. Có thể nhập <b>xue2xi2</b> để chuyển thành <b>xuéxí</b>.</p>{editForm.pronunciation && canonicalizePinyinDisplay(editForm.pronunciation)!==editForm.pronunciation && <p className="mt-1 text-xs font-semibold text-[#6550DB]">Dạng có dấu: {canonicalizePinyinDisplay(editForm.pronunciation)}</p>}{editForm.pronunciation && !hasExplicitPinyinTone(editForm.pronunciation) && <p className="mt-1 text-xs font-semibold text-golddark">Pinyin chưa có dấu thanh. Hãy kiểm tra lại nếu đây không phải âm trung tính.</p>}</div></>}
                     <div>
                       <label className={cx.label}>Nghĩa</label>
                       <input className={`${cx.input} !mb-0`} value={editForm.meaning} onChange={(e) => setEditForm({ ...editForm, meaning: e.target.value })} />

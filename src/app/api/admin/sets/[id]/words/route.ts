@@ -7,6 +7,7 @@ import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthori
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { appendWord } from "@/lib/wordOrder.server";
+import { canonicalizePinyinDisplay } from "@/lib/pinyin";
 
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
@@ -67,8 +68,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         wtype: normalizeText(parsed.data.wtype || ""),
         ipa: parsed.data.ipa ? normalizeText(parsed.data.ipa) : null,
         alternateTerm: parsed.data.alternateTerm ? normalizeText(parsed.data.alternateTerm) : null,
-        pronunciation: parsed.data.pronunciation ? normalizeText(parsed.data.pronunciation) : null,
-        examplePronunciation: parsed.data.examplePronunciation ? normalizeText(parsed.data.examplePronunciation) : null,
+        pronunciation: parsed.data.pronunciation ? (set.languageCode === "zh-CN" ? canonicalizePinyinDisplay(parsed.data.pronunciation) : normalizeText(parsed.data.pronunciation)) : null,
+        examplePronunciation: parsed.data.examplePronunciation ? (set.languageCode === "zh-CN" ? canonicalizePinyinDisplay(parsed.data.examplePronunciation) : normalizeText(parsed.data.examplePronunciation)) : null,
         exampleMeaning: parsed.data.exampleMeaning ? normalizeText(parsed.data.exampleMeaning) : null,
         level: parsed.data.level ? normalizeText(parsed.data.level) : null,
         classifier: parsed.data.classifier ? normalizeText(parsed.data.classifier) : null,

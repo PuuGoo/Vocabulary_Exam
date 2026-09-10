@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { words } from "@/db/schema";
+import { vocabSets, words } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { deleteWordsAndNormalize } from "@/lib/wordOrder.server";
+import { canonicalizePinyinDisplay } from "@/lib/pinyin";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireAdminPermission("vocab.delete");
@@ -54,6 +55,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const patch: Record<string, string> = {};
   for (const [k, v] of Object.entries(parsed.data)) {
     if (v !== undefined) patch[k] = normalizeText(v);
+  }
+  if (parsed.data.pronunciation !== undefined || parsed.data.examplePronunciation !== undefined) {
+    const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, existing.setId), columns: { languageCode: true } });
+    if (set?.languageCode === "zh-CN") {
+      if (parsed.data.pronunciation !== undefined) patch.pronunciation = canonicalizePinyinDisplay(parsed.data.pronunciation);
+      if (parsed.data.examplePronunciation !== undefined) patch.examplePronunciation = canonicalizePinyinDisplay(parsed.data.examplePronunciation);
+    }
   }
 
   const [updated] = await db.update(words).set(patch).where(eq(words.id, wordId)).returning();

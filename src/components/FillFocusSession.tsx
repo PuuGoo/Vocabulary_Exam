@@ -30,8 +30,9 @@ import {
   type FillRecallOutcome,
   type FillSessionKind,
 } from "@/lib/fillAnswer";
-import { gradeLanguageAnswer, getTargetAcceptedAnswers } from "@/lib/languageAnswer";
-import { getFillModeLabel, getLanguageConfig, getSpeakText, getWordPronunciation, normalizeLanguageCode, type FillTarget } from "@/lib/languages";
+import { gradeLanguageAnswer, getTargetAcceptedAnswers, type LanguageAnswerReason } from "@/lib/languageAnswer";
+import { getFillModeLabel, getLanguageConfig, getSpeakText, getWordDisplayForms, getWordPronunciation, normalizeLanguageCode, type FillTarget } from "@/lib/languages";
+import { getChineseSettings } from "@/lib/languageSettings";
 
 export type FillFocusWord = {
   id: number;
@@ -70,7 +71,8 @@ type Props = {
 const GROUP_SIZE = 10;
 const MAX_RETRIES_PER_WORD = 2;
 
-type Feedback = { correct: boolean; nearMiss: boolean; answer: string; retry: boolean; corrected?: boolean; groupGrade?: FillAnswerGroupsGrade };
+type Feedback = { correct: boolean; nearMiss: boolean; answer: string; retry: boolean; corrected?: boolean; groupGrade?: FillAnswerGroupsGrade; reason?: LanguageAnswerReason };
+type LanguageAwareGrade = FillAnswerGroupsGrade & { languageReason?: LanguageAnswerReason };
 
 function buildQueues(groups: FillFocusWord[][]) {
   return Object.fromEntries(groups.map((group, index) => [index, group.map((word) => word.id)]));
@@ -136,20 +138,22 @@ export default function FillFocusSession({
   const partialGrade = gradeFillAnswerGroups(currentResponses, currentParsed);
   const hintGroupIndex = Math.max(0, currentParsed.groups.findIndex((group) => partialGrade.unmatchedGroups.includes(group.id)));
   const hintGroup = currentParsed.groups[hintGroupIndex] || currentParsed.groups[0];
-  const currentHint = currentWord ? getProgressiveHint(hintGroup?.source, activeHintLevel, currentWord.example) : null;
+  const currentHint = currentWord ? languageCode === "zh-CN" && target === "term" && currentWord.pronunciation && activeHintLevel > 0
+    ? { label:"Gợi ý Pinyin", value:currentWord.pronunciation, revealed:true }
+    : getProgressiveHint(hintGroup?.source, activeHintLevel, currentWord.example) : null;
   const hasActivity = Object.keys(answers).length > 0 || Object.keys(outcomes).length > 0 || Object.keys(groupResults).length > 0;
   // After a Test result is persisted, "Sửa từ sai" is deliberately a learning
   // round. It may reveal feedback and audio, but cannot mutate the first score.
   const correctionRound = phase === "questions" && Boolean(groupResults[group]);
   const effectiveSessionKind: FillSessionKind = correctionRound ? "practice" : sessionKind;
-  const gradeWord = (word: FillFocusWord, response: FillResponse | undefined): FillAnswerGroupsGrade => {
+  const gradeWord = (word: FillFocusWord, response: FillResponse | undefined): LanguageAwareGrade => {
     if (languageCode === "en" && target === "term") return gradeFillResponse(response, word.term, word.wtype);
     const value = responseValues(response, 1)[0];
     const result = gradeLanguageAnswer({ set, word, target, userAnswer: value });
-    return { correct:result.correct, nearMiss:result.nearMiss, groupResults:[{groupId:"group-1",source:getTargetAcceptedAnswers({set,word,target})[0]||"",correct:result.correct,nearMiss:result.nearMiss,matchedResponseIndex:result.correct?0:null}], unmatchedGroups:result.correct?[]:["group-1"], unmatchedResponses:result.correct?[]:[0] };
+    return { correct:result.correct, nearMiss:result.nearMiss, languageReason:result.reason, groupResults:[{groupId:"group-1",source:getTargetAcceptedAnswers({set,word,target})[0]||"",correct:result.correct,nearMiss:result.nearMiss,matchedResponseIndex:result.correct?0:null}], unmatchedGroups:result.correct?[]:["group-1"], unmatchedResponses:result.correct?[]:[0] };
   };
   const totalAnsweredInTest = originalWords.filter((word) => {
-    const parsed = parseFillAnswerGroups(word.term, word.wtype);
+    const parsed = languageCode === "en" && target === "term" ? parseFillAnswerGroups(word.term, word.wtype) : parseFillAnswerGroups(getTargetAcceptedAnswers({set,word,target})[0] || "", null);
     return responseValues(answers[word.id], parsed.groups.length).every((value) => value.trim());
   }).length;
   const allTestAnswered = originalWords.length > 0 && totalAnsweredInTest === originalWords.length;
@@ -203,7 +207,7 @@ export default function FillFocusSession({
   useEffect(() => {
     if (effectiveSessionKind !== "practice" || phase !== "questions" || feedback || !currentWord || !currentOutcome || !currentResponseComplete) return;
     const grade = gradeWord(currentWord, answers[currentWord.id]);
-    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentResponses.join(" ; "), retry: currentOutcome.retryCount > 0, groupGrade: grade });
+    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, reason:grade.languageReason, answer: currentResponses.join(" ; "), retry: currentOutcome.retryCount > 0, groupGrade: grade });
     setNeedsCorrection(!currentOutcome.finalCorrect);
   // `currentOutcome`/question changes indicate a restore or transition. The
   // answer itself is intentionally not a dependency: typing is state-only.
@@ -283,7 +287,7 @@ export default function FillFocusSession({
       }
     }
     setOutcomes((current) => ({ ...current, [currentWord.id]: outcome }));
-    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, answer: currentResponses.join(" ; "), retry: Boolean(existing), groupGrade: grade });
+    setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, reason:grade.languageReason, answer: currentResponses.join(" ; "), retry: Boolean(existing), groupGrade: grade });
     setNeedsCorrection(!grade.correct);
     setCorrection(Array.from({ length: grade.unmatchedGroups.length }, () => ""));
     if (grade.correct && !existing && !outcome.firstTryCorrect) scheduleCurrentRetry(outcome);
@@ -363,7 +367,7 @@ export default function FillFocusSession({
     if (!allTestAnswered || saving || !claimFillAction(actionLockRef)) return;
     const nextOutcomes = { ...outcomes };
     for (const word of originalWords) {
-      const parsed = parseFillAnswerGroups(word.term, word.wtype);
+      const parsed = languageCode === "en" && target === "term" ? parseFillAnswerGroups(word.term, word.wtype) : parseFillAnswerGroups(getTargetAcceptedAnswers({set,word,target})[0] || "", null);
       const values = responseValues(answers[word.id], parsed.groups.length);
       nextOutcomes[word.id] = createFirstRecallOutcome({ wordId: word.id, answer: parsed.kind === "multi_group" ? values : values[0], answerKey: word.term, wtype: word.wtype, hintLevelUsed: 0, audioBeforeAnswer: false });
       if (languageCode !== "en" || target !== "term") {
@@ -434,7 +438,7 @@ export default function FillFocusSession({
         <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
       </section>}
 
-      {!retest && !quickMode && <StudyModeNav setId={set.id} active="fill" isVerb={false} />}
+      {!retest && !quickMode && <StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} />}
 
       <section className={`rounded-xl border border-line bg-white ${chrome === "compact" ? "p-2" : "p-2.5 sm:p-3"}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -468,7 +472,7 @@ export default function FillFocusSession({
         <>
           <section className={`fill-focus-card mx-auto w-full max-w-3xl rounded-2xl border border-line bg-white shadow-sm ${chrome === "compact" ? "p-3 sm:p-4" : "p-4 sm:p-6"}`} aria-live="polite">
             {isRetry && <div className="mb-3 inline-flex rounded-full border border-[#CFC7FF] bg-[#F7F5FF] px-3 py-1 text-xs font-bold text-[#6550DB]">↻ Từ yếu quay lại sau vài câu</div>}
-            <div className="text-center"><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold sm:text-3xl">{currentWord.meaning}</div>{currentWord.wtype && <div className="mt-1.5 text-sm text-muted"><span className="font-semibold">Loại từ:</span> {currentWord.wtype}</div>}</div>
+            <div className="text-center">{languageCode === "zh-CN" && target === "pronunciation" ? <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Chữ Hán</div><div className="mt-2 font-serif text-3xl font-bold sm:text-4xl">{getWordDisplayForms(currentWord,set).primary}</div><div className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-1 text-lg font-bold">{currentWord.meaning}</div></> : <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold sm:text-3xl">{currentWord.meaning}</div></>}{currentWord.wtype && <div className="mt-1.5 text-sm text-muted"><span className="font-semibold">Loại từ:</span> {currentWord.wtype}</div>}</div>
 
             {!feedback && effectiveSessionKind === "practice" && <div className="mt-3 flex flex-wrap justify-center gap-2">
               {canPlayTargetAudioBeforeAnswer(effectiveSessionKind) && target === "term" && <span onClickCapture={markAudioBeforeAnswer}><SpeakButton text={getSpeakText(currentWord,set)} languageCode={languageCode} /></span>}
@@ -477,11 +481,27 @@ export default function FillFocusSession({
 
             {!feedback && currentHint && <div className="mx-auto mt-4 max-w-xl rounded-xl border border-dashed border-gold bg-goldpale/25 px-4 py-3 text-sm"><div className="text-xs font-bold uppercase tracking-wide text-golddark">{multiGroup ? `Gợi ý cấu trúc ${hintGroupIndex + 1} · ` : ""}{currentHint.label}</div><div className={`mt-1 ${currentHint.revealed ? "font-bold text-ink" : "font-mono text-muted"}`}>{currentHint.value}</div></div>}
 
-            {multiGroup ? <div className="mx-auto mt-4 grid max-w-xl gap-3"><div className="text-center text-sm font-bold text-[#6550DB]">{currentParsed.groups.length} cấu trúc cần nhớ</div>{currentParsed.groups.map((groupItem, groupIndex) => { const responseCorrect = feedback?.corrected || feedback?.groupGrade?.groupResults.some((result) => result.matchedResponseIndex === groupIndex); return <div key={groupItem.id}><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}-${groupIndex}`}>Cấu trúc {groupIndex + 1}</label><input ref={(element) => { groupInputRefs.current[groupIndex] = element; }} id={`fill-answer-${currentWord.id}-${groupIndex}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={`Nhập cấu trúc ${groupIndex + 1}`} className={`${cx.input} !mb-0 mt-1 min-h-12 text-base ${feedback ? responseCorrect ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentResponses[groupIndex]} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: currentResponses.map((value, index) => index === groupIndex ? event.target.value : value) })); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && !feedback && groupIndex < currentParsed.groups.length - 1) { event.preventDefault(); groupInputRefs.current[groupIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={groupIndex === currentParsed.groups.length - 1 ? "done" : "next"} /></div>; })}</div> : <div className="mx-auto mt-4 max-w-md"><label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}`}>{target === "pronunciation" ? languageConfig.pronunciationLabel : languageConfig.termLabel}</label><input ref={inputRef} id={`fill-answer-${currentWord.id}`} lang={languageCode} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} className={`${cx.input} !mb-0 mt-1.5 min-h-12 text-base ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" /></div>}
+            {multiGroup ? (
+              <div className="mx-auto mt-4 grid max-w-xl gap-3">
+                <div className="text-center text-sm font-bold text-[#6550DB]">{currentParsed.groups.length} cấu trúc cần nhớ</div>
+                {currentParsed.groups.map((groupItem, groupIndex) => {
+                  const responseCorrect = feedback?.corrected || feedback?.groupGrade?.groupResults.some((result) => result.matchedResponseIndex === groupIndex);
+                  return <div key={groupItem.id}>
+                    <label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}-${groupIndex}`}>Cấu trúc {groupIndex + 1}</label>
+                    <input ref={(element) => { groupInputRefs.current[groupIndex] = element; }} id={`fill-answer-${currentWord.id}-${groupIndex}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={`Nhập cấu trúc ${groupIndex + 1}`} className={`${cx.input} !mb-0 mt-1 min-h-12 text-base ${feedback ? responseCorrect ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentResponses[groupIndex]} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: currentResponses.map((value, index) => index === groupIndex ? event.target.value : value) })); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && !feedback && groupIndex < currentParsed.groups.length - 1) { event.preventDefault(); groupInputRefs.current[groupIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={groupIndex === currentParsed.groups.length - 1 ? "done" : "next"} />
+                  </div>;
+                })}
+              </div>
+            ) : (
+              <div className="mx-auto mt-4 max-w-md">
+                <label className="text-xs font-bold uppercase tracking-[0.12em] text-muted" htmlFor={`fill-answer-${currentWord.id}`}>NHẬP {target === "pronunciation" ? languageConfig.pronunciationLabel.toUpperCase() : languageConfig.termLabel.toUpperCase()}</label>
+                <input ref={inputRef} id={`fill-answer-${currentWord.id}`} lang={languageCode} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} className={`${cx.input} !mb-0 mt-1.5 min-h-12 text-base ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" />
+              </div>
+            )}
 
             {feedback && <AnswerFeedback word={currentWord} feedback={feedback} outcome={currentOutcome} set={set} target={target} />}
 
-            {feedback && (needsCorrection || feedback.corrected) && <div className="mx-auto mt-5 max-w-md rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className={`text-sm font-bold ${feedback.corrected ? "text-ok" : "text-bad"}`}>{feedback.corrected ? "✓ Đã sửa đúng" : `Gõ lại ${correction.length} cấu trúc còn thiếu hoặc sai`}</div>{correction.map((value, correctionIndex) => <div key={correctionIndex} className="mt-2"><label className="text-xs font-semibold text-muted" htmlFor={`fill-correction-${currentWord.id}-${correctionIndex}`}>Cấu trúc cần sửa {correctionIndex + 1}</label><input ref={(element) => { correctionInputRefs.current[correctionIndex] = element; }} id={`fill-correction-${currentWord.id}-${correctionIndex}`} autoFocus={correctionIndex === 0} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} className={`${cx.input} !mb-0 mt-1 min-h-12 text-base`} value={value} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === correctionIndex ? event.target.value : item)); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && correctionIndex < correction.length - 1) { event.preventDefault(); correctionInputRefs.current[correctionIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={correctionIndex === correction.length - 1 ? "done" : "next"} /></div>)}</div>}
+            {feedback && (needsCorrection || feedback.corrected) && <div className="mx-auto mt-5 max-w-md rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className={`text-sm font-bold ${feedback.corrected ? "text-ok" : "text-bad"}`}>{feedback.corrected ? "✓ Đã sửa đúng" : multiGroup ? `Gõ lại ${correction.length} cấu trúc còn thiếu hoặc sai` : `Gõ lại ${target === "pronunciation" ? "Pinyin" : languageConfig.termLabel.toLowerCase()}`}</div>{correction.map((value, correctionIndex) => <div key={correctionIndex} className="mt-2"><label className="text-xs font-semibold text-muted" htmlFor={`fill-correction-${currentWord.id}-${correctionIndex}`}>{multiGroup ? `Cấu trúc cần sửa ${correctionIndex + 1}` : target === "pronunciation" ? "Pinyin" : languageConfig.termLabel}</label><input ref={(element) => { correctionInputRefs.current[correctionIndex] = element; }} id={`fill-correction-${currentWord.id}-${correctionIndex}`} autoFocus={correctionIndex === 0} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} className={`${cx.input} !mb-0 mt-1 min-h-12 text-base`} value={value} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === correctionIndex ? event.target.value : item)); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && correctionIndex < correction.length - 1) { event.preventDefault(); correctionInputRefs.current[correctionIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={correctionIndex === correction.length - 1 ? "done" : "next"} /></div>)}</div>}
 
             <div className="mx-auto mt-3 max-w-md">
               {effectiveSessionKind === "test" ? (cursor === originalWords.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!allTestAnswered || saving} onClick={() => void submitTestGroup()}>{saving ? "Đang lưu…" : allTestAnswered ? "Nộp nhóm" : `Còn ${originalWords.length - totalAnsweredInTest} câu chưa làm`}</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentResponseComplete} onClick={advanceTest}>Câu tiếp theo →</button>) : !feedback ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentResponseComplete} onClick={checkPracticeAnswer}>Kiểm tra</button> : needsCorrection ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} onClick={advancePractice}>Câu tiếp theo →</button>}
@@ -504,10 +524,18 @@ function AnswerFeedback({ word, feedback, outcome, set, target }: { word: FillFo
   }
   const accepted = normalizeLanguageCode(set.languageCode) === "en" && target === "term" ? getAcceptedAnswers(word.term) : getTargetAcceptedAnswers({set,word,target});
   const pronunciation = getWordPronunciation(word,set);
+  const chinese = normalizeLanguageCode(set.languageCode) === "zh-CN";
+  const display = getWordDisplayForms(word,set);
   const speak = <SpeakButton text={getSpeakText(word,set)} languageCode={set.languageCode || "en"} />;
-  if (feedback.corrected) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ Đã sửa đúng</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-serif text-xl font-bold">{accepted.join(" / ")}</span>{pronunciation && target !== "pronunciation" && <span className="text-golddark">{pronunciation}</span>}{speak}</div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
-  if (feedback.correct) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ {outcome?.firstTryCorrect ? "Chính xác" : "Đúng sau hỗ trợ"}</div><div className="mt-2 flex flex-wrap items-center gap-2"><span className="font-serif text-xl font-bold">{accepted.join(" / ")}</span>{pronunciation && target !== "pronunciation" && <span className="text-golddark">{pronunciation}</span>}{speak}</div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
-  return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className="font-bold text-bad">✕ {feedback.nearMiss ? target === "pronunciation" ? "Gần đúng — cần kiểm tra thanh điệu" : "Gần đúng — sai chính tả" : "Chưa chính xác"}</div><div className="mt-2 grid gap-1 text-sm"><div><span className="text-muted">Bạn nhập:</span> <span className="font-semibold line-through decoration-bad">{feedback.answer}</span></div><div><span className="text-muted">Đáp án:</span> <span className="font-bold">{accepted.join(" / ")}</span> {pronunciation && target !== "pronunciation" && <span className="text-golddark">{pronunciation}</span>}</div></div><div className="mt-2 flex items-center gap-2">{speak}<span className="text-xs text-muted">Nghe và gõ lại chính xác để tiếp tục.</span></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
+  const answerDetails = <div className="mt-2 grid gap-1 text-sm">
+    <div><span className="text-muted">{target === "pronunciation" ? "Pinyin chuẩn:" : "Đáp án:"}</span> <span className="font-bold">{accepted.join(" / ")}</span></div>
+    {chinese && target === "pronunciation" && <div><span className="text-muted">Chữ Hán:</span> <span className="font-serif font-bold">{display.primary}</span></div>}
+    {chinese && target === "term" && pronunciation && <div><span className="text-muted">Pinyin:</span> <span className="font-semibold text-golddark">{pronunciation}</span></div>}
+  </div>;
+  if (feedback.corrected) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ Đã sửa đúng</div>{answerDetails}<div className="mt-2">{speak}</div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
+  if (feedback.correct) return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-ok/30 bg-okbg/35 p-4"><div className="font-bold text-ok">✓ {outcome?.firstTryCorrect ? "Chính xác" : "Đúng sau hỗ trợ"}</div>{answerDetails}<div className="mt-2">{speak}</div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
+  const errorLabel = feedback.reason === "missing_or_wrong_tone" ? "Gần đúng — bạn đã nhập đúng âm nhưng thiếu hoặc sai thanh điệu" : feedback.reason === "contradictory_combined_answer" ? "Chữ Hán và Pinyin bạn dán không cùng một từ" : target === "pronunciation" ? "Chưa đúng Pinyin" : chinese ? "Chưa đúng chữ Hán" : feedback.nearMiss ? "Gần đúng — sai chính tả" : "Chưa chính xác";
+  return <div className="mx-auto mt-5 max-w-xl rounded-xl border border-bad/25 bg-badbg/30 p-4"><div className="font-bold text-bad">✕ {errorLabel}</div><div className="mt-2 text-sm"><span className="text-muted">Bạn đang làm:</span> <b>{target === "pronunciation" ? " Điền Pinyin" : chinese ? " Điền chữ Hán" : " Điền từ"}</b></div><div className="mt-1 text-sm"><span className="text-muted">Bạn nhập:</span> <span className="font-semibold line-through decoration-bad">{feedback.answer}</span></div>{answerDetails}<div className="mt-2 flex items-center gap-2">{speak}<span className="text-xs text-muted">Nghe và gõ lại chính xác để tiếp tục.</span></div>{word.example && <div className="mt-2 text-sm italic text-muted">{word.example}</div>}</div>;
 }
 
 function QuestionNavigator({ open, onToggle, words, currentWordId, answers, outcomes, hintLevels, queue, cursor, onSelect }: { open: boolean; onToggle: () => void; words: FillFocusWord[]; currentWordId: number; answers: Record<number, FillResponse>; outcomes: Record<number, FillRecallOutcome>; hintLevels: Record<number, number>; queue: number[]; cursor: number; onSelect: (wordId: number) => void }) {

@@ -14,8 +14,8 @@ import { useCurrentUserId } from "@/components/UserSessionContext";
 import FillFocusSession from "@/components/FillFocusSession";
 import { getAcceptedAnswers, gradeFillAnswer, gradeFillAnswerGroups, maskAnswerInExample, parseFillAnswerGroups } from "@/lib/fillAnswer";
 import { fillScopeDraftSegment, filterWordsByFillScope, quizProgressMode, resolveFillWordScope } from "@/lib/unknownFill";
-import { gradeLanguageAnswer } from "@/lib/languageAnswer";
-import { getAvailableModes, getFillModeLabel, type FillTarget } from "@/lib/languages";
+import { gradeLanguageAnswer, getTargetAcceptedAnswers } from "@/lib/languageAnswer";
+import { getAvailableModes, getFillModeLabel, getLanguageConfig, getWordDisplayForms, type FillTarget } from "@/lib/languages";
 
 type Word = {
   id: number;
@@ -37,7 +37,7 @@ type Word = {
   level?: string | null;
   classifier?: string | null;
 };
-type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?:string|null; languageSettings?:unknown; words: Word[] };
+type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?:string; languageSettings?:unknown; words: Word[] };
 type QuizDraft = {
   savedAt: number;
   wordIds: number[];
@@ -72,7 +72,8 @@ function fmtClock(totalSeconds: number) {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function fillHintSource(word: Word) {
+function fillHintSource(word: Word, set?: SetDetail | null, target: FillTarget = "term") {
+  if (set?.languageCode === "zh-CN") return getTargetAcceptedAnswers({set,word,target})[0] || "";
   return parseFillAnswerGroups(word.term, word.wtype).groups[0]?.source || word.term || "";
 }
 
@@ -641,6 +642,7 @@ function submitJumpQuestion() {
     if (!a) return false;
     if (isVerb) return Boolean(a.v1 || a.v2 || a.v3);
     if (mode === "fill") {
+      if (set?.languageCode === "zh-CN") return Boolean(a.term?.trim());
       const parsed = parseFillAnswerGroups(w.term, w.wtype);
       return parsed.kind === "multi_group"
         ? parsed.groups.every((_, index) => Boolean(a[`group-${index}`]?.trim()))
@@ -950,6 +952,7 @@ function submitJumpQuestion() {
           active={timedMode ? "timed" : mode}
           isVerb={isVerb}
           languageCode={set.languageCode || "en"}
+          fillTarget={fillTarget}
           availableModes={getAvailableModes(set)}
         />
       )}
@@ -1179,12 +1182,12 @@ function submitJumpQuestion() {
                     <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
                       <span className="text-xs font-bold text-muted">Gợi ý: </span>
                       <span className="font-mono">
-                        {fillHintSource(w).split("").map((ch, ci) => (
+                        {fillHintSource(w, set, fillTarget).split("").map((ch, ci) => (
                           <span key={ci} className={ch === " " ? "mx-1" : ""}>
                             {ch === " " ? "·" : ci === 0 ? ch : "_"}
                           </span>
                         ))}
-                        <span className="ml-2 text-muted text-xs">({fillHintSource(w).length} ký tự)</span>
+                        <span className="ml-2 text-muted text-xs">({fillHintSource(w, set, fillTarget).length} ký tự)</span>
                       </span>
                     </div>
                   )}
@@ -1238,8 +1241,8 @@ function submitJumpQuestion() {
               ) : mode === "fill" ? (
                 <>
                   <div className="flex items-center gap-2 flex-wrap mb-2">
-                    <div className="font-bold">{w.meaning}</div>
-                    {(!isTestSession || effectiveChecked) && <SpeakButton text={w.term || ""} />}
+                    <div className="font-bold">{set.languageCode === "zh-CN" && fillTarget === "pronunciation" ? <><span className="font-serif text-2xl">{w.term}</span><span className="mt-1 block text-sm text-muted">{w.meaning}</span></> : w.meaning}</div>
+                    {(!isTestSession || effectiveChecked) && <SpeakButton text={w.term || ""} languageCode={set.languageCode} />}
                     {!isTestSession && <button
                       type="button"
                       onClick={() => toggleHint(w.id)}
@@ -1253,12 +1256,12 @@ function submitJumpQuestion() {
                     <div className="mb-2 rounded-lg border border-dashed border-gold bg-goldpale/30 px-3 py-2 text-sm">
                       <span className="text-xs font-bold text-muted">Gợi ý: </span>
                       <span className="font-mono">
-                        {fillHintSource(w).split("").map((ch, ci) => (
+                        {fillHintSource(w, set, fillTarget).split("").map((ch, ci) => (
                           <span key={ci} className={ch === " " ? "mx-1" : ""}>
                             {ch === " " ? "·" : ci === 0 ? ch : "_"}
                           </span>
                         ))}
-                        <span className="ml-2 text-muted text-xs">({fillHintSource(w).length} ký tự)</span>
+                        <span className="ml-2 text-muted text-xs">({fillHintSource(w, set, fillTarget).length} ký tự)</span>
                       </span>
                     </div>
                   )}
@@ -1276,6 +1279,8 @@ function submitJumpQuestion() {
                   )}
                   <ListFillInputs
                     word={w}
+                    set={set}
+                    target={fillTarget}
                     values={answers[w.id] || {}}
                     checked={effectiveChecked}
                     onChange={(part, value) => setAnswer(w.id, part, value)}
@@ -1286,7 +1291,7 @@ function submitJumpQuestion() {
                   </div>
                   {effectiveChecked && (
                     <div className="mt-2 text-[0.84rem] flex items-center gap-2">
-                      <ListFillFeedback word={w} values={answers[w.id] || {}} />
+                      <ListFillFeedback word={w} set={set} target={fillTarget} values={answers[w.id] || {}} />
                       {w.example && <span className="text-muted italic">VD: {w.example}</span>}
                     </div>
                   )}
@@ -1393,8 +1398,10 @@ function submitJumpQuestion() {
   );
 }
 
-function ListFillInputs({ word, values, checked, onChange, onFinalEnter, registerPrimary, finalWord }: {
+function ListFillInputs({ word, set, target, values, checked, onChange, onFinalEnter, registerPrimary, finalWord }: {
   word: Word;
+  set: SetDetail;
+  target: FillTarget;
   values: Record<string, string>;
   checked: boolean;
   onChange: (part: string, value: string) => void;
@@ -1402,13 +1409,21 @@ function ListFillInputs({ word, values, checked, onChange, onFinalEnter, registe
   registerPrimary: (element: HTMLInputElement | null) => void;
   finalWord: boolean;
 }) {
-  const parsed = parseFillAnswerGroups(word.term, word.wtype);
-  const responses = listFillResponses(word, values);
-  const grade = gradeFillAnswerGroups(responses, parsed);
-  return <div className="grid gap-2">{parsed.kind === "multi_group" && <div className="text-xs font-bold text-[#6550DB]">{parsed.groups.length} cấu trúc cần nhớ</div>}{parsed.groups.map((groupItem, index) => { const part = parsed.kind === "multi_group" ? `group-${index}` : "term"; const responseCorrect = grade.groupResults.some((result) => result.matchedResponseIndex === index); return <div key={groupItem.id}><label className="mb-0.5 block text-[0.66rem] tracking-wide text-muted" htmlFor={`list-fill-${word.id}-${index}`}>{parsed.kind === "multi_group" ? `CẤU TRÚC ${index + 1}` : "TỪ TIẾNG ANH"}</label><input id={`list-fill-${word.id}-${index}`} ref={index === 0 ? registerPrimary : undefined} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={checked} placeholder={parsed.kind === "multi_group" ? `Nhập cấu trúc ${index + 1}` : undefined} value={responses[index]} onChange={(event) => onChange(part, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && index < parsed.groups.length - 1) { event.preventDefault(); document.getElementById(`list-fill-${word.id}-${index + 1}`)?.focus(); return; } onFinalEnter(event); }} enterKeyHint={index === parsed.groups.length - 1 && finalWord ? "done" : "next"} className={`${cx.input} !mb-0 ${checked ? responseCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} /></div>; })}</div>;
+  const chinese = set.languageCode === "zh-CN";
+  const parsed = chinese ? parseFillAnswerGroups(getTargetAcceptedAnswers({set,word,target})[0] || "", null) : parseFillAnswerGroups(word.term, word.wtype);
+  const responses = chinese ? [values.term || ""] : listFillResponses(word, values);
+  const languageGrade = chinese ? gradeLanguageAnswer({set,word,target,userAnswer:responses[0]}) : null;
+  const grade = languageGrade ? { correct:languageGrade.correct, groupResults:[{matchedResponseIndex:languageGrade.correct?0:null}] } : gradeFillAnswerGroups(responses, parsed);
+  const config = getLanguageConfig(set.languageCode);
+  return <div className="grid gap-2">{parsed.kind === "multi_group" && <div className="text-xs font-bold text-[#6550DB]">{parsed.groups.length} cấu trúc cần nhớ</div>}{parsed.groups.map((groupItem, index) => { const part = parsed.kind === "multi_group" ? `group-${index}` : "term"; const responseCorrect = grade.groupResults.some((result) => result.matchedResponseIndex === index); return <div key={groupItem.id}><label className="mb-0.5 block text-[0.66rem] font-bold tracking-wide text-muted" htmlFor={`list-fill-${word.id}-${index}`}>{parsed.kind === "multi_group" ? `CẤU TRÚC ${index + 1}` : `NHẬP ${target === "pronunciation" ? config.pronunciationLabel.toUpperCase() : config.termLabel.toUpperCase()}`}</label><input lang={set.languageCode} id={`list-fill-${word.id}-${index}`} ref={index === 0 ? registerPrimary : undefined} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={checked} placeholder={parsed.kind === "multi_group" ? `Nhập cấu trúc ${index + 1}` : undefined} value={responses[index]} onChange={(event) => onChange(part, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && index < parsed.groups.length - 1) { event.preventDefault(); document.getElementById(`list-fill-${word.id}-${index + 1}`)?.focus(); return; } onFinalEnter(event); }} enterKeyHint={index === parsed.groups.length - 1 && finalWord ? "done" : "next"} className={`${cx.input} !mb-0 ${checked ? responseCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} /></div>; })}</div>;
 }
 
-function ListFillFeedback({ word, values }: { word: Word; values: Record<string, string> }) {
+function ListFillFeedback({ word, set, target, values }: { word: Word; set: SetDetail; target: FillTarget; values: Record<string, string> }) {
+  if (set.languageCode === "zh-CN") {
+    const grade = gradeLanguageAnswer({set,word,target,userAnswer:values.term || ""});
+    const label = grade.reason === "missing_or_wrong_tone" ? "Gần đúng — kiểm tra thanh điệu." : target === "pronunciation" ? "Chưa đúng Pinyin." : "Chưa đúng chữ Hán.";
+    return <div className={`rounded-lg border p-3 ${grade.correct ? "border-ok/30 bg-okbg/50" : "border-bad/30 bg-badbg/50"}`}><div className={`font-bold ${grade.correct ? "text-ok" : "text-bad"}`}>{grade.correct ? "✔ Chính xác." : `✘ ${label}`}</div>{!grade.correct && <div className="mt-1 text-sm"><span className="text-muted">{target === "pronunciation" ? "Pinyin chuẩn:" : "Đáp án:"}</span> <b>{grade.acceptedAnswers.join(" / ")}</b></div>}{target === "pronunciation" && <div className="mt-1 text-sm"><span className="text-muted">Chữ Hán:</span> <b>{word.term}</b></div>}{target === "term" && word.pronunciation && <div className="mt-1 text-sm text-golddark">Pinyin: {word.pronunciation}</div>}<div className="mt-2"><SpeakButton text={word.term || ""} languageCode="zh-CN" /></div></div>;
+  }
   const parsed = parseFillAnswerGroups(word.term, word.wtype);
   const grade = gradeFillAnswerGroups(listFillResponses(word, values), parsed);
   if (parsed.kind === "multi_group") {

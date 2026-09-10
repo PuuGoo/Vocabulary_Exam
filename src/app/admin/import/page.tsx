@@ -123,7 +123,9 @@ export default function AdminImportPage() {
     }
     const duplicateNote = data.skippedDuplicates ? ` Bỏ qua ${data.skippedDuplicates} từ đã tồn tại hoặc bị lặp.` : "";
     const invalidNote = data.skippedInvalid ? ` Bỏ qua ${data.skippedInvalid} dòng thiếu dữ liệu bắt buộc.` : "";
-    toast(`Đã thêm ${data.added} từ trên ${data.total} dòng.${duplicateNote}${invalidNote}`);
+    const toneWarning = data.warnings?.find?.((warning: { code?: string }) => warning.code === "PINYIN_TONE_MISSING");
+    const warningNote = toneWarning?.rows?.length ? ` Cảnh báo: Pinyin chưa có thanh điệu ở dòng ${toneWarning.rows.join(", ")}.` : "";
+    toast(`Đã thêm ${data.added} từ trên ${data.total} dòng.${duplicateNote}${invalidNote}${warningNote}`);
     const returnTo = new URLSearchParams(window.location.search).get("returnTo");
     if (returnTo?.startsWith("/admin/sets")) {
       router.replace(returnTo);

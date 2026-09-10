@@ -131,6 +131,7 @@ export default function StudyPage() {
       onLearn={() => { if (requireWords(set.id)) router.push(`/learn/${set.id}`); }}
       onFill={() => startQuiz(set.id, "fill")} onMc={() => startQuiz(set.id, "mc")}
       onPinyinFill={() => router.push(`/quiz/${set.id}?mode=fill&target=pronunciation`)}
+      onPinyinUnknownFill={() => router.push(`/quiz/${set.id}?mode=fill&target=pronunciation&scope=unknown`)}
       onUnknownFill={() => router.push(`/quiz/${set.id}?mode=fill&scope=unknown`)}
       onRoute={(route) => { if (requireWords(set.id)) router.push(`/${route}/${set.id}`); }}
       onTimed={() => setTimedSetId(set.id)} />;
@@ -413,6 +414,7 @@ function CollectionCard({
   onLearn,
   onFill,
   onPinyinFill,
+  onPinyinUnknownFill,
   onUnknownFill,
   onMc,
   onRoute,
@@ -423,6 +425,7 @@ function CollectionCard({
   onLearn: () => void;
   onFill: () => void;
   onPinyinFill: () => void;
+  onPinyinUnknownFill: () => void;
   onUnknownFill: () => void;
   onMc: () => void;
   onRoute: (route: string) => void;
@@ -493,6 +496,7 @@ function CollectionCard({
           >
             {getFillUnknownLabel(set)} ({set.unknownCount})
           </button>
+          {set.languageCode === "zh-CN" && <button disabled={set.unknownCount === 0} onClick={onPinyinUnknownFill} className={modeClass} title={set.unknownCount === 0 ? "Bạn chưa có từ nào được đánh dấu Chưa nhớ." : undefined}>Điền Pinyin chưa nhớ ({set.unknownCount})</button>}
           {set.type !== "irregular_verb" && (
             <button disabled={empty} onClick={onMc} className={modeClass}>
               Trắc nghiệm

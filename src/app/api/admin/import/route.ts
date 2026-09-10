@@ -10,6 +10,7 @@ import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { dedupeImportRows, importWordKey } from "@/lib/importDedup";
 import { appendWords } from "@/lib/wordOrder.server";
+import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 
 export const runtime = "nodejs";
 
@@ -114,6 +115,7 @@ export async function POST(req: NextRequest) {
   let added = 0;
   let invalidCount = 0;
   const toInsert: Omit<typeof words.$inferInsert, "position">[] = [];
+  const pinyinWarningRows: number[] = [];
   const validRows: Row[] = [];
   for (const r of rows) {
     if (setType === "irregular_verb") {
@@ -131,7 +133,9 @@ export async function POST(req: NextRequest) {
     }
   }
   const deduped = dedupeImportRows(validRows, setType, existingKeys);
-  for (const r of deduped.rows) {
+  for (const [dedupedIndex, r] of deduped.rows.entries()) {
+    const pronunciation = languageCode === "zh-CN" && r.pronunciation ? canonicalizePinyinDisplay(r.pronunciation) : r.pronunciation;
+    if (languageCode === "zh-CN" && pronunciation && !hasExplicitPinyinTone(pronunciation)) pinyinWarningRows.push(dedupedIndex + 2);
     if (setType === "irregular_verb") {
       toInsert.push({
         setId,
@@ -152,10 +156,10 @@ export async function POST(req: NextRequest) {
         wtype: r.wtype || r.type || "",
         ipa: r.ipa || null,
         alternateTerm: r.alternateTerm || null,
-        pronunciation: r.pronunciation || null,
+        pronunciation: pronunciation || null,
         classifier: r.classifier || null,
         level: r.level || null,
-        examplePronunciation: r.examplePronunciation || null,
+        examplePronunciation: languageCode === "zh-CN" && r.examplePronunciation ? canonicalizePinyinDisplay(r.examplePronunciation) : r.examplePronunciation || null,
         exampleMeaning: r.exampleMeaning || null,
       });
     }
@@ -171,5 +175,6 @@ export async function POST(req: NextRequest) {
     total: rows.length,
     skippedDuplicates: deduped.duplicateCount,
     skippedInvalid: invalidCount,
+    warnings: pinyinWarningRows.length ? [{ code:"PINYIN_TONE_MISSING", message:"Pinyin chưa có dấu thanh.", rows:pinyinWarningRows }] : [],
   });
 }

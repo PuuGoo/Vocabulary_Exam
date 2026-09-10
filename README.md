@@ -6,7 +6,7 @@ Lexora dùng chung hệ thống bộ từ, tiến độ, bookmark, mistakes và 
 
 Trong bộ tiếng Trung, `term` là chữ Hán chính, `alternateTerm` là dạng phồn thể tùy chọn, `pronunciation` là Pinyin và `meaning` là nghĩa tiếng Việt. File import chấp nhận các cột `Chữ Hán`, `Phồn thể`, `Pinyin`, `Nghĩa`, `Loại từ`, `Lượng từ`, `HSK`, `Ví dụ`, `Pinyin ví dụ`, `Nghĩa ví dụ` cùng các tên field chuẩn tiếng Anh tương ứng.
 
-Chấm Pinyin nghiêm ngặt chấp nhận dấu thanh (`xuéxí`) hoặc số thanh (`xue2xi2`); chế độ thư giãn chấp nhận `xuexi`. Các dạng `ü`, `v`, `u:` được chuẩn hóa. Sentence mode hiện được ẩn với Mandarin cho đến khi có tokenizer phù hợp. Muốn thêm ngôn ngữ sau này, mở rộng registry tại `src/lib/languages.ts` và bộ chấm tương ứng, không tạo progress hay quiz engine riêng.
+Điền chữ Hán và Điền Pinyin là hai target độc lập: người học không bao giờ phải nhập cả hai trong một ô. Chấm Pinyin nghiêm ngặt chấp nhận dấu thanh (`xuéxí`) hoặc số thanh (`xue2xi2`); chế độ thư giãn chấp nhận `xuexi`. Admin/import tự đổi Pinyin có số sang dạng dấu để hiển thị nhưng không tự đoán thanh cho dữ liệu `xuexi`. Các dạng `ü`, `v`, `u:` và ký tự định dạng ẩn từ Excel/WPS/Google Sheets được chuẩn hóa. Sentence mode hiện được ẩn với Mandarin cho đến khi có tokenizer phù hợp. Muốn thêm ngôn ngữ sau này, mở rộng registry tại `src/lib/languages.ts` và bộ chấm tương ứng, không tạo progress hay quiz engine riêng.
 
 ## Vocabulary pattern syntax
 
