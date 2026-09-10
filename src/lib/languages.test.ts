@@ -50,9 +50,12 @@ test("Chinese Fill surfaces keep Hanzi and Pinyin as explicit separate targets",
   const focus=readFileSync("src/components/FillFocusSession.tsx","utf8");
   const quiz=readFileSync("src/app/(student)/quiz/[setId]/page.tsx","utf8");
   const study=readFileSync("src/app/(student)/study/page.tsx","utf8");
+  const learn=readFileSync("src/components/learning/LearnExperience.tsx","utf8");
   assert.match(focus,/NHẬP \{target === "pronunciation"/);
   assert.match(quiz,/<ListFillInputs[\s\S]*target=\{fillTarget\}/);
   assert.match(quiz,/gradeLanguageAnswer\(\{set,word,target/);
   assert.match(study,/target=pronunciation&scope=unknown/);
+  assert.match(quiz,/quizUrl\(\{ target: "pronunciation" \}\)/);
+  assert.match(learn,/target=pronunciation/);
   assert.doesNotMatch(focus,/word\.term\s*\+\s*["' ]+\s*\+\s*word\.pronunciation/);
 });

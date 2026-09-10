@@ -957,6 +957,29 @@ function submitJumpQuestion() {
         />
       )}
 
+      {mode === "fill" && set.languageCode === "zh-CN" && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] p-2.5" role="group" aria-label="Chọn nội dung cần điền">
+          <span className="px-1 text-xs font-bold uppercase tracking-wide text-muted">Nội dung cần điền</span>
+          <button
+            type="button"
+            aria-pressed={fillTarget === "term"}
+            className={`min-h-10 rounded-lg px-3 text-sm font-bold ${fillTarget === "term" ? "bg-white text-ink shadow-sm" : "text-muted hover:bg-white/70"}`}
+            onClick={() => navigateQuiz(quizUrl({ target: null }))}
+          >
+            Chữ Hán
+          </button>
+          <button
+            type="button"
+            aria-pressed={fillTarget === "pronunciation"}
+            className={`min-h-10 rounded-lg px-3 text-sm font-bold ${fillTarget === "pronunciation" ? "bg-white text-ink shadow-sm" : "text-muted hover:bg-white/70"}`}
+            onClick={() => navigateQuiz(quizUrl({ target: "pronunciation" }))}
+          >
+            Pinyin
+          </button>
+          <span className="text-xs text-muted">Chỉ nhập Pinyin, ví dụ: xuéxí hoặc xue2xi2.</span>
+        </div>
+      )}
+
       {mode === "fill" && !isVerb && !timedMode && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-white p-2.5">
           <div className="inline-flex rounded-lg bg-[#F4F2FA] p-1" aria-label="Mục tiêu phiên học">

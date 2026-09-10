@@ -62,9 +62,9 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
     const hrefs: Record<string, string> = { fill: `/quiz/${id}?mode=fill`, mc: `/quiz/${id}?mode=mc`, dictation: `/dictation/${id}`, match: `/match/${id}`, listen: `/listen/${id}`, pronunciation: `/pronunciation/${id}`, sentence: `/sentence/${id}`, timed: `/quiz/${id}?mode=fill&timed=1&minutes=15` };
     if (hrefs[nextMode]) router.push(hrefs[nextMode]);
   };
-  const practiceUnknownWords = () => {
+  const practiceUnknownWords = (target: "term" | "pronunciation" = "term") => {
     if (!authenticatedSetId || unknown === 0) return;
-    router.push(`/quiz/${authenticatedSetId}?mode=fill&scope=unknown`);
+    router.push(`/quiz/${authenticatedSetId}?mode=fill&scope=unknown${target === "pronunciation" ? "&target=pronunciation" : ""}`);
   };
 
   async function loadSet() {
@@ -339,7 +339,10 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
       <p className="text-center text-xs text-[#8B899F] sm:hidden">Vuốt sang trái/phải để chuyển thẻ</p>
     </section>
     <footer className="shrink-0 border-t border-[#EBEAF2] bg-white px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
-      {mode === "unknown" && unknown > 0 && authenticatedSetId && <button type="button" className="mx-auto mb-2 block min-h-11 w-full max-w-2xl rounded-xl border border-[#CFC7FF] bg-[#F7F5FF] px-4 text-sm font-bold text-[#6550DB]" onClick={practiceUnknownWords}>{getFillUnknownLabel(set||{})} ({unknown})</button>}
+      {mode === "unknown" && unknown > 0 && authenticatedSetId && <div className="mx-auto mb-2 grid w-full max-w-2xl gap-2 sm:grid-cols-2">
+        <button type="button" className="min-h-11 rounded-xl border border-[#CFC7FF] bg-[#F7F5FF] px-4 text-sm font-bold text-[#6550DB]" onClick={() => practiceUnknownWords("term")}>{getFillUnknownLabel(set||{})} ({unknown})</button>
+        {normalizeLanguageCode(set?.languageCode) === "zh-CN" && <button type="button" className="min-h-11 rounded-xl border border-[#CFC7FF] bg-[#F7F5FF] px-4 text-sm font-bold text-[#6550DB]" onClick={() => practiceUnknownWords("pronunciation")}>Điền Pinyin chưa nhớ ({unknown})</button>}
+      </div>}
       <div className="mx-auto max-w-2xl">{flipped?<div className="grid grid-cols-2 gap-3"><button disabled={saving} onClick={()=>void mark(false)} className="min-h-[52px] rounded-2xl border border-[#F0B7B7] bg-[#FFF1F1] px-3 text-sm font-bold text-[#B64242] active:scale-[.98]">Chưa nhớ <span className="hidden text-xs font-normal sm:inline">· phím 1</span></button><button disabled={saving} onClick={()=>void mark(true)} className="min-h-[52px] rounded-2xl border border-[#B6DEC8] bg-[#EEFBF3] px-3 text-sm font-bold text-[#277A4B] active:scale-[.98]">Đã nhớ <span className="hidden text-xs font-normal sm:inline">· phím 2</span></button></div>:<button onClick={()=>setFlipped(true)} className="min-h-[52px] w-full rounded-2xl bg-[#7865EE] px-4 text-sm font-bold text-white">Lật thẻ để đánh giá</button>}{saving&&<div className="mt-1 text-center text-xs text-[#8B899F]">Đang lưu…</div>}</div>
     </footer>
     {undo&&<div className="lexora-undo-snackbar fixed inset-x-3 bottom-[calc(92px+env(safe-area-inset-bottom))] z-[100] mx-auto flex max-w-md items-center justify-between gap-3 overflow-hidden rounded-2xl bg-[#242337] px-4 py-3 text-sm text-white shadow-2xl"><span>{undo.message}</span><button onClick={()=>void undoLast()} className="rounded-lg bg-white/15 px-3 py-1.5 font-semibold text-white hover:bg-white/25">Hoàn tác</button><span aria-hidden="true" className="lexora-undo-timer absolute inset-x-0 bottom-0 h-0.5 origin-left bg-[#AFA2FF]"/></div>}
