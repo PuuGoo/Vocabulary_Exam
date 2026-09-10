@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { words, vocabSets } from "@/db/schema";
-import { getSession } from "@/lib/auth";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { fetchIpaSingle, isGeminiConfigured } from "@/lib/gemini";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireAdminPermission("vocab.edit");
@@ -20,6 +20,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!word) return NextResponse.json({ error: "Không tìm thấy từ." }, { status: 404 });
 
   const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, word.setId) });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.edit", folderId: set?.folderId ?? null, level: "editor", access });
+  if (isAuthorizationError(scoped)) return scoped;
   const lookupTexts = set?.type === "irregular_verb"
     ? [word.v1, word.v2, word.v3].filter((value): value is string => Boolean(value))
     : [word.term || word.v1].filter((value): value is string => Boolean(value));

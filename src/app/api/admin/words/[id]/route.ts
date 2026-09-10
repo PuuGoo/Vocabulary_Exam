@@ -8,12 +8,17 @@ import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { deleteWordsAndNormalize } from "@/lib/wordOrder.server";
 import { canonicalizePinyinDisplay } from "@/lib/pinyin";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireAdminPermission("vocab.delete");
   if (isAuthorizationError(access)) return access;
   const wordId = Number(params.id);
   if (!Number.isInteger(wordId) || wordId < 1) return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
+  const word = await db.query.words.findFirst({ where: eq(words.id, wordId) });
+  const set = word ? await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, word.setId) }) : null;
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.delete", folderId: set?.folderId, level: "manager", access });
+  if (isAuthorizationError(scoped)) return scoped;
   const result = await deleteWordsAndNormalize([wordId]);
   if (result.kind === "stale") return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
   return NextResponse.json({ ok: true });
@@ -49,6 +54,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const wordId = Number(params.id);
   const existing = await db.query.words.findFirst({ where: eq(words.id, wordId) });
   if (!existing) return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
+  const parentSet = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, existing.setId) });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.edit", folderId: parentSet?.folderId, level: "editor", access });
+  if (isAuthorizationError(scoped)) return scoped;
   const patternError = getFillPatternValidationError(parsed.data.term ?? existing.term, parsed.data.wtype ?? existing.wtype);
   if (patternError) return NextResponse.json({ error: patternError }, { status: 400 });
 

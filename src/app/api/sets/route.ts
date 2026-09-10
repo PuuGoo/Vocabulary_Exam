@@ -9,11 +9,13 @@ import { z } from "zod";
 import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { isSupportedLanguageCode } from "@/lib/languages";
 import { serializeLanguageSettings } from "@/lib/languageSettings";
+import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderDisplayPaths, getFolderLegacyPath, getVisibleFolderIds, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export async function GET() {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if (session.role === "admin" && !(await getAdminAccess(session))?.can("vocab.view")) {
+  const adminAccess = session.role === "admin" ? await getAdminAccess(session) : null;
+  if (session.role === "admin" && !adminAccess?.can("vocab.view")) {
     return NextResponse.json({ error: "Forbidden", code: "ADMIN_PERMISSION_REQUIRED", permission: "vocab.view" }, { status: 403 });
   }
 
@@ -24,7 +26,11 @@ export async function GET() {
       .from(classMembers)
       .where(eq(classMembers.userId, session.userId));
     const classIds = memberships.map((m) => m.classId);
-    classFilter = classIds.length > 0 ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+    const audience = classIds.length > 0 ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+    classFilter = and(eq(vocabSets.publicationStatus, "published"), audience);
+  } else if (adminAccess) {
+    const visibleFolderIds = await getVisibleFolderIds(adminAccess);
+    classFilter = visibleFolderIds.length ? inArray(vocabSets.folderId, visibleFolderIds) : sql`false`;
   }
 
   const query = db
@@ -32,6 +38,8 @@ export async function GET() {
       id: vocabSets.id,
       name: vocabSets.name,
       category: vocabSets.category,
+      folderId: vocabSets.folderId,
+      publicationStatus: vocabSets.publicationStatus,
       type: vocabSets.type,
       languageCode: vocabSets.languageCode,
       translationLanguageCode: vocabSets.translationLanguageCode,
@@ -54,11 +62,14 @@ export async function GET() {
     .orderBy(vocabSets.createdAt);
 
   const rows = classFilter ? await query.where(classFilter) : await query;
+  const displayPaths = adminAccess ? await getFolderDisplayPaths(adminAccess, rows.flatMap((row) => row.folderId ? [row.folderId] : [])) : new Map<number, string>();
 
-  const categories = await db.select({ name: vocabCategories.name }).from(vocabCategories);
+  const categories = adminAccess ? [] : await db.select({ name: vocabCategories.name }).from(vocabCategories);
   const now = Date.now();
   return NextResponse.json({ sets: rows.map((row) => ({
     ...row,
+    legacyCategory: row.category,
+    category: adminAccess && row.folderId ? displayPaths.get(row.folderId) ?? row.category : row.category,
     reviewStatus: !row.initialCompletedAt ? "not_started" : row.reviewStage === 4 ? "consolidated" : row.nextSetReviewAt && row.nextSetReviewAt.getTime() <= now ? "due" : "learning",
   })), categories: categories.map((category) => category.name) });
 }
@@ -66,6 +77,8 @@ export async function GET() {
 const createSchema = z.object({
   name: z.string().trim().min(1).max(256),
   category: z.string().trim().max(128).nullable().optional(),
+  folderId: z.number().int().positive().nullable().optional(),
+  publicationStatus: z.enum(["draft", "published"]).optional(),
   type: z.enum(["irregular_verb", "ielts_vocab", "language_vocab"]),
   languageCode: z.string().max(16).optional(),
   translationLanguageCode: z.string().max(16).optional(),
@@ -88,7 +101,13 @@ export async function POST(req: NextRequest) {
   let languageSettings: string;
   try { languageSettings = serializeLanguageSettings(parsed.data.languageSettings, languageCode); }
   catch { return NextResponse.json({ error: "Cấu hình ngôn ngữ không hợp lệ." }, { status: 400 }); }
-  const category = parsed.data.category ? normalizeText(parsed.data.category) : null;
+  const personal = await ensurePersonalWorkspace(access.userId);
+  const requestedCategory = parsed.data.category ? normalizeText(parsed.data.category) : null;
+  const folderId = parsed.data.folderId ?? (requestedCategory ? await findVisibleFolderIdByLegacyPath(access, requestedCategory) : null) ?? personal?.id;
+  if (!folderId) return NextResponse.json({ error: "Không tìm thấy Không gian của tôi." }, { status: 409 });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.create", folderId, level: "editor", access });
+  if (isAuthorizationError(scoped)) return scoped;
+  const category = await getFolderLegacyPath(folderId) ?? requestedCategory;
   const [set] = await db.transaction(async (tx) => {
     if (category) {
       await tx.insert(vocabCategories).values({ name: category, createdBy: access.userId }).onConflictDoNothing({ target: vocabCategories.name });
@@ -98,6 +117,8 @@ export async function POST(req: NextRequest) {
     return tx.insert(vocabSets).values({
       name: setName,
       category,
+      folderId,
+      publicationStatus: parsed.data.publicationStatus ?? "draft",
       type: parsed.data.type,
       languageCode,
       translationLanguageCode: parsed.data.translationLanguageCode || "vi",

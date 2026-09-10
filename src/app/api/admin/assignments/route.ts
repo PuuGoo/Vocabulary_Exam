@@ -6,10 +6,13 @@ import { assignmentExtensions, assignments, attempts, classes, classMembers, voc
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { assignmentProgress, ASSIGNMENT_MODES, modesForSetType } from "@/lib/assignments";
 import { normalizeText } from "@/lib/text";
+import { getVisibleFolderIds, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export async function GET(req: NextRequest) {
   const access = await requireAdminPermission("assignments.view");
   if (isAuthorizationError(access)) return access;
+  const visibleFolderIds = await getVisibleFolderIds(access);
+  if (!visibleFolderIds.length) return NextResponse.json({ assignments: [] });
   const includeArchived = req.nextUrl.searchParams.get("archived") === "1";
   const rows = await db
     .select({
@@ -32,7 +35,7 @@ export async function GET(req: NextRequest) {
     .from(assignments)
     .innerJoin(classes, eq(classes.id, assignments.classId))
     .innerJoin(vocabSets, eq(vocabSets.id, assignments.setId))
-    .where(eq(assignments.archived, includeArchived))
+    .where(and(eq(assignments.archived, includeArchived), inArray(vocabSets.folderId, visibleFolderIds)))
     .orderBy(asc(assignments.dueAt), assignments.createdAt);
 
   const classIds = [...new Set(rows.map((row) => row.classId))];
@@ -95,6 +98,8 @@ export async function POST(req: NextRequest) {
   ]);
   if (classRows.length !== classIds.length) return NextResponse.json({ error: "Có lớp học không còn tồn tại." }, { status: 404 });
   if (!setRow) return NextResponse.json({ error: "Không tìm thấy bộ từ." }, { status: 404 });
+  const scoped = await requireAdminResourceAccess({ permission: "assignments.create", folderId: setRow.folderId, level: "viewer", access });
+  if (isAuthorizationError(scoped)) return scoped;
   if (setRow.classId !== null && (classIds.length !== 1 || setRow.classId !== classIds[0])) {
     return NextResponse.json({ error: "Bộ từ riêng của lớp không thể giao cho lớp khác." }, { status: 400 });
   }

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
-import { categoryQuestions, vocabCategories } from "@/db/schema";
+import { categoryQuestions, contentFolders } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { ensureQuestionImportSchema, parseJsonArray } from "@/lib/questionImportDb";
 import { ensureQuestionShuffleSchema } from "@/lib/questionShuffleDb";
@@ -19,7 +19,9 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category");
-  if (!category) return NextResponse.json({ error: "Thiếu tham số category." }, { status: 400 });
+  const folderId = Number(searchParams.get("folderId"));
+  if (!category && (!Number.isInteger(folderId) || folderId < 1)) return NextResponse.json({ error: "Thiếu thư mục câu hỏi." }, { status: 400 });
+  const scope = Number.isInteger(folderId) && folderId > 0 ? eq(categoryQuestions.folderId, folderId) : eq(categoryQuestions.category, category!);
 
   const [questions, [categorySettings]] = await Promise.all([db
     .select({
@@ -39,8 +41,8 @@ export async function GET(request: NextRequest) {
       topic: categoryQuestions.topic,
     })
     .from(categoryQuestions)
-    .where(eq(categoryQuestions.category, category))
-    .orderBy(sql`${categoryQuestions.order} asc, ${categoryQuestions.id} asc`), db.select({ shuffleQuestions: vocabCategories.shuffleQuestions, shuffleOptions: vocabCategories.shuffleOptions, shuffleMode: vocabCategories.shuffleMode }).from(vocabCategories).where(eq(vocabCategories.name, category)).limit(1)]);
+    .where(and(scope, eq(categoryQuestions.publicationStatus, "published")))
+    .orderBy(sql`${categoryQuestions.order} asc, ${categoryQuestions.id} asc`), Number.isInteger(folderId) && folderId > 0 ? db.select({ shuffleQuestions: contentFolders.shuffleQuestions, shuffleOptions: contentFolders.shuffleOptions, shuffleMode: contentFolders.shuffleMode }).from(contentFolders).where(eq(contentFolders.id, folderId)).limit(1) : Promise.resolve([])]);
 
   return NextResponse.json({ shuffleSettings: { shuffleQuestions: categorySettings?.shuffleQuestions ?? false, shuffleOptions: categorySettings?.shuffleOptions ?? false, shuffleMode: categorySettings?.shuffleMode === "balanced" ? "balanced" : "random" }, questions: questions.map((question) => ({
     ...question,

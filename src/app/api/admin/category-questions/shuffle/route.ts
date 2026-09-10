@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { categoryQuestions, vocabCategories } from "@/db/schema";
+import { categoryQuestions, contentFolders } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { parseJsonArray } from "@/lib/questionImportDb";
 import { applyPermanentOptionOrder, correctAnswerDistribution } from "@/lib/questionShuffle";
 import { ensureQuestionShuffleSchema } from "@/lib/questionShuffleDb";
+import { authorizeQuestionCategory, authorizeQuestionIds } from "@/lib/questionFolderAuthorization";
 
 const category = z.string().trim().min(1).max(128);
 const schema = z.discriminatedUnion("action", [
@@ -23,7 +24,8 @@ export async function PATCH(request: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu shuffle không hợp lệ.", issues: parsed.error.flatten() }, { status: 400 });
   const input = parsed.data;
   if (input.action === "settings") {
-    const [updated] = await db.update(vocabCategories).set({ shuffleQuestions: input.shuffleQuestions, shuffleOptions: input.shuffleOptions, shuffleMode: input.shuffleMode }).where(eq(vocabCategories.name, input.category)).returning({ id: vocabCategories.id });
+    const scoped = await authorizeQuestionCategory(access, input.category, null, "questions.reorder", "editor"); if (scoped.error) return scoped.error;
+    const [updated] = await db.update(contentFolders).set({ shuffleQuestions: input.shuffleQuestions, shuffleOptions: input.shuffleOptions, shuffleMode: input.shuffleMode }).where(eq(contentFolders.id, scoped.folderId)).returning({ id: contentFolders.id });
     if (!updated) return NextResponse.json({ error: "Không tìm thấy thư mục câu hỏi." }, { status: 404 });
     return NextResponse.json({ settings: { shuffleQuestions: input.shuffleQuestions, shuffleOptions: input.shuffleOptions, shuffleMode: input.shuffleMode } });
   }
@@ -31,6 +33,7 @@ export async function PATCH(request: NextRequest) {
   const ids = input.items.map((item) => item.id);
   if (new Set(ids).size !== ids.length) return NextResponse.json({ error: "Danh sách shuffle chứa ID trùng." }, { status: 400 });
   const rows = await db.select().from(categoryQuestions).where(inArray(categoryQuestions.id, ids));
+  const denied = await authorizeQuestionIds(access, ids, "questions.reorder", "editor"); if (denied) return denied;
   if (rows.length !== ids.length || rows.some((row) => row.category !== input.category)) return NextResponse.json({ error: "Câu hỏi không thuộc đúng thư mục hoặc đã thay đổi." }, { status: 409 });
   const orderById = new Map(input.items.map((item) => [item.id, item.optionOrder]));
   const source = rows.map((row) => ({ id: row.id, options: parseJsonArray(row.options), correctOption: row.correctOption, correctOptions: parseJsonArray(row.correctOptions) }));

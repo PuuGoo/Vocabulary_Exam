@@ -14,7 +14,7 @@ const ALLOWED_TYPES = new Set([
 
 async function context(id: number, userId: number) {
   const [assignment] = await db.select({ id: assignments.id, title: assignments.title, instructions: assignments.instructions, classId: assignments.classId, className: classes.name, setName: vocabSets.name, dueAt: assignments.dueAt, archived: assignments.archived })
-    .from(assignments).innerJoin(classes, eq(classes.id, assignments.classId)).innerJoin(vocabSets, eq(vocabSets.id, assignments.setId)).where(eq(assignments.id, id));
+    .from(assignments).innerJoin(classes, eq(classes.id, assignments.classId)).innerJoin(vocabSets, eq(vocabSets.id, assignments.setId)).where(and(eq(assignments.id, id), eq(vocabSets.publicationStatus, "published")));
   if (!assignment) return null;
   const member = await db.query.classMembers.findFirst({ where: and(eq(classMembers.classId, assignment.classId), eq(classMembers.userId, userId)) });
   return member ? assignment : null;

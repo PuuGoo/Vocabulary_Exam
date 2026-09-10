@@ -30,7 +30,7 @@ export async function GET() {
     .from(assignments)
     .innerJoin(classes, eq(classes.id, assignments.classId))
     .innerJoin(vocabSets, eq(vocabSets.id, assignments.setId))
-    .where(and(inArray(assignments.classId, classIds), eq(assignments.archived, false)))
+    .where(and(inArray(assignments.classId, classIds), eq(assignments.archived, false), eq(vocabSets.publicationStatus, "published")))
     .orderBy(asc(assignments.dueAt), assignments.createdAt);
   const setIds = [...new Set(rows.map((row) => row.setId))];
   const attemptRows = setIds.length

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { assignmentExtensions, assignments, classMembers } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { requireAssignmentFolderAccess } from "@/lib/assignmentFolderAuthorization";
 
 const schema = z.object({ userId: z.number().int().positive() });
 
@@ -11,6 +12,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const access = await requireAdminPermission("assignments.edit");
   if (isAuthorizationError(access)) return access;
   const assignmentId = Number(params.id);
+  const scoped = await requireAssignmentFolderAccess(access, assignmentId, "assignments.edit"); if (isAuthorizationError(scoped)) return scoped;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!Number.isInteger(assignmentId) || !parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
   const assignment = await db.query.assignments.findFirst({ where: eq(assignments.id, assignmentId) });
@@ -26,6 +28,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const access = await requireAdminPermission("assignments.edit");
   if (isAuthorizationError(access)) return access;
   const assignmentId = Number(params.id);
+  const scoped = await requireAssignmentFolderAccess(access, assignmentId, "assignments.edit"); if (isAuthorizationError(scoped)) return scoped;
   const userId = Number(req.nextUrl.searchParams.get("userId"));
   if (!Number.isInteger(assignmentId) || !Number.isInteger(userId)) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
   const setting = await db.query.assignmentExtensions.findFirst({ where: and(eq(assignmentExtensions.assignmentId, assignmentId), eq(assignmentExtensions.userId, userId)) });

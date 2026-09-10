@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { attempts, classes, classMembers, mistakes, users, wordProgress } from "@/db/schema";
+import { attempts, classes, classMembers, mistakes, users, vocabSets, wordProgress, words } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 export async function GET() {
   const access = await requireAdminPermission("results.view");
   if (isAuthorizationError(access)) return access;
+  const visibleFolderIds = await getVisibleFolderIds(access);
+  const hasVisibleContent = visibleFolderIds.length > 0;
 
   const [students, memberships, attemptStats, progressStats, mistakeStats] = await Promise.all([
     db
@@ -27,6 +30,8 @@ export async function GET() {
         lastActivityAt: sql<Date | null>`max(${attempts.createdAt})`,
       })
       .from(attempts)
+      .innerJoin(vocabSets, eq(attempts.setId, vocabSets.id))
+      .where(hasVisibleContent ? inArray(vocabSets.folderId, visibleFolderIds) : sql`false`)
       .groupBy(attempts.userId),
     db
       .select({
@@ -36,10 +41,15 @@ export async function GET() {
         lastProgressAt: sql<Date | null>`max(${wordProgress.updatedAt})`,
       })
       .from(wordProgress)
+      .innerJoin(words, eq(wordProgress.wordId, words.id))
+      .innerJoin(vocabSets, eq(words.setId, vocabSets.id))
+      .where(hasVisibleContent ? inArray(vocabSets.folderId, visibleFolderIds) : sql`false`)
       .groupBy(wordProgress.userId),
     db
       .select({ userId: mistakes.userId, count: sql<number>`count(${mistakes.id})::int` })
       .from(mistakes)
+      .innerJoin(vocabSets, eq(mistakes.setId, vocabSets.id))
+      .where(hasVisibleContent ? inArray(vocabSets.folderId, visibleFolderIds) : sql`false`)
       .groupBy(mistakes.userId),
   ]);
 

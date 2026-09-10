@@ -3,6 +3,8 @@ import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { classMembers, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { getAdminAccess } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -14,7 +16,13 @@ export async function GET(req: NextRequest) {
   if (session.role !== "admin") {
     const memberships = await db.select({ classId: classMembers.classId }).from(classMembers).where(eq(classMembers.userId, session.userId));
     const classIds = memberships.map((item) => item.classId);
-    accessFilter = classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+    const audience = classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+    accessFilter = and(eq(vocabSets.publicationStatus, "published"), audience);
+  } else {
+    const access = await getAdminAccess(session);
+    if (!access?.can("vocab.export")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const visibleFolderIds = await getVisibleFolderIds(access);
+    accessFilter = visibleFolderIds.length ? inArray(vocabSets.folderId, visibleFolderIds) : eq(vocabSets.id, -1);
   }
   const conditions = [inArray(vocabSets.id, setIds)];
   if (accessFilter) conditions.push(accessFilter);

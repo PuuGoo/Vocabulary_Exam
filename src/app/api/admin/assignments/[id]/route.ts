@@ -6,6 +6,7 @@ import { assignmentExtensions, assignmentSubmissions, assignments, attempts, cla
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { assignmentProgress } from "@/lib/assignments";
 import { normalizeText } from "@/lib/text";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireAdminPermission("assignments.view");
@@ -20,6 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       setId: assignments.setId,
       setName: vocabSets.name,
       setType: vocabSets.type,
+      folderId: vocabSets.folderId,
       title: assignments.title,
       instructions: assignments.instructions,
       mode: assignments.mode,
@@ -35,6 +37,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .innerJoin(vocabSets, eq(vocabSets.id, assignments.setId))
     .where(eq(assignments.id, id));
   if (!assignment) return NextResponse.json({ error: "Không tìm thấy bài tập." }, { status: 404 });
+
+  const scoped = await requireAdminResourceAccess({ permission: "assignments.view", folderId: assignment.folderId, level: "viewer", access });
+  if (isAuthorizationError(scoped)) return scoped;
 
   const members = await db
     .select({ userId: users.id, username: users.username, displayName: users.displayName })
@@ -81,6 +86,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success || Object.keys(parsed.data).length === 0) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
   const existing = await db.query.assignments.findFirst({ where: eq(assignments.id, id) });
   if (!existing) return NextResponse.json({ error: "Không tìm thấy bài tập." }, { status: 404 });
+  const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, existing.setId), columns: { folderId: true } });
+  const scoped = await requireAdminResourceAccess({ permission: "assignments.edit", folderId: set?.folderId ?? null, level: "viewer", access });
+  if (isAuthorizationError(scoped)) return scoped;
   if (existing.mode === "timed" && parsed.data.timeLimitMinutes === null) {
     return NextResponse.json({ error: "Bài thi tính giờ phải có thời lượng." }, { status: 400 });
   }

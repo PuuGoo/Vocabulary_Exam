@@ -8,7 +8,7 @@ export const STUDENT_PRIMARY_NAV: NavigationItem[] = [
 ];
 export const ADMIN_NAV_SECTIONS: NavigationSection[] = [
   { items: [{ href: "/admin", label: "Tổng quan", icon: "⌂", permissions: ["admin.dashboard.view"] }] },
-  { label: "Nội dung", items: [{ href: "/admin/sets", label: "Bộ từ & câu hỏi", icon: "Aa", permissions: ["vocab.view", "questions.view", "documents.view"] }, { href: "/admin/import", label: "Nhập dữ liệu", icon: "↑", permissions: ["vocab.import", "questions.import"] }] },
+  { label: "Nội dung", items: [{ href: "/admin/workspaces", label: "Không gian nội dung", icon: "▤", permissions: ["admin.dashboard.view", "vocab.view", "questions.view", "documents.view", "folders.create", "folders.share"] }, { href: "/admin/sets", label: "Bộ từ & câu hỏi", icon: "Aa", permissions: ["vocab.view", "questions.view", "documents.view"] }, { href: "/admin/import", label: "Nhập dữ liệu", icon: "↑", permissions: ["vocab.import", "questions.import"] }] },
   { label: "Học viên", items: [{ href: "/admin/users", label: "Người dùng", icon: "◎", permissions: ["users.view"] }, { href: "/admin/classes", label: "Lớp học", icon: "▦", permissions: ["classes.view"] }] },
   { label: "Đánh giá", items: [{ href: "/admin/assignments", label: "Giao bài", icon: "✓", permissions: ["assignments.view"] }, { href: "/admin/results", label: "Kết quả", icon: "◇", permissions: ["results.view"] }, { href: "/admin/progress", label: "Tiến độ", icon: "↗", permissions: ["results.view"] }] },
   { label: "Hệ thống", items: [{ href: "/admin/backup", label: "Sao lưu dữ liệu", icon: "↓", permissions: ["backup.create", "backup.restore"] }, { href: "/admin/audit", label: "Nhật ký quản trị", icon: "◷", permissions: ["audit.view"] }] },

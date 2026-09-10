@@ -16,6 +16,7 @@ const migrations = [
   "0028_word_positions.sql",
   "0029_admin_rbac.sql",
   "0030_multilingual_chinese.sql",
+  "0031_personal_workspaces.sql",
 ];
 
 const client = postgres(connectionString, { max: 1 });
@@ -67,6 +68,16 @@ try {
     COUNT(*) FILTER (WHERE language_code = 'zh-CN')::integer AS chinese_sets
     FROM vocab_sets
   `);
+  const [folderIntegrity] = await client.unsafe(`
+    SELECT
+      COUNT(*) FILTER (WHERE role='admin' AND NOT EXISTS (
+        SELECT 1 FROM content_folders f WHERE f.owner_user_id=users.id AND f.kind='personal_root' AND f.archived_at IS NULL
+      ))::integer AS admins_without_workspace,
+      (SELECT COUNT(*) FROM vocab_sets WHERE folder_id IS NULL)::integer AS sets_without_folder,
+      (SELECT COUNT(*) FROM category_documents WHERE folder_id IS NULL)::integer AS documents_without_folder,
+      (SELECT COUNT(*) FROM category_questions WHERE folder_id IS NULL)::integer AS questions_without_folder
+    FROM users
+  `);
 
   if (wordIntegrity.invalid_positions || positionIntegrity.duplicate_positions || positionIntegrity.non_contiguous_sets) {
     throw new Error("Word position integrity check failed after migrations.");
@@ -75,12 +86,16 @@ try {
     throw new Error("Admin RBAC integrity check failed after migrations.");
   }
   if (languageIntegrity.invalid_sets) throw new Error("Language metadata integrity check failed after migrations.");
+  if (folderIntegrity.admins_without_workspace || folderIntegrity.sets_without_folder || folderIntegrity.documents_without_folder || folderIntegrity.questions_without_folder) {
+    throw new Error("Folder scope integrity check failed after migrations.");
+  }
   console.log(JSON.stringify({
     words: wordIntegrity.word_count,
     owners: rbacIntegrity.owner_count,
     customSlugs: shareIntegrity.custom_slug_count,
     passwordProtectedShares: shareIntegrity.password_share_count,
     chineseSets: languageIntegrity.chinese_sets,
+    personalWorkspacesReady: folderIntegrity.admins_without_workspace === 0,
   }));
 } finally {
   await client.end();

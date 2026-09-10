@@ -3,6 +3,8 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { classMembers, vocabSets, wordProgress, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { getAdminAccess } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 function shuffle<T>(items: T[]) {
   const result = [...items];
@@ -45,7 +47,11 @@ export async function GET(req: NextRequest) {
   if (session.role !== "admin") {
     const memberships = await db.select({ classId: classMembers.classId }).from(classMembers).where(eq(classMembers.userId, session.userId));
     const classIds = memberships.map((item) => item.classId);
-    accessFilter = classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+    const audience = classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+    accessFilter = and(eq(vocabSets.publicationStatus, "published"), audience);
+  } else {
+    const access = await getAdminAccess(session); const ids = access?.can("vocab.view") ? await getVisibleFolderIds(access) : [];
+    accessFilter = ids.length ? inArray(vocabSets.folderId, ids) : eq(vocabSets.id, -1);
   }
 
   const conditions = [inArray(vocabSets.id, setIds), eq(vocabSets.type, "ielts_vocab")];

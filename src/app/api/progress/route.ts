@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { attempts, classMembers, mistakes, vocabSets, wordProgress, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { getAdminAccess } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 export async function GET() {
   const session = await getSession();
@@ -15,9 +17,13 @@ export async function GET() {
       .from(classMembers)
       .where(eq(classMembers.userId, session.userId));
     const classIds = memberships.map((item) => item.classId);
-    classFilter = classIds.length > 0
+    const audience = classIds.length > 0
       ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds))
       : isNull(vocabSets.classId);
+    classFilter = and(eq(vocabSets.publicationStatus, "published"), audience);
+  } else {
+    const access = await getAdminAccess(session); const ids = access?.can("vocab.view") ? await getVisibleFolderIds(access) : [];
+    classFilter = ids.length ? inArray(vocabSets.folderId, ids) : eq(vocabSets.id, -1);
   }
 
   const setsQuery = db

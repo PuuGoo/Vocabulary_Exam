@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { attempts, users } from "@/db/schema";
+import { attempts, users, vocabSets } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 export async function GET() {
   const access = await requireAdminPermission("results.view");
   if (isAuthorizationError(access)) return access;
+  const visibleFolderIds = await getVisibleFolderIds(access);
+  if (visibleFolderIds.length === 0) return NextResponse.json({ results: [] });
 
   const rows = await db
     .select({
@@ -23,6 +26,8 @@ export async function GET() {
     })
     .from(attempts)
     .innerJoin(users, eq(attempts.userId, users.id))
+    .innerJoin(vocabSets, eq(attempts.setId, vocabSets.id))
+    .where(inArray(vocabSets.folderId, visibleFolderIds))
     .orderBy(desc(attempts.createdAt));
 
   return NextResponse.json({ results: rows });

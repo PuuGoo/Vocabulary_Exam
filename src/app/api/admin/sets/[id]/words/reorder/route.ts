@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { reorderWords } from "@/lib/wordOrder.server";
+import { db } from "@/db";
+import { vocabSets } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 const schema = z.object({
   orderedIds: z.array(z.number().int().positive()).max(10_000),
@@ -11,6 +15,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
   if (!Number.isInteger(setId) || setId < 1) return Response.json({ error: "Không tìm thấy bộ từ." }, { status: 404 });
+  const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.reorder", folderId: set?.folderId, level: "editor", access });
+  if (isAuthorizationError(scoped)) return scoped;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success || new Set(parsed.data.orderedIds).size !== parsed.data.orderedIds.length) {
     return Response.json({ error: "Thứ tự từ vựng không hợp lệ." }, { status: 400 });

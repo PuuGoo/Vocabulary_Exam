@@ -10,6 +10,8 @@ import {
   selectSetReviewWords, startSetReview, type DueSetReview, type ReviewWord,
 } from "@/lib/reviewPlanner";
 import { dateInVietnam } from "@/lib/activity";
+import { getAdminAccess } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 // Keep candidate scans lean: a user can have thousands of due words and the
 // planner only needs scheduling metadata to rank them. Full card content is
@@ -36,10 +38,15 @@ function normalizeWord(row: Record<string, unknown>): ReviewWord {
 }
 
 async function accessFilter(userId: number, role: string) {
-  if (role === "admin") return undefined;
+  if (role === "admin") {
+    const access = await getAdminAccess({ userId, role: "admin", username: "", displayName: "" });
+    const ids = access?.can("vocab.view") ? await getVisibleFolderIds(access) : [];
+    return ids.length ? inArray(vocabSets.folderId, ids) : eq(vocabSets.id, -1);
+  }
   const memberships = await db.select({ classId: classMembers.classId }).from(classMembers).where(eq(classMembers.userId, userId));
   const classIds = memberships.map((item) => item.classId);
-  return classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+  const audience = classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+  return and(eq(vocabSets.publicationStatus, "published"), audience);
 }
 
 export async function buildReviewPlanForUser(userId: number, role: string, options?: { extra?: boolean; now?: Date }) {

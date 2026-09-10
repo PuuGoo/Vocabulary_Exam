@@ -8,6 +8,7 @@ import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { appendWord } from "@/lib/wordOrder.server";
 import { canonicalizePinyinDisplay } from "@/lib/pinyin";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
@@ -38,6 +39,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const setId = Number(params.id);
   const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId) });
   if (!set) return NextResponse.json({ error: "Không tìm thấy bộ từ vựng." }, { status: 404 });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.create", folderId: set.folderId, level: "editor", access });
+  if (isAuthorizationError(scoped)) return scoped;
 
   const body = await req.json().catch(() => null);
 

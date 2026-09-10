@@ -10,8 +10,9 @@ import {
   index,
   customType,
   date,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab", "language_vocab"] as const;
@@ -35,6 +36,51 @@ export const users = pgTable(
   (table) => ({
     usernameIdx: uniqueIndex("users_username_idx").on(table.username),
   })
+);
+
+export const folderKindEnum = ["personal_root", "shared_root", "folder", "legacy_root"] as const;
+export const folderAccessLevelEnum = ["viewer", "editor", "manager", "deny"] as const;
+
+export const contentFolders = pgTable(
+  "content_folders",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    normalizedName: varchar("normalized_name", { length: 128 }).notNull(),
+    parentId: integer("parent_id").references((): AnyPgColumn => contentFolders.id, { onDelete: "restrict" }),
+    ownerUserId: integer("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+    kind: varchar("kind", { length: 24 }).notNull().default("folder"),
+    shuffleQuestions: boolean("shuffle_questions").notNull().default(false),
+    shuffleOptions: boolean("shuffle_options").notNull().default(false),
+    shuffleMode: varchar("shuffle_mode", { length: 16 }).notNull().default("random"),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (table) => ({
+    parentIdx: index("content_folders_parent_idx").on(table.parentId),
+    ownerIdx: index("content_folders_owner_idx").on(table.ownerUserId),
+    siblingNameIdx: uniqueIndex("content_folders_parent_name_idx").on(table.parentId, table.normalizedName).where(sql`${table.archivedAt} is null`),
+    personalOwnerIdx: uniqueIndex("content_folders_personal_owner_idx").on(table.ownerUserId).where(sql`${table.kind} = 'personal_root' and ${table.archivedAt} is null`),
+  }),
+);
+
+export const folderAccess = pgTable(
+  "folder_access",
+  {
+    id: serial("id").primaryKey(),
+    folderId: integer("folder_id").notNull().references(() => contentFolders.id, { onDelete: "cascade" }),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    accessLevel: varchar("access_level", { length: 16 }).notNull(),
+    grantedBy: integer("granted_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    folderUserIdx: uniqueIndex("folder_access_folder_user_idx").on(table.folderId, table.userId),
+    userIdx: index("folder_access_user_idx").on(table.userId),
+  }),
 );
 
 export const appSettings = pgTable("app_settings", {
@@ -87,6 +133,8 @@ export const vocabSets = pgTable("vocab_sets", {
   id: serial("id").primaryKey(),
   name: varchar("name", { length: 256 }).notNull(),
   category: varchar("category", { length: 128 }),
+  folderId: integer("folder_id").references(() => contentFolders.id, { onDelete: "restrict" }),
+  publicationStatus: varchar("publication_status", { length: 16 }).notNull().default("draft"),
   type: varchar("type", { length: 32 }).notNull(), // 'irregular_verb' | 'ielts_vocab'
   languageCode: varchar("language_code", { length: 16 }).notNull().default("en"),
   translationLanguageCode: varchar("translation_language_code", { length: 16 }).notNull().default("vi"),
@@ -161,6 +209,7 @@ export const categoryDocuments = pgTable(
   {
     id: serial("id").primaryKey(),
     category: varchar("category", { length: 128 }).notNull(),
+    folderId: integer("folder_id").references(() => contentFolders.id, { onDelete: "restrict" }),
     title: varchar("title", { length: 256 }).notNull(),
     fileName: varchar("file_name", { length: 256 }).notNull(),
     fileType: varchar("file_type", { length: 128 }).notNull().default("application/pdf"),
@@ -171,6 +220,7 @@ export const categoryDocuments = pgTable(
   },
   (table) => ({
     categoryIdx: index("category_documents_category_idx").on(table.category),
+    folderIdx: index("category_documents_folder_idx").on(table.folderId),
   })
 );
 
@@ -568,6 +618,7 @@ export const writingProgress = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     category: varchar("category", { length: 256 }).notNull(),
+    folderId: integer("folder_id").references(() => contentFolders.id, { onDelete: "set null" }),
     scores: text("scores").notNull().default("{}"),
     attempts: text("attempts").notNull().default("{}"),
     currentIndex: integer("current_index").notNull().default(0),
@@ -575,7 +626,7 @@ export const writingProgress = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
-    uniqPair: uniqueIndex("writing_progress_user_category_idx").on(table.userId, table.category),
+    uniqPair: uniqueIndex("writing_progress_user_folder_idx").on(table.userId, table.folderId),
     userIdx: index("writing_progress_user_idx").on(table.userId),
   })
 );
@@ -583,6 +634,7 @@ export const writingProgress = pgTable(
 export const categoryDocumentUploads = pgTable("category_document_uploads", {
   id: varchar("id", { length: 64 }).primaryKey(),
   category: varchar("category", { length: 128 }).notNull(),
+  folderId: integer("folder_id").references(() => contentFolders.id, { onDelete: "cascade" }),
   title: varchar("title", { length: 256 }).notNull(),
   fileName: varchar("file_name", { length: 256 }).notNull(),
   fileType: varchar("file_type", { length: 128 }).notNull(),
@@ -634,6 +686,7 @@ export const questionImportBatches = pgTable(
   {
     id: serial("id").primaryKey(),
     category: varchar("category", { length: 128 }).notNull(),
+    folderId: integer("folder_id").references(() => contentFolders.id, { onDelete: "restrict" }),
     sourceType: varchar("source_type", { length: 24 }).notNull(),
     totalItems: integer("total_items").notNull(),
     successItems: integer("success_items").notNull().default(0),
@@ -665,6 +718,8 @@ export const categoryQuestions = pgTable(
   {
     id: serial("id").primaryKey(),
     category: varchar("category", { length: 128 }).notNull(),
+    folderId: integer("folder_id").references(() => contentFolders.id, { onDelete: "restrict" }),
+    publicationStatus: varchar("publication_status", { length: 16 }).notNull().default("draft"),
     question: text("question").notNull(),
     answer: text("answer").notNull().default(""),
     phonetic: text("phonetic"),
@@ -686,6 +741,7 @@ export const categoryQuestions = pgTable(
   },
   (table) => ({
     categoryIdx: index("category_questions_category_idx").on(table.category),
+    folderIdx: index("category_questions_folder_idx").on(table.folderId),
   })
 );
 export type DailyActivity = typeof dailyActivities.$inferSelect;

@@ -1,7 +1,8 @@
 ﻿import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
+  adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers, contentFolders, folderAccess,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
   wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
 } from "@/db/schema";
@@ -10,6 +11,7 @@ import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parse
 import { verifyBackupChecksum } from "@/lib/backupIntegrity";
 import { documentContentLooksValid, documentMimeType, isSupportedDocument } from "@/lib/categoryDocumentFile";
 import { isAdminProfile } from "@/lib/adminPermissions";
+import { normalizeFolderName } from "@/lib/folderAuthorizationCore";
 
 export const CONFIRMATION_WORD = "KHOI PHUC";
 export const MAX_FILE_BYTES = 400 * 1024 * 1024; // Leaves room for base64 inside the 600 MB JSON envelope.
@@ -122,6 +124,82 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       await tx.insert(adminAuditLogs).values({ actorUserId: oldActor == null ? null : userMap.get(oldActor) ?? null, actorDisplayName: nullableText(row, "actorDisplayName"), action: text(row, "action", "backup.restored_audit"), resourceType: text(row, "resourceType", "unknown"), resourceId: nullableText(row, "resourceId"), targetUserId: oldTarget == null ? null : userMap.get(oldTarget) ?? null, metadata: text(row, "metadata", "{}"), createdAt: date(row, "createdAt") }); report.added.adminAuditLogs++;
     }
 
+    // Restore the stable folder hierarchy before resources. Old backups did not
+    // contain folders, so they are mapped into a Legacy Shared Root instead.
+    const folderMap = new Map<number, number>();
+    const currentAdmins = await tx.select({ id: users.id }).from(users).where(eq(users.role, "admin"));
+    const existingFolders = await tx.select().from(contentFolders);
+    for (const admin of currentAdmins) {
+      let root = existingFolders.find((folder) => folder.kind === "personal_root" && folder.ownerUserId === admin.id);
+      if (!root) {
+        const [created] = await tx.insert(contentFolders).values({ name: "Không gian của tôi", normalizedName: "không gian của tôi", ownerUserId: admin.id, kind: "personal_root", createdBy: admin.id }).returning();
+        root = created; existingFolders.push(created);
+      }
+    }
+    let legacyRoot = existingFolders.find((folder) => folder.kind === "legacy_root" && folder.parentId == null);
+    if (!legacyRoot) {
+      const [created] = await tx.insert(contentFolders).values({ name: "Nội dung chung hiện tại", normalizedName: "nội dung chung hiện tại", kind: "legacy_root" }).returning();
+      legacyRoot = created; existingFolders.push(created);
+    }
+
+    const pendingFolders = [...backup.data.contentFolders];
+    while (pendingFolders.length) {
+      let progressed = false;
+      for (let index = pendingFolders.length - 1; index >= 0; index--) {
+        const row = pendingFolders[index]; const sourceId = oldId(row);
+        if (sourceId == null) { pendingFolders.splice(index, 1); report.skipped.contentFolders++; continue; }
+        const oldParentId = nullableNumber(row, "parentId");
+        if (oldParentId != null && !folderMap.has(oldParentId)) continue;
+        const kindText = text(row, "kind", "folder");
+        const kind = (["personal_root", "shared_root", "folder", "legacy_root"] as const).includes(kindText as "folder") ? kindText : "folder";
+        const oldOwnerId = nullableNumber(row, "ownerUserId"); const ownerUserId = oldOwnerId == null ? null : userMap.get(oldOwnerId) ?? null;
+        const parentId = oldParentId == null ? null : folderMap.get(oldParentId)!;
+        const name = text(row, "name", kind === "personal_root" ? "Không gian của tôi" : "Thư mục").trim() || "Thư mục";
+        const normalizedName = normalizeFolderName(text(row, "normalizedName", name));
+        let existing = kind === "personal_root" && ownerUserId != null
+          ? existingFolders.find((folder) => folder.kind === "personal_root" && folder.ownerUserId === ownerUserId)
+          : existingFolders.find((folder) => folder.parentId === parentId && folder.normalizedName === normalizedName);
+        if (!existing) {
+          const [created] = await tx.insert(contentFolders).values({ name, normalizedName, parentId, ownerUserId, kind, shuffleQuestions: bool(row, "shuffleQuestions"), shuffleOptions: bool(row, "shuffleOptions"), shuffleMode: text(row, "shuffleMode", "random"), createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt"), archivedAt: nullableDate(row, "archivedAt") }).returning();
+          existing = created; existingFolders.push(created); report.added.contentFolders++;
+        } else report.skipped.contentFolders++;
+        folderMap.set(sourceId, existing.id); pendingFolders.splice(index, 1); progressed = true;
+      }
+      if (!progressed) {
+        report.warnings.push(`${pendingFolders.length} thư mục có quan hệ cha không hợp lệ đã được bỏ qua.`);
+        report.skipped.contentFolders += pendingFolders.length; break;
+      }
+    }
+
+    const legacyFolderByPath = new Map<string, number>();
+    const ensureLegacyFolderPath = async (rawPath: string | null) => {
+      const parts = (rawPath || "Chưa phân loại").split("/").map((part) => part.trim()).filter(Boolean);
+      let parentId = legacyRoot!.id; let accumulated = "";
+      for (const part of parts) {
+        accumulated = accumulated ? `${accumulated} / ${part}` : part;
+        const cached = legacyFolderByPath.get(accumulated.toLocaleLowerCase("vi"));
+        if (cached) { parentId = cached; continue; }
+        const normalizedName = normalizeFolderName(part);
+        let child = existingFolders.find((folder) => folder.parentId === parentId && folder.normalizedName === normalizedName);
+        if (!child) {
+          const [created] = await tx.insert(contentFolders).values({ name: part, normalizedName, parentId, kind: "folder" }).returning();
+          child = created; existingFolders.push(created);
+        }
+        parentId = child.id; legacyFolderByPath.set(accumulated.toLocaleLowerCase("vi"), parentId);
+      }
+      return parentId;
+    };
+
+    const existingFolderAccess = await tx.select().from(folderAccess);
+    const accessKeys = new Set(existingFolderAccess.map((item) => `${item.folderId}:${item.userId}`));
+    for (const row of backup.data.folderAccess) {
+      const folderId = folderMap.get(number(row, "folderId", -1)); const userId = userMap.get(number(row, "userId", -1));
+      const level = text(row, "accessLevel"); const key = `${folderId}:${userId}`;
+      if (folderId == null || userId == null || !["viewer", "editor", "manager", "deny"].includes(level) || accessKeys.has(key)) { report.skipped.folderAccess++; continue; }
+      await tx.insert(folderAccess).values({ folderId, userId, accessLevel: level, grantedBy: userMap.get(nullableNumber(row, "grantedBy") ?? -1) ?? null, createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      accessKeys.add(key); report.added.folderAccess++;
+    }
+
     const classMap = new Map<number, number>();
     const existingClasses = await tx.select().from(classes);
     const classByName = new Map(existingClasses.map((item) => [item.name.trim().toLocaleLowerCase("vi"), item.id]));
@@ -151,11 +229,13 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       const category = text(row, "category").trim(); const title = text(row, "title").trim(); const fileName = text(row, "fileName").trim();
       const key = `${category}\u0000${title}\u0000${fileName}`.toLocaleLowerCase("vi");
       const base64 = nullableText(row, "fileDataBase64");
-      if (!category || !title || !fileName || !base64 || documentKeys.has(key) || !categoriesByName.has(category.toLocaleLowerCase("vi"))) { report.skipped.categoryDocuments++; continue; }
+      if (!category || !title || !fileName || !base64 || documentKeys.has(key)) { report.skipped.categoryDocuments++; continue; }
       const fileData = Buffer.from(base64, "base64");
       const fileType = documentMimeType(fileName, text(row, "fileType"));
       if (fileData.byteLength < 1 || fileData.byteLength > MAX_FILE_BYTES || !isSupportedDocument(fileName, fileType) || !documentContentLooksValid(fileName, fileData)) { report.skipped.categoryDocuments++; report.warnings.push(`Tài liệu ${fileName} không hợp lệ hoặc quá lớn nên được bỏ qua.`); continue; }
-      await tx.insert(categoryDocuments).values({ category, title, fileName, fileType, fileSize: fileData.byteLength, fileData, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") });
+      const oldFolderId = nullableNumber(row, "folderId");
+      const folderId = oldFolderId == null ? await ensureLegacyFolderPath(category) : folderMap.get(oldFolderId) ?? await ensureLegacyFolderPath(category);
+      await tx.insert(categoryDocuments).values({ category, folderId, title, fileName, fileType, fileSize: fileData.byteLength, fileData, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") });
       documentKeys.add(key); report.added.categoryDocuments++;
     }
 
@@ -174,7 +254,9 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
           categoriesByName.set(category.trim().toLocaleLowerCase("vi"), createdCategory.id);
         }
         const languageCode = nullableText(row, "languageCode") || "en";
-        const [created] = await tx.insert(vocabSets).values({ name, category, type, languageCode, translationLanguageCode:nullableText(row,"translationLanguageCode")||"vi", languageSettings:nullableText(row,"languageSettings")||"{}", classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
+        const oldFolderId = nullableNumber(row, "folderId");
+        const folderId = oldFolderId == null ? await ensureLegacyFolderPath(category) : folderMap.get(oldFolderId) ?? await ensureLegacyFolderPath(category);
+        const [created] = await tx.insert(vocabSets).values({ name, category, folderId, publicationStatus: text(row, "publicationStatus", "published") === "draft" ? "draft" : "published", type, languageCode, translationLanguageCode:nullableText(row,"translationLanguageCode")||"vi", languageSettings:nullableText(row,"languageSettings")||"{}", classId: classId ?? null, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: vocabSets.id });
         mapped = created.id; setsByKey.set(key, mapped); report.added.vocabSets++;
       } else report.skipped.vocabSets++;
       setMap.set(id, mapped);

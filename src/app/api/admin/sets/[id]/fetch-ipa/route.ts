@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { words } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { vocabSets, words } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { fetchIpaBatch, isGeminiConfigured } from "@/lib/gemini";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 const BATCH_SIZE = 40;
 
@@ -19,6 +19,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const setId = Number(params.id);
+  const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId), columns: { folderId: true } });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.edit", folderId: set?.folderId ?? null, level: "editor", access });
+  if (isAuthorizationError(scoped)) return scoped;
   const body = await req.json().catch(() => ({}));
   const force = Boolean(body?.force);
 
@@ -80,6 +83,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const access = await requireAdminPermission("vocab.view");
   if (isAuthorizationError(access)) return access;
   const setId = Number(params.id);
+  const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setId), columns: { folderId: true } });
+  const scoped = await requireAdminResourceAccess({ permission: "vocab.view", folderId: set?.folderId ?? null, level: "viewer", access });
+  if (isAuthorizationError(scoped)) return scoped;
   const allWords = await db.select().from(words).where(eq(words.setId, setId));
   const withIpa = allWords.filter((w) => w.term ? Boolean(w.ipa) : Boolean(w.ipaV1 && w.ipaV2 && w.ipaV3)).length;
   return NextResponse.json({ total: allWords.length, withIpa });

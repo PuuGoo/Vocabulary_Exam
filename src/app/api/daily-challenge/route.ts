@@ -52,7 +52,7 @@ async function challengeFor(date: string) {
     .select({ id: words.id, setId: words.setId, setName: vocabSets.name, meaning: words.meaning, term: words.term, ipa: words.ipa, example: words.example })
     .from(words)
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
-    .where(and(eq(vocabSets.type, "ielts_vocab"), isNull(vocabSets.classId)))
+    .where(and(eq(vocabSets.type, "ielts_vocab"), eq(vocabSets.publicationStatus, "published"), isNull(vocabSets.classId)))
     .orderBy(words.id);
   const unique = new Map<string, Candidate>();
   for (const row of rows) {

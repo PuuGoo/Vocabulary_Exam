@@ -33,6 +33,7 @@ type SentenceExercise = {
 };
 
 type CategoryOpt = {
+  folderId: number;
   name: string;
   count: number;
   progress?: number;
@@ -142,6 +143,7 @@ function WritingInner() {
   const search = useSearchParams();
   const router = useRouter();
   const category = search.get("category") || "";
+  const folderId = Number(search.get("folderId")) || null;
 
   const [categories, setCategories] = useState<CategoryOpt[]>([]);
   const [catLoading, setCatLoading] = useState(true);
@@ -228,7 +230,7 @@ function WritingInner() {
   const totalCount = exercises.length;
   const allDone = totalCount > 0 && completedCount === totalCount;
   const wrongCount = Object.entries(scores).filter(([, s]) => s < 0.7).length;
-  const draftKey = category ? `${DRAFT_KEY_PREFIX}${category}` : "";
+  const draftKey = folderId ? `${DRAFT_KEY_PREFIX}folder-${folderId}` : category ? `${DRAFT_KEY_PREFIX}${category}` : "";
 
   // Timer
   useEffect(() => {
@@ -246,7 +248,7 @@ function WritingInner() {
         const cats = data.categories || [];
         const enriched = cats.map((c: CategoryOpt) => {
           try {
-            const raw = localStorage.getItem(DRAFT_KEY_PREFIX + c.name);
+            const raw = localStorage.getItem(c.folderId ? `${DRAFT_KEY_PREFIX}folder-${c.folderId}` : DRAFT_KEY_PREFIX + c.name);
             if (!raw) return { ...c, progress: 0, avgScore: null, attempts: 0 };
             const draft = JSON.parse(raw);
             const scores = draft.scores || {};
@@ -283,7 +285,7 @@ function WritingInner() {
     setRetryMode(false);
     setElapsed(0);
     setShuffleSettings(DEFAULT_QUESTION_SHUFFLE_SETTINGS);
-    fetch(`/api/category-questions?category=${encodeURIComponent(category)}`)
+    fetch(`/api/category-questions?category=${encodeURIComponent(category)}${folderId ? `&folderId=${folderId}` : ""}`)
       .then(async (res) => {
         if (!res.ok) throw new Error();
         const data = await res.json();
@@ -292,7 +294,7 @@ function WritingInner() {
         // Try server progress first so users keep state across devices
         let serverDraft: { scores: Record<number, number>; attempts: Record<number, number>; currentIndex: number; elapsed: number; savedAt?: number } | null = null;
         try {
-          const res = await fetch("/api/writing-progress?category=" + encodeURIComponent(category));
+          const res = await fetch("/api/writing-progress?category=" + encodeURIComponent(category) + (folderId ? `&folderId=${folderId}` : ""));
           if (res.ok) {
             const data = await res.json();
             const p = (data.progress || [])[0];
@@ -323,7 +325,7 @@ function WritingInner() {
       })
       .catch(() => toast("Không thể tải câu hỏi."))
       .finally(() => setLoading(false));
-  }, [category]);
+  }, [category, folderId]);
 
   // Auto-save draft (debounced for non-submit changes)
   useEffect(() => {
@@ -360,6 +362,7 @@ function WritingInner() {
     if (!category) return;
     const payload = {
       category,
+      folderId,
       scores: scoresRef.current,
       attempts: attemptsRef.current,
       currentIndex: currentIndexRef.current,
@@ -378,7 +381,7 @@ function WritingInner() {
     if (!category || loading) return;
     if (allDone) {
       try {
-        fetch("/api/writing-progress?category=" + encodeURIComponent(category), { method: "DELETE" }).catch(() => {});
+        fetch("/api/writing-progress?category=" + encodeURIComponent(category) + (folderId ? `&folderId=${folderId}` : ""), { method: "DELETE" }).catch(() => {});
       } catch { /* ignore */ }
       return;
     }
@@ -480,8 +483,8 @@ const nextSentence = useCallback(() => {
       setShowHint(false);
   }, [currentIndex, userAnswer]);
 
-  function selectCategory(value: string) {
-    router.push(`/writing?category=${encodeURIComponent(value)}`);
+  function selectCategory(value: CategoryOpt) {
+    router.push(`/writing?category=${encodeURIComponent(value.name)}&folderId=${value.folderId}`);
   }
 
   function overallScore(): number {
@@ -596,7 +599,7 @@ const nextSentence = useCallback(() => {
               {categories.map((cat) => (
                 <button
                   key={cat.name}
-                  onClick={() => selectCategory(cat.name)}
+                  onClick={() => selectCategory(cat)}
                   className="flex min-h-[72px] flex-col gap-1.5 rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
                 >
                   <div className="flex items-center gap-3 w-full">

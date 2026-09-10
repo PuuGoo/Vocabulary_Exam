@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:rbac": "node --import tsx --test --test-concurrency=1 src/lib/adminPermissions.test.ts src/lib/adminRbacArchitecture.test.ts",
+    "test:rbac": "node --import tsx --test --test-concurrency=1 src/lib/adminPermissions.test.ts src/lib/adminRbacArchitecture.test.ts src/lib/folderAuthorization.test.ts src/lib/folderAuthorizationArchitecture.test.ts",
     "test:language": "node --import tsx --test --test-concurrency=1 src/lib/languages.test.ts",
     "android:sync": "cap sync android",
     "android:sync:production": "node scripts/sync-android.mjs",

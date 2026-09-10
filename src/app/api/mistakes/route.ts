@@ -40,7 +40,7 @@ export async function GET() {
     .from(mistakes)
     .innerJoin(words, eq(mistakes.wordId, words.id))
     .innerJoin(vocabSets, eq(mistakes.setId, vocabSets.id))
-    .where(eq(mistakes.userId, session.userId))
+    .where(and(eq(mistakes.userId, session.userId), eq(vocabSets.publicationStatus, "published")))
     .orderBy(desc(mistakes.timesWrong), desc(mistakes.lastWrongAt));
 
   return NextResponse.json({ mistakes: rows });
@@ -60,6 +60,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = markSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
+
+  const [accessibleWord] = await db.select({ id: words.id }).from(words).innerJoin(vocabSets, eq(vocabSets.id, words.setId)).where(and(eq(words.id, parsed.data.wordId), eq(words.setId, parsed.data.setId), eq(vocabSets.publicationStatus, "published"))).limit(1);
+  if (!accessibleWord) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [previousMistake] = await db.select().from(mistakes).where(and(
     eq(mistakes.userId, session.userId),

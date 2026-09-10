@@ -2,6 +2,21 @@ import { z } from "zod";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { writeAdminAudit } from "@/lib/adminAudit";
 import { deleteWordsAndNormalize, moveWordsToSet } from "@/lib/wordOrder.server";
+import { db } from "@/db";
+import { vocabSets, words } from "@/db/schema";
+import { eq, inArray } from "drizzle-orm";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
+
+async function authorizeWordFolders(ids: number[], permission: "vocab.delete" | "vocab.move", level: "editor" | "manager", access: Awaited<ReturnType<typeof requireAdminPermission>>) {
+  if (isAuthorizationError(access)) return access;
+  const rows = await db.select({ folderId: vocabSets.folderId }).from(words).innerJoin(vocabSets, eq(vocabSets.id, words.setId)).where(inArray(words.id, ids));
+  if (rows.length !== ids.length) return Response.json({ error: "Không tìm thấy dữ liệu." }, { status: 404 });
+  for (const folderId of new Set(rows.map((row) => row.folderId))) {
+    const scoped = await requireAdminResourceAccess({ permission, folderId, level, access });
+    if (isAuthorizationError(scoped)) return scoped;
+  }
+  return null;
+}
 
 const schema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(1000) });
 const moveSchema = schema.extend({ targetSetId: z.number().int().positive() });
@@ -11,6 +26,8 @@ export async function DELETE(request: Request) {
   if (isAuthorizationError(access)) return access;
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Danh sách từ cần xóa không hợp lệ." }, { status: 400 });
+  const denied = await authorizeWordFolders([...new Set(parsed.data.ids)], "vocab.delete", "manager", access);
+  if (denied) return denied;
   const result = await deleteWordsAndNormalize([...new Set(parsed.data.ids)]);
   if (result.kind === "stale") return Response.json({ error: "Danh sách từ đã thay đổi. Hãy tải lại trước khi xóa." }, { status: 409 });
   await writeAdminAudit({ actorUserId: access.userId, action: "vocab.words.bulk_delete", resourceType: "word", metadata: { count: result.deleted } });
@@ -22,6 +39,11 @@ export async function PATCH(request: Request) {
   if (isAuthorizationError(access)) return access;
   const parsed = moveSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Dữ liệu di chuyển không hợp lệ." }, { status: 400 });
+  const denied = await authorizeWordFolders([...new Set(parsed.data.ids)], "vocab.move", "editor", access);
+  if (denied) return denied;
+  const target = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, parsed.data.targetSetId) });
+  const targetAccess = await requireAdminResourceAccess({ permission: "vocab.move", folderId: target?.folderId, level: "editor", access });
+  if (isAuthorizationError(targetAccess)) return targetAccess;
   const result = await moveWordsToSet([...new Set(parsed.data.ids)], parsed.data.targetSetId);
   if (result.kind === "missing_target") return Response.json({ error: "Không tìm thấy bộ từ đích." }, { status: 404 });
   if (result.kind === "stale") return Response.json({ error: "Một số từ không còn tồn tại. Hãy tải lại bộ từ." }, { status: 409 });

@@ -7,11 +7,13 @@ import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { DOCUMENT_CHUNK_BYTES, documentMimeType, isSupportedDocument, stripDocumentExtension } from "@/lib/categoryDocumentFile";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { findVisibleFolderIdByLegacyPath, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export const runtime = "nodejs";
 
 const schema = z.object({
   category: z.string().trim().min(1).max(128),
+  folderId: z.number().int().positive().optional(),
   title: z.string().trim().max(256).optional().default(""),
   fileName: z.string().trim().min(1).max(256),
   fileType: z.string().max(128).optional().default(""),
@@ -28,12 +30,13 @@ export async function POST(request: Request) {
   if (!isSupportedDocument(input.fileName, input.fileType)) return Response.json({ error: "Chỉ chấp nhận file PDF, DOCX hoặc DOC." }, { status: 415 });
 
   const category = normalizeText(input.category);
-  const [folder] = await db.select({ id: vocabCategories.id }).from(vocabCategories).where(eq(vocabCategories.name, category)).limit(1);
-  if (!folder) return Response.json({ error: "Không tìm thấy thư mục đích." }, { status: 404 });
+  let folderId = input.folderId ?? await findVisibleFolderIdByLegacyPath(access, category);
   if (input.targetDocumentId) {
-    const [target] = await db.select({ id: categoryDocuments.id }).from(categoryDocuments).where(eq(categoryDocuments.id, input.targetDocumentId)).limit(1);
+    const [target] = await db.select({ id: categoryDocuments.id, folderId: categoryDocuments.folderId }).from(categoryDocuments).where(eq(categoryDocuments.id, input.targetDocumentId)).limit(1);
     if (!target) return Response.json({ error: "Không tìm thấy tài liệu cần thay thế." }, { status: 404 });
+    folderId = target.folderId;
   }
+  const scoped = await requireAdminResourceAccess({ permission: input.targetDocumentId ? "documents.edit" : "documents.upload", folderId, level: "editor", access }); if (isAuthorizationError(scoped)) return scoped;
 
   await db.delete(categoryDocumentUploads).where(lt(categoryDocumentUploads.createdAt, new Date(Date.now() - 24 * 60 * 60 * 1000)));
   const uploadId = randomUUID();
@@ -41,6 +44,7 @@ export async function POST(request: Request) {
   await db.insert(categoryDocumentUploads).values({
     id: uploadId,
     category,
+    folderId,
     title: normalizeText(input.title || stripDocumentExtension(input.fileName)).slice(0, 256),
     fileName: normalizeText(input.fileName).replace(/[\\/]/g, "").slice(0, 256),
     fileType: documentMimeType(input.fileName, input.fileType),

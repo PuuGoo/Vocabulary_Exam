@@ -20,7 +20,7 @@ import { getFillModeLabel, getLanguageConfig } from "@/lib/languages";
 import { getChineseSettings } from "@/lib/languageSettings";
 import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 
-type SetSummary = { id: number; name: string; category: string | null; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
+type SetSummary = { id: number; name: string; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
   id: number;
   position: number;
@@ -1005,6 +1005,18 @@ export default function AdminSetsPage() {
     }
   }
 
+  async function changePublication(setId: number, publicationStatus: "draft" | "published") {
+    setSavingClass(true);
+    try {
+      const res = await fetch(`/api/sets/${setId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ publicationStatus }) });
+      if (!res.ok) return toast("Không thể cập nhật trạng thái xuất bản.");
+      setDetail((current) => current?.id === setId ? { ...current, publicationStatus } : current);
+      toast(publicationStatus === "published" ? "Đã xuất bản cho học sinh theo phạm vi đã chọn." : "Đã chuyển về bản nháp riêng tư với học sinh.");
+      loadSets();
+    } catch { toast("Không thể kết nối để cập nhật trạng thái."); }
+    finally { setSavingClass(false); }
+  }
+
   function wordsInOrder(orderedIds: readonly number[], source = detail?.words || []) {
     const byId = new Map(source.map((word) => [word.id, word]));
     return orderedIds.flatMap((id, index) => {
@@ -1937,6 +1949,14 @@ export default function AdminSetsPage() {
                   </button>
                 </div>
               )}
+            </div>
+            <div>
+              <label className={cx.label}>Trạng thái học sinh</label>
+              <select className={`${cx.input} !mb-0`} disabled={savingClass} value={detail.publicationStatus || "published"} onChange={(e) => void changePublication(detail.id, e.target.value as "draft" | "published")}>
+                <option value="draft">Bản nháp — học sinh không thấy</option>
+                <option value="published">Đã xuất bản</option>
+              </select>
+              <p className="mt-1.5 text-[0.75rem] text-muted">Quyền thư mục của Admin và quyền xem của học sinh là hai lớp độc lập.</p>
             </div>
             <div>
               <label className={cx.label}>Phạm vi hiển thị</label>

@@ -12,6 +12,7 @@ export const ADMIN_PERMISSIONS = [
   "users.view", "users.create", "users.edit", "users.delete", "users.reset_password",
   "permissions.view", "permissions.manage",
   "sharing.view", "sharing.manage",
+  "folders.create", "folders.rename", "folders.delete", "folders.move", "folders.share", "folders.view_all",
   "registration.view", "registration.manage",
   "backup.create", "backup.restore", "audit.view",
 ] as const;
@@ -45,6 +46,7 @@ const CONTENT_EDITOR: AdminPermission[] = [
   "questions.view", "questions.create", "questions.edit", "questions.import", "questions.export", "questions.reorder",
   "documents.view", "documents.upload", "documents.edit", "documents.download",
   "sharing.view", "sharing.manage",
+  "folders.create", "folders.rename", "folders.move",
 ];
 const MANAGER: AdminPermission[] = [
   "admin.dashboard.view",
@@ -55,6 +57,7 @@ const MANAGER: AdminPermission[] = [
   "assignments.view", "assignments.create", "assignments.edit", "assignments.delete",
   "results.view", "results.export", "users.view", "users.create", "users.edit", "users.reset_password",
   "sharing.view", "sharing.manage", "registration.view", "registration.manage",
+  "folders.create", "folders.rename", "folders.delete", "folders.move", "folders.share",
 ];
 
 export const ADMIN_PROFILE_PERMISSIONS: Record<AdminProfile, readonly AdminPermission[]> = {
@@ -116,6 +119,7 @@ export const ADMIN_PERMISSION_GROUPS = [
   { label: "Người dùng", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("users.")) },
   { label: "Bảo mật quản trị", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("permissions.")) },
   { label: "Chia sẻ", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("sharing.")) },
+  { label: "Không gian nội dung", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("folders.")) },
   { label: "Hệ thống", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("registration.") || p.startsWith("backup.") || p === "audit.view") },
 ] as const;
 

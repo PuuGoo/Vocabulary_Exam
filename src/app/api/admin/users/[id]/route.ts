@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { adminAuditLogs, adminPermissionOverrides, users } from "@/db/schema";
+import { adminAuditLogs, adminPermissionOverrides, contentFolders, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { ADMIN_PROFILES } from "@/lib/adminPermissions";
@@ -27,6 +27,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     if (!target) return "missing" as const;
     if (target.role === "admin" && !access.can("permissions.manage")) return "forbidden" as const;
     if (await isLastOwner(tx, targetId)) return "last_owner" as const;
+    await tx.update(contentFolders).set({ archivedAt: new Date(), updatedAt: new Date() }).where(and(eq(contentFolders.ownerUserId, targetId), eq(contentFolders.kind, "personal_root")));
     await tx.insert(adminAuditLogs).values({ actorUserId: access.userId, actorDisplayName: access.displayName, action: "user.delete", resourceType: "user", resourceId: String(targetId), targetUserId: targetId, metadata: JSON.stringify({ role: target.role, profile: target.adminProfile, displayName: target.displayName }) });
     await tx.delete(users).where(eq(users.id, targetId));
     return "ok" as const;
@@ -54,7 +55,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const nextProfile = nextRole === "admin" ? parsed.data.adminProfile ?? target.adminProfile ?? "viewer" : null;
     if (target.role === "admin" && target.adminProfile === "owner" && (nextRole !== "admin" || nextProfile !== "owner") && await isLastOwner(tx, targetId)) return "last_owner" as const;
     await tx.update(users).set({ ...(passwordHash ? { passwordHash } : {}), role: nextRole, adminProfile: nextProfile }).where(eq(users.id, targetId));
-    if (nextRole !== "admin") await tx.delete(adminPermissionOverrides).where(eq(adminPermissionOverrides.userId, targetId));
+    if (nextRole !== "admin") {
+      await tx.delete(adminPermissionOverrides).where(eq(adminPermissionOverrides.userId, targetId));
+      await tx.update(contentFolders).set({ archivedAt: new Date(), updatedAt: new Date() }).where(and(eq(contentFolders.ownerUserId, targetId), eq(contentFolders.kind, "personal_root")));
+    } else if (target.role !== "admin") {
+      const [workspace] = await tx.select({ id: contentFolders.id }).from(contentFolders).where(and(eq(contentFolders.ownerUserId, targetId), eq(contentFolders.kind, "personal_root"))).limit(1);
+      if (workspace) await tx.update(contentFolders).set({ archivedAt: null, updatedAt: new Date() }).where(eq(contentFolders.id, workspace.id));
+      else await tx.insert(contentFolders).values({ name: "Không gian của tôi", normalizedName: "không gian của tôi", ownerUserId: targetId, kind: "personal_root", createdBy: access.userId });
+    }
     await tx.insert(adminAuditLogs).values({ actorUserId: access.userId, actorDisplayName: access.displayName, action: parsed.data.role || parsed.data.adminProfile ? "admin.profile.update" : "user.password_reset", resourceType: "user", resourceId: String(targetId), targetUserId: targetId, metadata: JSON.stringify({ beforeRole: target.role, afterRole: nextRole, beforeProfile: target.adminProfile, afterProfile: nextProfile }) });
     return "ok" as const;
   });

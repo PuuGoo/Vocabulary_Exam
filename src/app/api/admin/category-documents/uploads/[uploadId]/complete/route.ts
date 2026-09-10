@@ -3,7 +3,8 @@ import { db } from "@/db";
 import { categoryDocuments, categoryDocumentUploadChunks, categoryDocumentUploads } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { documentContentLooksValid, documentExtension } from "@/lib/categoryDocumentFile";
-import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { isAuthorizationError, requireAnyAdminPermission } from "@/lib/adminAuthorization";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,12 +21,13 @@ function numbered(order: number, value: string, keepExtension = false) {
 }
 
 export async function POST(_request: Request, { params }: { params: { uploadId: string } }) {
-  const access = await requireAdminPermission("documents.upload");
+  const access = await requireAnyAdminPermission(["documents.upload", "documents.edit"]);
   if (isAuthorizationError(access)) return access;
   const [upload] = await db.select().from(categoryDocumentUploads).where(and(
     eq(categoryDocumentUploads.id, params.uploadId), eq(categoryDocumentUploads.createdBy, access.userId),
   )).limit(1);
   if (!upload) return Response.json({ error: "Phiên tải lên đã hết hạn hoặc không tồn tại." }, { status: 404 });
+  const scoped = await requireAdminResourceAccess({ permission: upload.targetDocumentId ? "documents.edit" : "documents.upload", folderId: upload.folderId, level: "editor", access }); if (isAuthorizationError(scoped)) return scoped;
   const chunks = await db.select({
     chunkIndex: categoryDocumentUploadChunks.chunkIndex,
     byteLength: sql<number>`octet_length(${categoryDocumentUploadChunks.fileData})::int`,
@@ -52,16 +54,16 @@ export async function POST(_request: Request, { params }: { params: { uploadId: 
     if (upload.targetDocumentId) {
       [saved] = await tx.update(categoryDocuments).set({
         fileName: upload.fileName, fileType: upload.fileType, fileSize: upload.fileSize, fileData: assembledFile,
-      }).where(eq(categoryDocuments.id, upload.targetDocumentId)).returning({ id: categoryDocuments.id, category: categoryDocuments.category });
+      }).where(eq(categoryDocuments.id, upload.targetDocumentId)).returning({ id: categoryDocuments.id, category: categoryDocuments.category, folderId: categoryDocuments.folderId });
       if (!saved) throw new Error("Không tìm thấy tài liệu cần thay thế.");
     } else {
       [saved] = await tx.insert(categoryDocuments).values({
-        category: upload.category, title: upload.title, fileName: upload.fileName, fileType: upload.fileType,
+        category: upload.category, folderId: upload.folderId, title: upload.title, fileName: upload.fileName, fileType: upload.fileType,
         fileSize: upload.fileSize, fileData: assembledFile, createdBy: access.userId,
-      }).returning({ id: categoryDocuments.id, category: categoryDocuments.category });
+      }).returning({ id: categoryDocuments.id, category: categoryDocuments.category, folderId: categoryDocuments.folderId });
     }
     const rows = await tx.select({ id: categoryDocuments.id, title: categoryDocuments.title, fileName: categoryDocuments.fileName })
-      .from(categoryDocuments).where(eq(categoryDocuments.category, saved.category)).orderBy(asc(categoryDocuments.createdAt), asc(categoryDocuments.id));
+      .from(categoryDocuments).where(eq(categoryDocuments.folderId, saved.folderId!)).orderBy(asc(categoryDocuments.createdAt), asc(categoryDocuments.id));
     for (let index = 0; index < rows.length; index += 1) {
       await tx.update(categoryDocuments).set({ title: numbered(index + 1, rows[index].title), fileName: numbered(index + 1, rows[index].fileName, true) }).where(eq(categoryDocuments.id, rows[index].id));
     }

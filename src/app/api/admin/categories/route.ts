@@ -1,175 +1,87 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq, ilike, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { categoryDocuments, vocabCategories, vocabSets } from "@/db/schema";
-import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
-import { normalizeText } from "@/lib/text";
+import { categoryDocuments, categoryQuestions, contentFolders, vocabSets } from "@/db/schema";
+import { isAuthorizationError, requireAdminPermission, requireAnyAdminPermission } from "@/lib/adminAuthorization";
+import { ensurePersonalWorkspace, getFolderDisplayPaths, getVisibleFolderIds, normalizeFolderName, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { writeAdminAudit } from "@/lib/adminAudit";
 
-const nameSchema = z.object({ name: z.string().trim().min(1).max(128) });
-const categoryPathSchema = nameSchema.extend({ parentPath: z.string().trim().max(256).nullable().optional() });
-
-async function findDuplicate(name: string, excludedId?: number) {
-  const matches = await db.select({ id: vocabCategories.id }).from(vocabCategories).where(ilike(vocabCategories.name, name)).limit(2);
-  return matches.find((item) => item.id !== excludedId);
-}
-
-function buildPath(name: string, parentPath?: string | null) {
-  const leaf = normalizeText(name).replace(/\s*\/\s*/g, "").trim();
-  const parent = parentPath ? normalizeText(parentPath).replace(/\s*\/\s*/g, " / ").trim() : "";
-  return parent ? `${parent} / ${leaf}` : leaf;
-}
-
-function parseNumberedLeaf(value: string) {
-  const normalized = normalizeText(value).trim();
-  const match = /^(\d+)\s*[._-]\s*/.exec(normalized);
-  return {
-    number: match ? Number(match[1]) : null,
-    label: (match ? normalized.slice(match[0].length) : normalized).replace(/\s+/g, " ").trim(),
-  };
-}
-
-function canonicalizeCategoryPath(path: string) {
-  return path.split(" / ").map((part) => {
-    const parsed = parseNumberedLeaf(part);
-    return parsed.number !== null ? `${String(parsed.number).padStart(2, "0")}_${parsed.label}` : parsed.label;
-  }).join(" / ");
-}
-
-async function normalizeLegacyCategoryPaths() {
-  await db.transaction(async (tx) => {
-    const rows = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories);
-    rows.sort((left, right) => left.name.split(" / ").length - right.name.split(" / ").length);
-    for (const row of rows) {
-      const name = canonicalizeCategoryPath(row.name);
-      if (!name || name === row.name) continue;
-      const [conflict] = await tx.select({ id: vocabCategories.id }).from(vocabCategories).where(eq(vocabCategories.name, name)).limit(1);
-      if (conflict && conflict.id !== row.id) continue;
-      const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} like ${`${row.name} / %`}`);
-      await tx.update(vocabCategories).set({ name }).where(eq(vocabCategories.id, row.id));
-      await tx.update(vocabSets).set({ category: name }).where(eq(vocabSets.category, row.name));
-      await tx.update(categoryDocuments).set({ category: name }).where(eq(categoryDocuments.category, row.name));
-      for (const child of descendants) {
-        const childName = `${name}${child.name.slice(row.name.length)}`;
-        const canonicalChildName = canonicalizeCategoryPath(childName);
-        await tx.update(vocabCategories).set({ name: canonicalChildName }).where(eq(vocabCategories.id, child.id));
-        await tx.update(vocabSets).set({ category: canonicalChildName }).where(eq(vocabSets.category, child.name));
-        await tx.update(categoryDocuments).set({ category: canonicalChildName }).where(eq(categoryDocuments.category, child.name));
-      }
-    }
-  });
-}
-
-async function nextCategoryNumber(parentPath?: string | null) {
-  const rows = await db.select({ name: vocabCategories.name }).from(vocabCategories);
-  const prefix = parentPath ? `${parentPath} / ` : "";
-  let max = 0;
-  for (const row of rows) {
-    if (parentPath ? !row.name.startsWith(prefix) : row.name.includes(" / ")) continue;
-    const rest = parentPath ? row.name.slice(prefix.length) : row.name;
-    if (rest.includes(" / ")) continue;
-    const match = /^(\d+)_/.exec(rest);
-    if (match) max = Math.max(max, Number(match[1]));
-  }
-  return max + 1;
-}
+const inputSchema = z.object({ id: z.number().int().positive().optional(), name: z.string().min(1).max(128), parentId: z.number().int().positive().nullable().optional(), parentPath: z.string().max(256).nullable().optional() });
 
 export async function GET() {
-  const access = await requireAdminPermission("vocab.view"); if (isAuthorizationError(access)) return access;
-
-  // Register categories from older vocab sets so the manager remains compatible
-  // with data created before the category registry existed.
-  const legacyRows = await db
-    .selectDistinct({ name: vocabSets.category })
-    .from(vocabSets)
-    .where(sql`${vocabSets.category} is not null and btrim(${vocabSets.category}) <> ''`);
-  if (legacyRows.length) {
-    await db.insert(vocabCategories)
-      .values(legacyRows.map((item) => ({ name: item.name! })))
-      .onConflictDoNothing({ target: vocabCategories.name });
-  }
-  await normalizeLegacyCategoryPaths();
-
-  const categories = await db
-    .select({
-      id: vocabCategories.id,
-      name: vocabCategories.name,
-      count: sql<number>`count(${vocabSets.id})::int`,
-      createdAt: vocabCategories.createdAt,
-    })
-    .from(vocabCategories)
-    .leftJoin(vocabSets, sql`${vocabSets.category} = ${vocabCategories.name} or ${vocabSets.category} like ${vocabCategories.name} || ' / %'`)
-    .groupBy(vocabCategories.id)
-    .orderBy(asc(vocabCategories.name));
+  const access = await requireAnyAdminPermission(["vocab.view", "questions.view", "documents.view"]); if (isAuthorizationError(access)) return access;
+  await ensurePersonalWorkspace(access.userId);
+  const ids = await getVisibleFolderIds(access);
+  if (!ids.length) return NextResponse.json({ categories: [] });
+  const [folders, sets, documents, questions] = await Promise.all([
+    db.select().from(contentFolders).where(and(inArray(contentFolders.id, ids), isNull(contentFolders.archivedAt))),
+    db.select({ id: vocabSets.id, folderId: vocabSets.folderId }).from(vocabSets).where(inArray(vocabSets.folderId, ids)),
+    db.select({ id: categoryDocuments.id, folderId: categoryDocuments.folderId }).from(categoryDocuments).where(inArray(categoryDocuments.folderId, ids)),
+    db.select({ id: categoryQuestions.id, folderId: categoryQuestions.folderId }).from(categoryQuestions).where(inArray(categoryQuestions.folderId, ids)),
+  ]);
+  const paths = await getFolderDisplayPaths(access, folders.map((folder) => folder.id));
+  const categories = folders.map((folder) => ({
+    id: folder.id, folderId: folder.id, parentId: folder.parentId, kind: folder.kind,
+    name: paths.get(folder.id) ?? folder.name,
+    leafName: folder.ownerUserId === access.userId && folder.kind === "personal_root" ? "Không gian của tôi" : folder.name,
+    count: sets.filter((row) => row.folderId === folder.id).length,
+    documentCount: documents.filter((row) => row.folderId === folder.id).length,
+    questionCount: questions.filter((row) => row.folderId === folder.id).length,
+    createdAt: folder.createdAt,
+  }));
   return NextResponse.json({ categories });
 }
 
+async function resolveParent(access: Exclude<Awaited<ReturnType<typeof requireAdminPermission>>, NextResponse>, input: { parentId?: number | null; parentPath?: string | null }) {
+  if (input.parentId) return db.query.contentFolders.findFirst({ where: eq(contentFolders.id, input.parentId) });
+  if (!input.parentPath) return ensurePersonalWorkspace(access.userId);
+  const ids = await getVisibleFolderIds(access); const paths = await getFolderDisplayPaths(access, ids);
+  for (const id of ids) if (paths.get(id) === input.parentPath) return db.query.contentFolders.findFirst({ where: eq(contentFolders.id, id) });
+  return null;
+}
+
 export async function POST(request: NextRequest) {
-  const access = await requireAdminPermission("vocab.create"); if (isAuthorizationError(access)) return access;
-  const parsed = categoryPathSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "Tên danh mục phải có từ 1 đến 128 ký tự." }, { status: 400 });
-  const number = await nextCategoryNumber(parsed.data.parentPath);
-  const leaf = parseNumberedLeaf(parsed.data.name).label;
-  const name = buildPath(`${String(number).padStart(2, "0")}_${leaf}`, parsed.data.parentPath);
-  if (name.length > 128) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
-  if (await findDuplicate(name)) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
-  const [category] = await db.insert(vocabCategories).values({ name, createdBy: access.userId }).returning();
-  return NextResponse.json({ category }, { status: 201 });
+  const access = await requireAdminPermission("folders.create"); if (isAuthorizationError(access)) return access;
+  const parsed = inputSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Tên thư mục không hợp lệ." }, { status: 400 });
+  const parent = await resolveParent(access, parsed.data);
+  const scoped = await requireAdminResourceAccess({ permission: "folders.create", folderId: parent?.id, level: "manager", access }); if (isAuthorizationError(scoped)) return scoped;
+  const name = normalizeFolderName(parsed.data.name);
+  if (!name || name.includes("/")) return NextResponse.json({ error: "Tên thư mục không hợp lệ; không dùng dấu /." }, { status: 400 });
+  const normalizedName = name.toLocaleLowerCase("vi");
+  const [duplicate] = await db.select({ id: contentFolders.id }).from(contentFolders).where(and(eq(contentFolders.parentId, parent!.id), eq(contentFolders.normalizedName, normalizedName), isNull(contentFolders.archivedAt))).limit(1);
+  if (duplicate) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
+  const [folder] = await db.insert(contentFolders).values({ name, normalizedName, parentId: parent!.id, kind: "folder", createdBy: access.userId }).returning();
+  await writeAdminAudit({ actorUserId: access.userId, action: "folder.create", resourceType: "folder", resourceId: folder.id, metadata: { parentId: parent!.id, name } });
+  return NextResponse.json({ category: { ...folder, folderId: folder.id, name: (await getFolderDisplayPaths(access, [folder.id])).get(folder.id) } }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest) {
-  const access = await requireAdminPermission("vocab.edit"); if (isAuthorizationError(access)) return access;
-  const body = await request.json().catch(() => null);
-  const parsed = nameSchema.extend({ id: z.number().int().positive() }).safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "Dữ liệu danh mục không hợp lệ." }, { status: 400 });
-  const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(vocabCategories).where(eq(vocabCategories.id, parsed.data.id)).limit(1);
-    if (!current) return null;
-    const parent = current.name.includes(" / ") ? current.name.slice(0, current.name.lastIndexOf(" / ")) : "";
-    const currentLeaf = current.name.split(" / ").pop() || current.name;
-    const currentNumber = parseNumberedLeaf(currentLeaf).number;
-    const requested = parseNumberedLeaf(parsed.data.name);
-    const number = requested.number ?? currentNumber;
-    const requestedLeaf = number !== null ? `${String(number).padStart(2, "0")}_${requested.label}` : requested.label;
-    const name = buildPath(requestedLeaf, parent || null);
-    if (name.length > 128) return { tooLong: true as const };
-    if (await findDuplicate(name, parsed.data.id)) return { conflict: true as const };
-    const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} like ${`${current.name} / %`}`);
-    await tx.update(vocabCategories).set({ name }).where(eq(vocabCategories.id, current.id));
-    await tx.update(vocabSets).set({ category: name }).where(eq(vocabSets.category, current.name));
-    await tx.update(categoryDocuments).set({ category: name }).where(eq(categoryDocuments.category, current.name));
-    for (const child of descendants) {
-      const childName = `${name}${child.name.slice(current.name.length)}`;
-      await tx.update(vocabCategories).set({ name: childName }).where(eq(vocabCategories.id, child.id));
-      await tx.update(vocabSets).set({ category: childName }).where(eq(vocabSets.category, child.name));
-      await tx.update(categoryDocuments).set({ category: childName }).where(eq(categoryDocuments.category, child.name));
-    }
-    return { ...current, name, oldName: current.name };
-  });
-  if (!result) return NextResponse.json({ error: "Không tìm thấy danh mục." }, { status: 404 });
-  if ("tooLong" in result) return NextResponse.json({ error: "Đường dẫn danh mục không được vượt quá 128 ký tự." }, { status: 400 });
-  if ("conflict" in result) return NextResponse.json({ error: "Danh mục này đã tồn tại." }, { status: 409 });
-  return NextResponse.json({ category: result });
+  const access = await requireAdminPermission("folders.rename"); if (isAuthorizationError(access)) return access;
+  const parsed = inputSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success || !parsed.data.id) return NextResponse.json({ error: "Dữ liệu thư mục không hợp lệ." }, { status: 400 });
+  const scoped = await requireAdminResourceAccess({ permission: "folders.rename", folderId: parsed.data.id, level: "manager", access }); if (isAuthorizationError(scoped)) return scoped;
+  const [current] = await db.select().from(contentFolders).where(eq(contentFolders.id, parsed.data.id)).limit(1);
+  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (current.kind !== "folder") return NextResponse.json({ error: "Không thể đổi tên thư mục gốc." }, { status: 409 });
+  const name = normalizeFolderName(parsed.data.name); if (!name || name.includes("/")) return NextResponse.json({ error: "Tên thư mục không hợp lệ." }, { status: 400 });
+  const [folder] = await db.update(contentFolders).set({ name, normalizedName: name.toLocaleLowerCase("vi"), updatedAt: new Date() }).where(eq(contentFolders.id, current.id)).returning();
+  await writeAdminAudit({ actorUserId: access.userId, action: "folder.rename", resourceType: "folder", resourceId: folder.id, metadata: { before: current.name, after: name } });
+  return NextResponse.json({ category: { ...folder, folderId: folder.id, name: (await getFolderDisplayPaths(access, [folder.id])).get(folder.id) } });
 }
 
 export async function DELETE(request: NextRequest) {
-  const access = await requireAdminPermission("vocab.delete"); if (isAuthorizationError(access)) return access;
-  const id = Number(new URL(request.url).searchParams.get("id"));
-  if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Danh mục không hợp lệ." }, { status: 400 });
-
-  const result = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(vocabCategories).where(eq(vocabCategories.id, id)).limit(1);
-    if (!current) return null;
-    const descendants = await tx.select({ id: vocabCategories.id, name: vocabCategories.name }).from(vocabCategories).where(sql`${vocabCategories.name} = ${current.name} or ${vocabCategories.name} like ${`${current.name} / %`}`);
-    const names = descendants.map((item) => item.name);
-    const [{ count }] = await tx.select({ count: sql<number>`count(*)::int` }).from(vocabSets).where(sql`${vocabSets.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
-    await tx.update(vocabSets).set({ category: null }).where(sql`${vocabSets.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
-    await tx.delete(categoryDocuments).where(sql`${categoryDocuments.category} in (${sql.join(names.map((name) => sql`${name}`), sql`, `)})`);
-    await tx.delete(vocabCategories).where(sql`${vocabCategories.name} = ${current.name} or ${vocabCategories.name} like ${`${current.name} / %`}`);
-    return { name: current.name, movedSets: count };
-  });
-  if (!result) return NextResponse.json({ error: "Không tìm thấy danh mục." }, { status: 404 });
-  await writeAdminAudit({ actorUserId: access.userId, action: "category.delete", resourceType: "category", resourceId: id, metadata: result });
-  return NextResponse.json(result);
+  const access = await requireAdminPermission("folders.delete"); if (isAuthorizationError(access)) return access;
+  const id = Number(request.nextUrl.searchParams.get("id"));
+  const scoped = await requireAdminResourceAccess({ permission: "folders.delete", folderId: id, level: "manager", access }); if (isAuthorizationError(scoped)) return scoped;
+  const [current] = await db.select().from(contentFolders).where(eq(contentFolders.id, id)).limit(1);
+  if (!current) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (current.kind !== "folder") return NextResponse.json({ error: "Không thể xóa thư mục gốc." }, { status: 409 });
+  const [child] = await db.select({ id: contentFolders.id }).from(contentFolders).where(and(eq(contentFolders.parentId, id), isNull(contentFolders.archivedAt))).limit(1);
+  const occupied = (await Promise.all([db.select({ id: vocabSets.id }).from(vocabSets).where(eq(vocabSets.folderId, id)).limit(1), db.select({ id: categoryQuestions.id }).from(categoryQuestions).where(eq(categoryQuestions.folderId, id)).limit(1), db.select({ id: categoryDocuments.id }).from(categoryDocuments).where(eq(categoryDocuments.folderId, id)).limit(1)])).some((rows) => rows.length);
+  if (child || occupied) return NextResponse.json({ error: "Thư mục còn nội dung. Hãy di chuyển nội dung trước khi lưu trữ." }, { status: 409 });
+  await db.update(contentFolders).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(contentFolders.id, id));
+  await writeAdminAudit({ actorUserId: access.userId, action: "folder.delete", resourceType: "folder", resourceId: id });
+  return NextResponse.json({ ok: true, archived: true });
 }

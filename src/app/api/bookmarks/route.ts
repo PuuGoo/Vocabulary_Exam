@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { vocabSets, wordBookmarks, words } from "@/db/schema";
@@ -38,7 +38,7 @@ export async function GET() {
     .from(wordBookmarks)
     .innerJoin(words, eq(words.id, wordBookmarks.wordId))
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
-    .where(eq(wordBookmarks.userId, session.userId))
+    .where(and(eq(wordBookmarks.userId, session.userId), eq(vocabSets.publicationStatus, "published")))
     .orderBy(desc(wordBookmarks.updatedAt));
 
   return NextResponse.json({ bookmarks: rows });
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const parsed = createSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
 
-  const word = await db.query.words.findFirst({ where: eq(words.id, parsed.data.wordId) });
+  const [word] = await db.select({ id: words.id }).from(words).innerJoin(vocabSets, eq(vocabSets.id, words.setId)).where(and(eq(words.id, parsed.data.wordId), eq(vocabSets.publicationStatus, "published"))).limit(1);
   if (!word) return NextResponse.json({ error: "Không tìm thấy từ." }, { status: 404 });
 
   const [bookmark] = await db

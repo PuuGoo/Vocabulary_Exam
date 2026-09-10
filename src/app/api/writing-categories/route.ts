@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { count, asc } from "drizzle-orm";
+import { count, asc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { categoryQuestions } from "@/db/schema";
+import { categoryQuestions, contentFolders } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 
 export async function GET() {
@@ -10,12 +10,15 @@ export async function GET() {
 
   const rows = await db
     .select({
-      name: categoryQuestions.category,
+      folderId: categoryQuestions.folderId,
+      name: contentFolders.name,
       count: count(),
     })
     .from(categoryQuestions)
-    .groupBy(categoryQuestions.category)
-    .orderBy(asc(categoryQuestions.category));
+    .innerJoin(contentFolders, eq(contentFolders.id, categoryQuestions.folderId))
+    .where(eq(categoryQuestions.publicationStatus, "published"))
+    .groupBy(categoryQuestions.folderId, contentFolders.name)
+    .orderBy(asc(contentFolders.name));
 
   return NextResponse.json({ categories: rows });
 }

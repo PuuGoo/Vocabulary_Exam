@@ -4,6 +4,8 @@ import { db } from "@/db";
 import { classMembers, vocabSets, wordBookmarks, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizePinyinForSearch } from "@/lib/pinyin";
+import { getAdminAccess } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -21,9 +23,13 @@ export async function GET(req: NextRequest) {
       .from(classMembers)
       .where(eq(classMembers.userId, session.userId));
     const classIds = memberships.map((item) => item.classId);
-    classFilter = classIds.length
+    const audience = classIds.length
       ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds))
       : isNull(vocabSets.classId);
+    classFilter = and(eq(vocabSets.publicationStatus, "published"), audience);
+  } else {
+    const access = await getAdminAccess(session); const ids = access?.can("vocab.view") ? await getVisibleFolderIds(access) : [];
+    classFilter = ids.length ? inArray(vocabSets.folderId, ids) : eq(vocabSets.id, -1);
   }
 
   const searchFilter = or(

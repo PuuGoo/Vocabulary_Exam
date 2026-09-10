@@ -3,14 +3,14 @@ import { eq } from "drizzle-orm";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { vocabSets, words } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
 import { dedupeImportRows, importWordKey } from "@/lib/importDedup";
 import { appendWords } from "@/lib/wordOrder.server";
 import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
+import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderLegacyPath, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export const runtime = "nodejs";
 
@@ -49,6 +49,8 @@ export async function POST(req: NextRequest) {
   const target = String(form.get("target") || "");
   const newSetName = String(form.get("newSetName") || "").trim();
   const category = normalizeText(String(form.get("category") || "").trim()) || null;
+  const rawFolderId = Number(form.get("folderId"));
+  const requestedFolderId = Number.isInteger(rawFolderId) && rawFolderId > 0 ? rawFolderId : null;
   const requestedLanguage = String(form.get("languageCode") || "en");
   const classIdRaw = form.get("classId");
   const classId = classIdRaw && String(classIdRaw).trim() !== "" ? Number(classIdRaw) : null;
@@ -89,16 +91,21 @@ export async function POST(req: NextRequest) {
     setType = target === "__new_verb" ? "irregular_verb" : target === "__new_language" ? "language_vocab" : "ielts_vocab";
     languageCode = setType === "language_vocab" && requestedLanguage === "zh-CN" ? "zh-CN" : "en";
     const rawName = normalizeText(newSetName) || (setType === "irregular_verb" ? "Bộ động từ mới" : "Bộ từ vựng mới");
-    if (category) {
-      await db.insert(vocabCategories).values({ name: category, createdBy: session.userId }).onConflictDoNothing({ target: vocabCategories.name });
-    }
-    const name = category ? formatCategorySetName(await nextCategoryOrder(db, category), rawName) : rawName;
-    const [set] = await db.insert(vocabSets).values({ name, category, type: setType, languageCode, translationLanguageCode:"vi", languageSettings:languageCode === "zh-CN" ? JSON.stringify({scriptVariant:"simplified",pronunciationScheme:"pinyin",pinyinTonePolicy:"strict"}) : "{}", classId, createdBy: session.userId }).returning();
+    const fallbackWorkspace = await ensurePersonalWorkspace(session.userId);
+    const folderId = requestedFolderId ?? (category ? await findVisibleFolderIdByLegacyPath(access, category) : null) ?? fallbackWorkspace?.id ?? null;
+    if (!folderId) return NextResponse.json({ error: "Không tìm thấy thư mục nhập dữ liệu." }, { status: 404 });
+    const scoped = await requireAdminResourceAccess({ permission: "vocab.import", folderId, level: "editor", access });
+    if (isAuthorizationError(scoped)) return scoped;
+    const storageCategory = await getFolderLegacyPath(folderId);
+    const name = storageCategory ? formatCategorySetName(await nextCategoryOrder(db, storageCategory), rawName) : rawName;
+    const [set] = await db.insert(vocabSets).values({ name, category: storageCategory, folderId, publicationStatus: "draft", type: setType, languageCode, translationLanguageCode:"vi", languageSettings:languageCode === "zh-CN" ? JSON.stringify({scriptVariant:"simplified",pronunciationScheme:"pinyin",pinyinTonePolicy:"strict"}) : "{}", classId, createdBy: session.userId }).returning();
     setId = set.id;
   } else {
     const setIdNum = Number(target);
     const set = await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, setIdNum) });
     if (!set) return NextResponse.json({ error: "Bộ từ vựng đích không tồn tại." }, { status: 400 });
+    const scoped = await requireAdminResourceAccess({ permission: "vocab.import", folderId: set.folderId, level: "editor", access });
+    if (isAuthorizationError(scoped)) return scoped;
     setId = set.id;
     setType = set.type;
     languageCode = set.languageCode;

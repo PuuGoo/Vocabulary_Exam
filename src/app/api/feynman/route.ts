@@ -6,16 +6,19 @@ import { classMembers, teachBackNotes, vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { nextFeynmanReview } from "@/lib/feynman";
 import { recordWordOutcomes } from "@/lib/spacedProgress";
+import { getAdminAccess } from "@/lib/adminAuthorization";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
-async function accessibleSetIds(userId: number, role: string) {
-  if (role === "admin") return null;
+async function accessFilterForUser(userId: number, role: string) {
+  if (role === "admin") {
+    const access = await getAdminAccess({ userId, role: "admin", username: "", displayName: "" });
+    const ids = access?.can("vocab.view") ? await getVisibleFolderIds(access) : [];
+    return ids.length ? inArray(vocabSets.folderId, ids) : eq(vocabSets.id, -1);
+  }
   const memberships = await db.select({ classId: classMembers.classId }).from(classMembers).where(eq(classMembers.userId, userId));
-  return memberships.map((item) => item.classId);
-}
-
-function accessFilter(classIds: number[] | null) {
-  if (classIds === null) return undefined;
-  return classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+  const classIds = memberships.map((item) => item.classId);
+  const audience = classIds.length ? or(isNull(vocabSets.classId), inArray(vocabSets.classId, classIds)) : isNull(vocabSets.classId);
+  return and(eq(vocabSets.publicationStatus, "published"), audience);
 }
 
 const wordFields = {
@@ -27,8 +30,7 @@ const wordFields = {
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const classIds = await accessibleSetIds(session.userId, session.role);
-  const allowed = accessFilter(classIds);
+  const allowed = await accessFilterForUser(session.userId, session.role);
   const setId = Number(req.nextUrl.searchParams.get("setId"));
   if (Number.isInteger(setId) && setId > 0) {
     const rows = await db.select({ ...wordFields, confidence: teachBackNotes.confidence, reviewCount: teachBackNotes.reviewCount, nextReviewAt: teachBackNotes.nextReviewAt })
@@ -57,8 +59,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Dữ liệu không hợp lệ." }, { status: 400 });
-  const classIds = await accessibleSetIds(session.userId, session.role);
-  const allowed = accessFilter(classIds);
+  const allowed = await accessFilterForUser(session.userId, session.role);
   const [word] = await db.select({ id: words.id }).from(words).innerJoin(vocabSets, eq(vocabSets.id, words.setId)).where(and(eq(words.id, parsed.data.wordId), allowed));
   if (!word) return NextResponse.json({ error: "Bạn không có quyền học từ này." }, { status: 403 });
   const existing = await db.query.teachBackNotes.findFirst({ where: and(eq(teachBackNotes.userId, session.userId), eq(teachBackNotes.wordId, word.id)) });

@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       .from(mistakes)
       .innerJoin(words, eq(words.id, mistakes.wordId))
       .innerJoin(vocabSets, eq(vocabSets.id, mistakes.setId))
-      .where(and(eq(mistakes.userId, session.userId), gte(mistakes.lastWrongAt, cutoff)))
+      .where(and(eq(mistakes.userId, session.userId), gte(mistakes.lastWrongAt, cutoff), eq(vocabSets.publicationStatus, "published")))
       .orderBy(desc(mistakes.timesWrong)),
   ]);
 

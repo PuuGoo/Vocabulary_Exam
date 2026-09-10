@@ -34,6 +34,8 @@ const LABELS: Record<BackupCollection, string> = {
   appSettings: "Cấu hình hệ thống",
   adminPermissionOverrides: "Phân quyền quản trị",
   adminAuditLogs: "Nhật ký quản trị",
+  contentFolders: "Không gian và thư mục nội dung",
+  folderAccess: "Quyền truy cập thư mục",
 };
 
 async function uploadFileInChunks(

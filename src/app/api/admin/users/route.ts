@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { adminAuditLogs, adminPermissionOverrides, users } from "@/db/schema";
+import { adminAuditLogs, adminPermissionOverrides, contentFolders, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { ADMIN_PROFILES, isAdminProfile, resolveAdminPermissions } from "@/lib/adminPermissions";
@@ -30,6 +30,7 @@ export async function POST(req: NextRequest) {
   const passwordHash = await hashPassword(parsed.data.password);
   const user = await db.transaction(async (tx) => {
     const [created] = await tx.insert(users).values({ username: parsed.data.username, passwordHash, displayName: normalizeText(parsed.data.displayName), role: parsed.data.role, adminProfile: profile }).returning();
+    if (created.role === "admin") await tx.insert(contentFolders).values({ name: "Không gian của tôi", normalizedName: "không gian của tôi", ownerUserId: created.id, kind: "personal_root", createdBy: access.userId });
     await tx.insert(adminAuditLogs).values({ actorUserId: access.userId, actorDisplayName: access.displayName, action: parsed.data.role === "admin" ? "admin.create" : "user.create", resourceType: "user", resourceId: String(created.id), targetUserId: created.id, metadata: JSON.stringify({ role: created.role, adminProfile: created.adminProfile }) });
     return created;
   });

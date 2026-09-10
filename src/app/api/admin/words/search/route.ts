@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { asc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizePinyinForSearch } from "@/lib/pinyin";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -19,6 +20,8 @@ export async function GET(request: NextRequest) {
 
   const pattern = `%${escapeLike(query)}%`;
   const pinyinPattern = `%${escapeLike(normalizePinyinForSearch(query))}%`;
+  const visibleFolderIds = await getVisibleFolderIds(access);
+  if (!visibleFolderIds.length) return NextResponse.json({ matches: [] });
   const matches = await db
     .select({
       wordId: words.id,
@@ -41,7 +44,7 @@ export async function GET(request: NextRequest) {
     })
     .from(words)
     .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
-    .where(or(
+    .where(and(inArray(vocabSets.folderId, visibleFolderIds), or(
       ilike(words.term, pattern),
       ilike(words.meaning, pattern),
       ilike(words.example, pattern),
@@ -55,7 +58,7 @@ export async function GET(request: NextRequest) {
       ilike(words.v3, pattern),
       ilike(vocabSets.name, pattern),
       ilike(vocabSets.category, pattern),
-    ))
+    )))
     .orderBy(asc(vocabSets.name), asc(words.term), asc(words.v1))
     .limit(50);
 
