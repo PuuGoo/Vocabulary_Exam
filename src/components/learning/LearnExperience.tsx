@@ -21,7 +21,7 @@ export type LearnExperienceProps = {
   initialSet?: LearnSetData;
   sourceKey?: string;
   allowedModes?: readonly string[];
-  onSelectMode?: (mode: string) => void;
+  onSelectMode?: (mode: string, target?: "term" | "pronunciation") => void;
   onExit?: () => void;
   onLoginRequest?: () => void;
 };
@@ -54,12 +54,12 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
   const menuButtonRef = useRef<HTMLButtonElement>(null); const menuRef = useRef<HTMLDivElement>(null); const jumpInputRef = useRef<HTMLInputElement>(null);
   const sessionKey = sourceKey || (authenticatedSetId ? `set:${authenticatedSetId}` : `set:${initialSet?.id || "unknown"}`);
   const exit = () => onExit ? onExit() : router.push("/study");
-  const selectLearningMode = (nextMode: string) => {
+  const selectLearningMode = (nextMode: string, target?: "term" | "pronunciation") => {
     if (allowedModes && !allowedModes.includes(nextMode)) return;
-    if (onSelectMode) return onSelectMode(nextMode);
+    if (onSelectMode) return onSelectMode(nextMode, target);
     const id = set?.id;
     if (!id) return;
-    const hrefs: Record<string, string> = { fill: `/quiz/${id}?mode=fill`, mc: `/quiz/${id}?mode=mc`, dictation: `/dictation/${id}`, match: `/match/${id}`, listen: `/listen/${id}`, pronunciation: `/pronunciation/${id}`, sentence: `/sentence/${id}`, timed: `/quiz/${id}?mode=fill&timed=1&minutes=15` };
+    const hrefs: Record<string, string> = { fill: `/quiz/${id}?mode=fill${target === "pronunciation" ? "&target=pronunciation" : ""}`, mc: `/quiz/${id}?mode=mc`, dictation: `/dictation/${id}`, match: `/match/${id}`, listen: `/listen/${id}`, pronunciation: `/pronunciation/${id}`, sentence: `/sentence/${id}`, timed: `/quiz/${id}?mode=fill&timed=1&minutes=15` };
     if (hrefs[nextMode]) router.push(hrefs[nextMode]);
   };
   const practiceUnknownWords = (target: "term" | "pronunciation" = "term") => {

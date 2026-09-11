@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { folderAccessSatisfies, resolveFolderAccessFromRows } from "./folderAuthorizationCore";
+import { folderAccessSatisfies, resolveFolderAccessDetailFromRows, resolveFolderAccessFromRows } from "./folderAuthorizationCore";
 
 const folders = [
   { id: 1, parentId: null, ownerUserId: 1, kind: "personal_root", archivedAt: null },
@@ -15,6 +15,12 @@ test("specific child allow overrides hidden parent", () => {
   const rules = [{ folderId: 2, userId: 2, accessLevel: "deny" }, { folderId: 4, userId: 2, accessLevel: "viewer" }];
   assert.equal(resolveFolderAccessFromRows(2, "manager", 4, folders, rules), "viewer");
   assert.equal(resolveFolderAccessFromRows(2, "manager", 3, folders, rules), "deny");
+});
+test("access detail identifies inherited source without confusing it with an exact override", () => {
+  const inherited = resolveFolderAccessDetailFromRows(2, "manager", 4, folders, [{ folderId: 2, userId: 2, accessLevel: "editor" }]);
+  assert.deepEqual({ level: inherited.level, sourceFolderId: inherited.sourceFolderId, inherited: inherited.inherited }, { level: "editor", sourceFolderId: 2, inherited: true });
+  const exact = resolveFolderAccessDetailFromRows(2, "manager", 4, folders, [{ folderId: 2, userId: 2, accessLevel: "editor" }, { folderId: 4, userId: 2, accessLevel: "viewer" }]);
+  assert.deepEqual({ level: exact.level, sourceFolderId: exact.sourceFolderId, inherited: exact.inherited }, { level: "viewer", sourceFolderId: 4, inherited: false });
 });
 test("system owner bypasses ACL and levels are ordered", () => {
   assert.equal(resolveFolderAccessFromRows(9, "owner", 4, folders, [{ folderId: 4, userId: 9, accessLevel: "deny" }]), "manager");

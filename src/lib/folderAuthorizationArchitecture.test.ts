@@ -42,3 +42,17 @@ test("migration preserves legacy content and creates private roots", () => {
   assert.match(migration, /folder_acl_share_targets_migrated/);
   assert.match(migration, /folder_acl_legacy_content_mapped/);
 });
+
+test("workspace access manager lists recipients and applies atomic bulk changes", () => {
+  const single = source("src/app/api/admin/folders/[id]/access/route.ts");
+  const bulk = source("src/app/api/admin/folders/[id]/access/bulk/route.ts");
+  const service = source("src/lib/folderAccessManagement.ts");
+  const ui = source("src/components/FolderAccessManager.tsx");
+  assert.match(single, /export async function GET/);
+  assert.match(single, /export async function PATCH/);
+  assert.match(bulk, /\.max\(100\)/);
+  assert.match(service, /db\.transaction/);
+  assert.match(service, /folder\.access\.revoke/);
+  assert.match(ui, /Chọn tất cả kết quả đang hiển thị/);
+  assert.match(ui, /Khôi phục quyền kế thừa/);
+});

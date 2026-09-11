@@ -6,26 +6,37 @@ const ACCESS_RANK: Record<FolderAccessLevel, number> = { deny: 0, viewer: 1, edi
 
 export type FolderAuthorizationRow = { id: number; parentId: number | null; ownerUserId: number | null; kind: string; archivedAt: Date | null };
 export type FolderAclRow = { folderId: number; userId: number; accessLevel: string };
+export type FolderAccessResolution = {
+  level: FolderAccessLevel | null;
+  sourceFolderId: number | null;
+  inherited: boolean;
+  ownership: boolean;
+  systemOwner: boolean;
+};
 
 export function isFolderAccessLevel(value: unknown): value is FolderAccessLevel {
   return typeof value === "string" && (FOLDER_ACCESS_LEVELS as readonly string[]).includes(value);
 }
 
 export function resolveFolderAccessFromRows(userId: number, profile: string, folderId: number, folders: readonly FolderAuthorizationRow[], rules: readonly FolderAclRow[]): FolderAccessLevel | null {
-  if (profile === "owner") return "manager";
+  return resolveFolderAccessDetailFromRows(userId, profile, folderId, folders, rules).level;
+}
+
+export function resolveFolderAccessDetailFromRows(userId: number, profile: string, folderId: number, folders: readonly FolderAuthorizationRow[], rules: readonly FolderAclRow[]): FolderAccessResolution {
+  if (profile === "owner") return { level: "manager", sourceFolderId: null, inherited: false, ownership: false, systemOwner: true };
   const byId = new Map(folders.map((folder) => [folder.id, folder]));
   const byFolder = new Map(rules.filter((rule) => rule.userId === userId && isFolderAccessLevel(rule.accessLevel)).map((rule) => [rule.folderId, rule.accessLevel as FolderAccessLevel]));
   const visited = new Set<number>();
   let current = byId.get(folderId);
   while (current && !visited.has(current.id)) {
     visited.add(current.id);
-    if (current.archivedAt) return null;
+    if (current.archivedAt) return { level: null, sourceFolderId: null, inherited: false, ownership: false, systemOwner: false };
     const explicit = byFolder.get(current.id);
-    if (explicit) return explicit;
-    if (current.kind === "personal_root" && current.ownerUserId === userId) return "manager";
+    if (explicit) return { level: explicit, sourceFolderId: current.id, inherited: current.id !== folderId, ownership: false, systemOwner: false };
+    if (current.kind === "personal_root" && current.ownerUserId === userId) return { level: "manager", sourceFolderId: current.id, inherited: current.id !== folderId, ownership: true, systemOwner: false };
     current = current.parentId === null ? undefined : byId.get(current.parentId);
   }
-  return null;
+  return { level: null, sourceFolderId: null, inherited: false, ownership: false, systemOwner: false };
 }
 
 export function folderAccessSatisfies(actual: FolderAccessLevel | null, required: PositiveFolderAccess) {

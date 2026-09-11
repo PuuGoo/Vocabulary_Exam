@@ -66,6 +66,7 @@ type Props = {
   persist?: boolean;
   chrome?: "full" | "compact";
   wordScope?: "all" | "unknown";
+  fillTarget?: FillTarget;
 };
 
 const GROUP_SIZE = 10;
@@ -88,11 +89,12 @@ export default function FillFocusSession({
   persist = true,
   chrome = "full",
   wordScope = "all",
+  fillTarget,
 }: Props) {
   const router = useRouter();
   const search = useSearchParams();
   const languageCode = normalizeLanguageCode(set.languageCode);
-  const target: FillTarget = languageCode === "zh-CN" && search.get("target") === "pronunciation" ? "pronunciation" : "term";
+  const target: FillTarget = languageCode === "zh-CN" && (fillTarget === "pronunciation" || (!fillTarget && search.get("target") === "pronunciation")) ? "pronunciation" : "term";
   const languageConfig = getLanguageConfig(languageCode);
   const groups = useMemo(() => chunkFillItems(set.words, GROUP_SIZE), [set.words]);
   const wordById = useMemo(() => new Map(set.words.map((word) => [word.id, word])), [set.words]);
