@@ -23,6 +23,8 @@ const MODE_LABELS: Record<string, string> = {
   dictation: "Nghe & viết",
   pronunciation: "Luyện phát âm",
   sentence: "Xếp câu",
+  tone: "Thanh điệu",
+  cloze: "Điền từ trong câu",
   mixed: "Kiểm tra tổng hợp",
   daily: "Thử thách hằng ngày",
 };

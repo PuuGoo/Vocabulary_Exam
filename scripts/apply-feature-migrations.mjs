@@ -17,6 +17,7 @@ const migrations = [
   "0029_admin_rbac.sql",
   "0030_multilingual_chinese.sql",
   "0031_personal_workspaces.sql",
+  "0032_adaptive_learning.sql",
 ];
 
 const client = postgres(connectionString, { max: 1 });
@@ -78,6 +79,13 @@ try {
       (SELECT COUNT(*) FROM category_questions WHERE folder_id IS NULL)::integer AS questions_without_folder
     FROM users
   `);
+  const [adaptiveIntegrity] = await client.unsafe(`
+    SELECT
+      (SELECT COUNT(*) FROM user_word_skill_progress WHERE mastery_score < 0 OR mastery_score > 100)::integer AS invalid_mastery,
+      (SELECT COUNT(*) FROM word_senses WHERE position < 1)::integer AS invalid_senses,
+      (SELECT COUNT(*) FROM user_word_skill_progress)::integer AS skill_rows,
+      (SELECT COUNT(*) FROM word_senses)::integer AS sense_rows
+  `);
 
   if (wordIntegrity.invalid_positions || positionIntegrity.duplicate_positions || positionIntegrity.non_contiguous_sets) {
     throw new Error("Word position integrity check failed after migrations.");
@@ -89,6 +97,7 @@ try {
   if (folderIntegrity.admins_without_workspace || folderIntegrity.sets_without_folder || folderIntegrity.documents_without_folder || folderIntegrity.questions_without_folder) {
     throw new Error("Folder scope integrity check failed after migrations.");
   }
+  if (adaptiveIntegrity.invalid_mastery || adaptiveIntegrity.invalid_senses) throw new Error("Adaptive learning integrity check failed after migrations.");
   console.log(JSON.stringify({
     words: wordIntegrity.word_count,
     owners: rbacIntegrity.owner_count,
@@ -96,6 +105,8 @@ try {
     passwordProtectedShares: shareIntegrity.password_share_count,
     chineseSets: languageIntegrity.chinese_sets,
     personalWorkspacesReady: folderIntegrity.admins_without_workspace === 0,
+    skillMasteryRows: adaptiveIntegrity.skill_rows,
+    wordSenseRows: adaptiveIntegrity.sense_rows,
   }));
 } finally {
   await client.end();

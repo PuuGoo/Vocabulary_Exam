@@ -1,11 +1,11 @@
 export const BACKUP_FORMAT = "lexora-backup";
-export const BACKUP_VERSION = 6;
-export const SUPPORTED_BACKUP_VERSIONS = [1, 2, 3, 4, 5, BACKUP_VERSION] as const;
+export const BACKUP_VERSION = 7;
+export const SUPPORTED_BACKUP_VERSIONS = [1, 2, 3, 4, 5, 6, BACKUP_VERSION] as const;
 
 export const BACKUP_COLLECTIONS = [
   "users", "classes", "classMembers", "vocabCategories", "categoryDocuments", "vocabSets", "words", "attempts",
   "assignments", "assignmentExtensions", "assignmentSubmissions", "teachBackNotes",
-  "mistakes", "wordProgress", "setReviewProgress", "reviewSessions", "wordBookmarks", "studySessions", "learningGoals",
+  "mistakes", "wordProgress", "userWordSkillProgress", "userWordSkillEvents", "wordSenses", "setReviewProgress", "reviewSessions", "wordBookmarks", "studySessions", "learningGoals",
   "dailyActivities",
   "appSettings", "adminPermissionOverrides", "adminAuditLogs",
   "contentFolders", "folderAccess",
@@ -20,6 +20,9 @@ export type BackupDocument = {
   createdAt: string;
   integrity?: { algorithm: "SHA-256"; checksum: string };
   data: BackupData;
+  /** Exact serialized data object used by the producing version. Additive
+   * defaults must not invalidate an older backup's checksum. */
+  integrityData: BackupData;
 };
 
 export function parseBackupDocument(value: unknown): BackupDocument {
@@ -38,7 +41,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
   for (const collection of BACKUP_COLLECTIONS) {
     const rows = rawData[collection];
     // These collections were added after v1, so older backups remain restorable.
-    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings" || collection === "setReviewProgress" || collection === "reviewSessions" || collection === "adminPermissionOverrides" || collection === "adminAuditLogs" || collection === "contentFolders" || collection === "folderAccess") && rows === undefined) {
+    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings" || collection === "setReviewProgress" || collection === "reviewSessions" || collection === "adminPermissionOverrides" || collection === "adminAuditLogs" || collection === "contentFolders" || collection === "folderAccess" || collection === "userWordSkillProgress" || collection === "userWordSkillEvents" || collection === "wordSenses") && rows === undefined) {
       data[collection] = [];
       continue;
     }
@@ -61,6 +64,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
     createdAt: document.createdAt,
     integrity,
     data,
+    integrityData: rawData as unknown as BackupData,
   };
 }
 

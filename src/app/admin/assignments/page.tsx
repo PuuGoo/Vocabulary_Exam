@@ -260,7 +260,7 @@ export default function AdminAssignmentsPage() {
 
       {formOpen && <Modal title={editing ? "Sửa bài tập" : duplicating ? "Nhân bản và giao lại" : "Giao bài mới"} onClose={() => !saving && setFormOpen(false)}>
         <div>
-          {duplicating && <div className="mb-4 rounded-lg border border-gold/40 bg-goldpale/50 p-3 text-[0.82rem]">Nội dung đã được sao chép từ <b>"{duplicating.title}"</b>. Hãy chọn lại lớp hoặc hạn nộp nếu cần; tiến độ của bản cũ không bị ảnh hưởng.</div>}
+          {duplicating && <div className="mb-4 rounded-lg border border-gold/40 bg-goldpale/50 p-3 text-[0.82rem]">Nội dung đã được sao chép từ <b>&quot;{duplicating.title}&quot;</b>. Hãy chọn lại lớp hoặc hạn nộp nếu cần; tiến độ của bản cũ không bị ảnh hưởng.</div>}
           <div className="mb-5 flex gap-1.5 overflow-x-auto rounded-xl border border-line bg-white p-1">
             {["Đối tượng", "Nội dung", "Điều kiện", "Xác nhận"].map((label, i) => {
               const n = i + 1;

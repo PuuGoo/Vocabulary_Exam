@@ -1,0 +1,13 @@
+import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db";
+import { vocabSets, words } from "@/db/schema";
+import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
+import { canonicalizePinyinDisplay } from "@/lib/pinyin";
+import { deleteWordSense, updateWordSense } from "@/lib/wordSenses";
+const schema=z.object({pronunciation:z.string().trim().max(256).nullable().optional(),meaning:z.string().trim().min(1).optional(),example:z.string().trim().nullable().optional(),examplePronunciation:z.string().trim().nullable().optional(),exampleMeaning:z.string().trim().nullable().optional(),wtype:z.string().trim().max(32).nullable().optional(),isPrimary:z.boolean().optional()});
+async function authorize(wordId:number,permission:"vocab.edit"|"vocab.delete",level:"editor"|"manager"){const access=await requireAdminPermission(permission);if(isAuthorizationError(access))return access;const row=(await db.select({folderId:vocabSets.folderId}).from(words).innerJoin(vocabSets,eq(vocabSets.id,words.setId)).where(eq(words.id,wordId)).limit(1))[0];if(!row)return NextResponse.json({error:"Not found"},{status:404});const scoped=await requireAdminResourceAccess({permission,folderId:row.folderId,level,access});return isAuthorizationError(scoped)?scoped:access;}
+export async function PATCH(req:NextRequest,{params}:{params:{id:string;senseId:string}}){const wordId=Number(params.id),senseId=Number(params.senseId);const access=await authorize(wordId,"vocab.edit","editor");if(access instanceof Response)return access;const parsed=schema.safeParse(await req.json().catch(()=>null));if(!parsed.success||!Object.keys(parsed.data).length)return NextResponse.json({error:"Dữ liệu không hợp lệ."},{status:400});const patch={...parsed.data,...(parsed.data.pronunciation!==undefined?{pronunciation:parsed.data.pronunciation?canonicalizePinyinDisplay(parsed.data.pronunciation):null}:{})};const sense=await updateWordSense(wordId,senseId,patch);return sense?NextResponse.json({sense}):NextResponse.json({error:"Not found"},{status:404});}
+export async function DELETE(_req:NextRequest,{params}:{params:{id:string;senseId:string}}){const wordId=Number(params.id),senseId=Number(params.senseId);const access=await authorize(wordId,"vocab.delete","manager");if(access instanceof Response)return access;const sense=await deleteWordSense(wordId,senseId);return sense?NextResponse.json({ok:true}):NextResponse.json({error:"Not found"},{status:404});}

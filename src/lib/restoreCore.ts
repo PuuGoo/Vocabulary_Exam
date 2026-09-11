@@ -4,7 +4,7 @@ import { db } from "@/db";
 import {
   adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers, contentFolders, folderAccess,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
-  wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
+  wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions, userWordSkillProgress, userWordSkillEvents, wordSenses,
 } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
@@ -60,7 +60,7 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
 
   const backup = parseBackupDocument(parsed);
   const integrity = backup.integrity
-    ? (verifyBackupChecksum(backup.data, backup.integrity.checksum) ? "verified" : "invalid")
+    ? (verifyBackupChecksum(backup.integrityData, backup.integrity.checksum) ? "verified" : "invalid")
     : "legacy";
 
   if (integrity === "invalid") {
@@ -287,6 +287,15 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       wordMap.set(id, mapped);
     }
 
+    const existingSenses = await tx.select().from(wordSenses);
+    const senseKeys = new Set(existingSenses.map((item) => `${item.wordId}:${item.position}`));
+    for (const row of backup.data.wordSenses) {
+      const wordId = wordMap.get(number(row, "wordId", -1)); const position = Math.max(1, number(row, "position", 1)); const key = `${wordId}:${position}`;
+      if (wordId == null || !text(row, "meaning") || senseKeys.has(key)) { report.skipped.wordSenses++; continue; }
+      await tx.insert(wordSenses).values({ wordId, position, pronunciation: nullableText(row, "pronunciation"), meaning: text(row, "meaning"), example: nullableText(row, "example"), examplePronunciation: nullableText(row, "examplePronunciation"), exampleMeaning: nullableText(row, "exampleMeaning"), wtype: nullableText(row, "wtype"), isPrimary: bool(row, "isPrimary"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      senseKeys.add(key); report.added.wordSenses++;
+    }
+
     const members = await tx.select().from(classMembers); const memberKeys = new Set(members.map((item) => pair(item.classId, item.userId)));
     for (const row of backup.data.classMembers) {
       const classId = classMap.get(number(row, "classId", -1)); const userId = userMap.get(number(row, "userId", -1));
@@ -351,6 +360,19 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const key = pair(userId ?? -1, wordId ?? -1);
       if (userId == null || wordId == null || progressKeys.has(key)) { report.skipped.wordProgress++; continue; }
       await tx.insert(wordProgress).values({ userId, wordId, known: bool(row, "known"), intervalDays: number(row, "intervalDays"), reviewStreak: number(row, "reviewStreak"), correctCount: number(row, "correctCount"), wrongCount: number(row, "wrongCount"), lastMode: nullableText(row, "lastMode"), lastReviewedAt: nullableDate(row, "lastReviewedAt"), nextReviewAt: nullableDate(row, "nextReviewAt"), updatedAt: date(row, "updatedAt") }); progressKeys.add(key); report.added.wordProgress++;
+    }
+
+    const skillRows = await tx.select().from(userWordSkillProgress); const skillKeys = new Set(skillRows.map((item) => `${item.userId}:${item.wordId}:${item.skill}`));
+    for (const row of backup.data.userWordSkillProgress) {
+      const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const skill = text(row, "skill"); const key = `${userId}:${wordId}:${skill}`;
+      if (userId == null || wordId == null || !skill || skillKeys.has(key)) { report.skipped.userWordSkillProgress++; continue; }
+      await tx.insert(userWordSkillProgress).values({ userId, wordId, skill, masteryScore: Math.max(0, Math.min(100, number(row, "masteryScore"))), practiceCount: Math.max(0, number(row, "practiceCount")), successCount: Math.max(0, number(row, "successCount")), failureCount: Math.max(0, number(row, "failureCount")), lastResult: text(row, "lastResult", "incorrect"), lastPracticedAt: date(row, "lastPracticedAt"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") }); skillKeys.add(key); report.added.userWordSkillProgress++;
+    }
+    const skillEvents = await tx.select().from(userWordSkillEvents); const eventKeys = new Set(skillEvents.map((item) => `${item.userId}:${item.eventKey}`));
+    for (const row of backup.data.userWordSkillEvents) {
+      const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const eventKey = text(row, "eventKey"); const key = `${userId}:${eventKey}`;
+      if (userId == null || wordId == null || !eventKey || eventKeys.has(key)) { report.skipped.userWordSkillEvents++; continue; }
+      await tx.insert(userWordSkillEvents).values({ userId, wordId, eventKey, skill: text(row, "skill"), resultQuality: Math.max(0, Math.min(100, number(row, "resultQuality"))), sourceMode: text(row, "sourceMode", "restore"), createdAt: date(row, "createdAt") }); eventKeys.add(key); report.added.userWordSkillEvents++;
     }
 
     const setReviewRows = await tx.select().from(setReviewProgress); const setReviewKeys = new Set(setReviewRows.map((item) => pair(item.userId, item.setId)));

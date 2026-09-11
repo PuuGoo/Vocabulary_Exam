@@ -196,7 +196,7 @@ export default function SentencePage() {
     else { setFeedback("incorrect"); setHadMistake(true); }
   }, [answerTokens, question, selected]);
 
-  function useHint() {
+  function revealHint() {
     if (!question || feedback === "correct") return;
     const nextIndex = selected.length;
     const expected = answerTokens[nextIndex];
@@ -225,7 +225,7 @@ export default function SentencePage() {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
       if (event.key === "Backspace" && selected.length > 0 && feedback !== "correct") { event.preventDefault(); undo(selected[selected.length - 1]); }
-      else if (event.key.toLocaleLowerCase() === "h") { event.preventDefault(); useHint(); }
+      else if (event.key.toLocaleLowerCase() === "h") { event.preventDefault(); revealHint(); }
       else if (event.key === "Enter") { event.preventDefault(); feedback === "correct" ? nextQuestion() : check(); }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -322,7 +322,7 @@ export default function SentencePage() {
             ) : (
               <>
                 <button className={`${cx.btn} ${cx.btnGhost}`} disabled={selected.length === 0} onClick={() => undo(selected[selected.length - 1])}>↶ Hoàn tác <kbd className="ml-1 rounded border border-line px-1 text-[0.65rem]">⌫</kbd></button>
-                <button className={`${cx.btn} ${cx.btnGhost}`} onClick={useHint}>💡 Gợi ý <kbd className="ml-1 rounded border border-line px-1 text-[0.65rem]">H</kbd></button>
+                <button className={`${cx.btn} ${cx.btnGhost}`} onClick={revealHint}>💡 Gợi ý <kbd className="ml-1 rounded border border-line px-1 text-[0.65rem]">H</kbd></button>
                 <button className={`${cx.btn} ${cx.btnGold}`} disabled={selected.length !== answerTokens.length} onClick={check}>Kiểm tra <kbd className="ml-1 rounded border border-current/30 px-1 text-[0.65rem]">Enter</kbd></button>
               </>
             )}

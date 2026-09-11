@@ -7,7 +7,7 @@ import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 type ResultRow = {
   id: number;
   setName: string;
-  mode: "fill" | "mc" | "match" | "dictation" | "pronunciation" | "sentence" | "mixed" | "daily";
+  mode: "fill" | "mc" | "match" | "dictation" | "pronunciation" | "sentence" | "tone" | "cloze" | "mixed" | "daily";
   score: number;
   total: number;
   timed: boolean;
@@ -26,12 +26,14 @@ const MODE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "dictation", label: "Nghe & viết" },
   { value: "pronunciation", label: "Luyện phát âm" },
   { value: "sentence", label: "Xếp câu" },
+  { value: "tone", label: "Thanh điệu" },
+  { value: "cloze", label: "Điền từ trong câu" },
   { value: "mixed", label: "Kiểm tra tổng hợp" },
   { value: "daily", label: "Thử thách hằng ngày" },
 ];
 
 function modeLabel(r: Pick<ResultRow, "mode" | "timed">) {
-  return r.mode === "daily" ? "Thử thách hằng ngày" : r.mode === "mixed" ? "Kiểm tra tổng hợp" : r.mode === "sentence" ? "Xếp câu" : r.mode === "pronunciation" ? "Luyện phát âm" : r.mode === "dictation" ? "Nghe & viết" : r.mode === "match" ? "Ghép cặp" : r.mode === "mc" ? "Trắc nghiệm" : "Điền từ";
+  return r.mode === "daily" ? "Thử thách hằng ngày" : r.mode === "mixed" ? "Kiểm tra tổng hợp" : r.mode === "cloze" ? "Điền từ trong câu" : r.mode === "tone" ? "Thanh điệu" : r.mode === "sentence" ? "Xếp câu" : r.mode === "pronunciation" ? "Luyện phát âm" : r.mode === "dictation" ? "Nghe & viết" : r.mode === "match" ? "Ghép cặp" : r.mode === "mc" ? "Trắc nghiệm" : "Điền từ";
 }
 
 export default function AdminResultsPage() {

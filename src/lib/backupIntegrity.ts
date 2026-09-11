@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { BackupData } from "@/lib/backup";
+import type { BackupData } from "./backup";
 
 export function createBackupChecksum(data: BackupData) {
   return createHash("sha256").update(JSON.stringify(data), "utf8").digest("hex");

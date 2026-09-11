@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getFillModeLabel, normalizeLanguageCode, type FillTarget } from "@/lib/languages";
 
-type StudyMode = "learn" | "fill" | "mc" | "match" | "dictation" | "listen" | "pronunciation" | "sentence" | "timed";
+type StudyMode = "learn" | "fill" | "mc" | "match" | "dictation" | "listen" | "pronunciation" | "sentence" | "timed" | "tone" | "cloze";
 type StudyModeNavItem = {
   key: string;
   mode: StudyMode;
@@ -18,6 +18,8 @@ type StudyModeNavItem = {
 const items: StudyModeNavItem[] = [
   { key: "learn", mode: "learn", label: "Học bài", icon: "📖", href: (id) => `/learn/${id}` },
   { key: "fill-term", mode: "fill", target: "term", label: "Điền từ tiếng Anh", icon: "✍️", href: (id) => `/quiz/${id}?mode=fill` },
+  { key: "tone", mode: "tone", label: "Thanh điệu", icon: "〽", href: (id) => `/tone/${id}` },
+  { key: "cloze", mode: "cloze", label: "Điền từ trong câu", icon: "文", href: (id) => `/cloze/${id}` },
   { key: "mc", mode: "mc", label: "Trắc nghiệm", icon: "☑️", href: (id) => `/quiz/${id}?mode=mc` },
   { key: "match", mode: "match", label: "Ghép cặp", icon: "🧩", href: (id) => `/match/${id}` },
   { key: "dictation", mode: "dictation", label: "Nghe và viết", icon: "🎧", href: (id) => `/dictation/${id}` },
@@ -54,6 +56,8 @@ export default function StudyModeNav({ setId, active, isVerb = false, languageCo
       });
     }
     return navigation.filter((item) =>
+      (chinese || (item.mode !== "tone" && item.mode !== "cloze"))
+      &&
       !(isVerb && (item.mode === "mc" || item.mode === "sentence"))
       && (!availableModes || availableModes.includes(item.mode)),
     );

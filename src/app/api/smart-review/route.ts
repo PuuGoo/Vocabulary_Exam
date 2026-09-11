@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { classMembers, mistakes, vocabSets, wordProgress, words } from "@/db/schema";
+import { classMembers, mistakes, userWordSkillProgress, vocabSets, wordProgress, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { getAdminAccess } from "@/lib/adminAuthorization";
 import { getVisibleFolderIds } from "@/lib/folderAuthorization";
+import { weakestEligibleSkill } from "@/lib/skillMastery";
+import { SKILL_RECOMMENDED_MODE, type LearningSkill } from "@/lib/learningSkills";
+import { buildToneExercise } from "@/lib/toneTrainer";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -14,6 +17,7 @@ export async function GET(req: NextRequest) {
 
   const requestedCount = Number(req.nextUrl.searchParams.get("count"));
   const count = [5, 10, 20].includes(requestedCount) ? requestedCount : 10;
+  const now = Date.now();
 
   let classFilter;
   if (session.role !== "admin") {
@@ -66,16 +70,18 @@ export async function GET(req: NextRequest) {
     .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
     .leftJoin(mistakes, and(eq(mistakes.wordId, words.id), eq(mistakes.userId, session.userId)));
 
-  const candidates = classFilter ? await query.where(classFilter) : await query;
+  const filteredQuery = classFilter ? query.where(classFilter) : query;
+  const candidates = await filteredQuery.orderBy(sql`case when ${wordProgress.nextReviewAt} <= ${new Date(now)} then 0 when ${mistakes.timesWrong} > 0 then 1 when ${wordProgress.known}=false then 2 when (select min(p.mastery_score) from user_word_skill_progress p where p.user_id=${session.userId} and p.word_id=${words.id}) < 70 then 3 else 4 end`, words.id).limit(Math.max(200,count*20));
   if (candidates.length === 0) {
-    return NextResponse.json({ words: [], summary: { total: 0, due: 0, difficult: 0, forgotten: 0, stale: 0, new: 0 } });
+    return NextResponse.json({ words: [], summary: { total: 0, due: 0, difficult: 0, forgotten: 0, stale: 0, new: 0, weak_skill:0 } });
   }
 
-  const now = Date.now();
+  const masteryRows = await db.select().from(userWordSkillProgress).where(and(eq(userWordSkillProgress.userId,session.userId),inArray(userWordSkillProgress.wordId,candidates.map(word=>word.id))));
+  const masteryByWord=new Map<number,typeof masteryRows>();for(const row of masteryRows)masteryByWord.set(row.wordId,[...(masteryByWord.get(row.wordId)||[]),row]);
   const ranked = candidates.map((word) => {
     const ageDays = word.reviewedAt ? Math.max(0, Math.floor((now - word.reviewedAt.getTime()) / DAY_MS)) : null;
     const due = Boolean(word.nextReviewAt && word.nextReviewAt.getTime() <= now);
-    let reason: "difficult" | "forgotten" | "stale" | "new";
+    let reason: "difficult" | "forgotten" | "stale" | "new" | "weak_skill";
     let priority: number;
     if ((word.timesWrong || 0) > 0) {
       reason = "difficult";
@@ -90,14 +96,17 @@ export async function GET(req: NextRequest) {
       reason = "new";
       priority = 50;
     }
-    return { ...word, ageDays, due, reason, priority, random: Math.random() };
-  }).filter((word) => word.due || word.nextReviewAt === null);
+    const eligible:LearningSkill[]=word.languageCode==="zh-CN"?["meaning_recognition","orthography_production","pronunciation_recall",...(buildToneExercise(word.pronunciation).eligible?["tone_accuracy" as const]:[]),"listening_recognition"]:["meaning_recognition","orthography_production","listening_recognition"];
+    const weakSkill=weakestEligibleSkill((masteryByWord.get(word.id)||[]) as Array<{skill:LearningSkill;masteryScore:number;practiceCount:number}>,eligible);const weakRow=(masteryByWord.get(word.id)||[]).find(row=>row.skill===weakSkill);
+    if(weakSkill&&weakRow&&weakRow.masteryScore<70){priority+=Math.max(0,70-weakRow.masteryScore)*9;if(!due&&(word.timesWrong||0)===0&&word.known!==false)reason="weak_skill";}
+    return { ...word, ageDays, due, reason, priority, weakSkill, weakSkillScore:weakRow?.masteryScore??null,recommendedMode:weakSkill?SKILL_RECOMMENDED_MODE[weakSkill]:null, random: Math.random() };
+  }).filter((word) => word.due || word.nextReviewAt === null || (word.timesWrong || 0) > 0 || word.known === false || (word.weakSkillScore != null && word.weakSkillScore < 70));
 
   ranked.sort((a, b) => b.priority - a.priority || a.random - b.random);
   const selected = ranked.slice(0, count).map(({ priority: _priority, random: _random, ...word }) => word);
   const summary = selected.reduce(
     (result, word) => ({ ...result, [word.reason]: result[word.reason] + 1 }),
-    { total: selected.length, due: selected.filter((word) => word.due).length, difficult: 0, forgotten: 0, stale: 0, new: 0 }
+    { total: selected.length, due: selected.filter((word) => word.due).length, difficult: 0, forgotten: 0, stale: 0, new: 0, weak_skill:0 }
   );
 
   return NextResponse.json({ words: selected, summary });

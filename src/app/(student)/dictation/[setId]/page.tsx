@@ -86,6 +86,8 @@ export default function DictationPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const nextButtonRef = useRef<HTMLButtonElement>(null);
   const startedAtRef = useRef(Date.now());
+  const masteryRunRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const masteryRecordedRef = useRef(new Set<number>());
   const draftHydratedRef = useRef(false);
   const draftKey = `lexora-learning-draft-u${userId}-dictation-${params.setId}`;
 
@@ -245,6 +247,10 @@ export default function DictationPage() {
     if (!answer.trim() || checked) return;
     const correct = set?.type === "irregular_verb" ? matches(answer,expected) : gradeLanguageAnswer({set:set||{},word:word||{},userAnswer:answer}).correct;
     setChecked(true);
+    if (set?.languageCode === "zh-CN" && word && !masteryRecordedRef.current.has(word.id)) {
+      masteryRecordedRef.current.add(word.id);
+      for (const skill of ["listening_recognition", "orthography_production"] as const) void fetch("/api/learning/mastery", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ wordId:word.id, skill, result:correct?"correct":"incorrect", sourceMode:"dictation", eventKey:`dictation-${masteryRunRef.current}-${word.id}-${skill}` }) });
+    }
     if (correct) setCorrectCount((value) => value + 1);
     else setWrongWordIds((current) => current.includes(word.id) ? current : [...current, word.id]);
   }
@@ -377,7 +383,7 @@ export default function DictationPage() {
           value={answer}
           onChange={(event) => setAnswer(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat) {
               if (checked) next();
               else checkAnswer();
             }

@@ -32,6 +32,12 @@ type SetSummary = {
   reviewStage?: number | null;
   nextSetReviewAt?: string | null;
   reviewStatus?: "not_started" | "learning" | "due" | "consolidated";
+  masteryOverall?: number | null;
+  hanziMastery?: number | null;
+  pinyinMastery?: number | null;
+  toneMastery?: number | null;
+  toneEligibleCount?: number;
+  clozeEligibleCount?: number;
 };
 type StudyFilter = "all" | "due" | "learning" | "consolidated";
 type GoalSummary = {
@@ -466,6 +472,7 @@ function CollectionCard({
             {set.reviewStatus === "consolidated" ? <p className="mt-2 text-xs font-bold text-[#398B73]">✓ Đã củng cố</p> : null}
             {set.reviewStatus === "learning" && set.reviewStage ? <p className="mt-2 text-xs font-semibold text-muted">Đã ôn {Math.max(0, set.reviewStage - 1)}/3 · Ôn lần {set.reviewStage}: {reviewDays === 1 ? "Ngày mai" : `Còn ${Math.max(1, reviewDays || 1)} ngày`}</p> : null}
             {set.reviewStatus === "due" && set.reviewStage ? <div className="mt-2"><p className="text-xs font-bold text-[#D87855]">{reviewDays !== null && reviewDays < 0 ? `🔴 Ôn lần ${set.reviewStage}/3 · Quá hạn ${Math.abs(reviewDays)} ngày` : `🟠 Ôn lần ${set.reviewStage}/3 · Đến hạn hôm nay`}</p><Link href="/review-today" className="mt-2 inline-flex min-h-9 items-center rounded-lg bg-[#FFF0E8] px-3 text-xs font-bold text-[#B75D3B]">Ôn ngay</Link></div> : null}
+            {set.languageCode === "zh-CN" && set.masteryOverall != null && <details className="mt-3 text-xs"><summary className="cursor-pointer font-bold text-[#6550DB]">Năng lực tổng quan · {set.masteryOverall}%</summary><div className="mt-2 grid grid-cols-3 gap-1 text-muted"><span>Chữ Hán <b className="text-ink">{set.hanziMastery ?? "—"}%</b></span><span>Pinyin <b className="text-ink">{set.pinyinMastery ?? "—"}%</b></span><span>Thanh điệu <b className="text-ink">{set.toneMastery ?? "—"}%</b></span></div></details>}
           </div>
         </div>
         <button
@@ -486,6 +493,8 @@ function CollectionCard({
             {getFillModeLabel(set)}
           </button>
           {set.languageCode === "zh-CN" && <button disabled={empty} onClick={onPinyinFill} className={modeClass}>Điền Pinyin</button>}
+          {set.languageCode === "zh-CN" && <button disabled={!set.toneEligibleCount} title={!set.toneEligibleCount?"Bộ này chưa có Pinyin đủ thông tin thanh điệu.":undefined} onClick={() => onRoute("tone")} className={modeClass}>Thanh điệu ({set.toneEligibleCount||0} từ)</button>}
+          {set.languageCode === "zh-CN" && <button disabled={!set.clozeEligibleCount} title={!set.clozeEligibleCount?"Bộ này chưa có ví dụ chứa từ cần luyện.":undefined} onClick={() => onRoute("cloze")} className={modeClass}>Điền từ trong câu ({set.clozeEligibleCount||0} câu)</button>}
           <button
             data-feature="Điền từ chưa nhớ"
             disabled={set.unknownCount === 0}

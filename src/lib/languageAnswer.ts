@@ -1,9 +1,9 @@
-import { gradeFillAnswer, normalizeFillAnswer } from "@/lib/fillAnswer";
-import { getChineseSettings } from "@/lib/languageSettings";
-import { normalizeLanguageCode, type FillTarget } from "@/lib/languages";
-import { comparePinyin } from "@/lib/pinyin";
-import { sanitizeLearnerText } from "@/lib/languageInput";
-export { sanitizeLearnerText } from "@/lib/languageInput";
+import { gradeFillAnswer, normalizeFillAnswer } from "./fillAnswer";
+import { getChineseSettings } from "./languageSettings";
+import { normalizeLanguageCode, type FillTarget } from "./languages";
+import { comparePinyin } from "./pinyin";
+import { sanitizeLearnerText } from "./languageInput";
+export { sanitizeLearnerText } from "./languageInput";
 export type LanguageAnswerReason="missing_or_wrong_tone"|"wrong_hanzi"|"wrong_pinyin"|"incomplete"|"contradictory_combined_answer";
 export type LanguageAnswerGrade={correct:boolean;nearMiss:boolean;reason?:LanguageAnswerReason;acceptedAnswers:string[];canonicalDisplayAnswer?:string};
 export function normalizeHanzi(value:string|null|undefined){return sanitizeLearnerText(value).replace(/[。！？!?]+$/u,"");}

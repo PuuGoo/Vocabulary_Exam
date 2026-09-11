@@ -2,7 +2,7 @@ import { db } from "@/db";
 import {
   adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments,
   classes, classMembers, contentFolders, folderAccess, dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users,
-  vocabCategories, vocabSets, wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
+  vocabCategories, vocabSets, wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions, userWordSkillProgress, userWordSkillEvents, wordSenses,
 } from "@/db/schema";
 import {
   BACKUP_FORMAT, BACKUP_VERSION, backupFilename, sanitizeBackupUsers, serializeCategoryDocuments,
@@ -14,7 +14,7 @@ export async function createBackupExport(createdBy?: { id: number; username: str
   const [
     userRows, classRows, memberRows, categoryRows, documentRows, setRows, wordRows, attemptRows,
     assignmentRows, extensionRows, submissionRows, teachBackRows, mistakeRows, progressRows,
-    setReviewRows, reviewSessionRows, bookmarkRows, sessionRows, goalRows, activityRows, settingRows, permissionRows, auditRows, folderRows, folderAccessRows,
+    setReviewRows, reviewSessionRows, bookmarkRows, sessionRows, goalRows, activityRows, settingRows, permissionRows, auditRows, folderRows, folderAccessRows, skillRows, skillEventRows, senseRows,
   ] = await db.transaction(
     async (tx) => Promise.all([
       tx.select().from(users), tx.select().from(classes), tx.select().from(classMembers),
@@ -24,7 +24,7 @@ export async function createBackupExport(createdBy?: { id: number; username: str
       tx.select().from(teachBackNotes), tx.select().from(mistakes), tx.select().from(wordProgress),
       tx.select().from(setReviewProgress), tx.select().from(reviewSessions),
       tx.select().from(wordBookmarks), tx.select().from(studySessions), tx.select().from(learningGoals),
-      tx.select().from(dailyActivities), tx.select().from(appSettings), tx.select().from(adminPermissionOverrides), tx.select().from(adminAuditLogs), tx.select().from(contentFolders), tx.select().from(folderAccess),
+      tx.select().from(dailyActivities), tx.select().from(appSettings), tx.select().from(adminPermissionOverrides), tx.select().from(adminAuditLogs), tx.select().from(contentFolders), tx.select().from(folderAccess), tx.select().from(userWordSkillProgress), tx.select().from(userWordSkillEvents), tx.select().from(wordSenses),
     ]),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -39,6 +39,7 @@ export async function createBackupExport(createdBy?: { id: number; username: str
     wordBookmarks: bookmarkRows, studySessions: sessionRows, learningGoals: goalRows,
     dailyActivities: activityRows, appSettings: settingRows, adminPermissionOverrides: permissionRows, adminAuditLogs: auditRows,
     contentFolders: folderRows, folderAccess: folderAccessRows,
+    userWordSkillProgress: skillRows, userWordSkillEvents: skillEventRows, wordSenses: senseRows,
   };
   const counts = Object.fromEntries(Object.entries(data).map(([name, rows]) => [name, rows.length]));
   const now = new Date();

@@ -1,14 +1,14 @@
-import { getChineseSettings } from "@/lib/languageSettings";
+import { getChineseSettings } from "./languageSettings";
 
 export const SUPPORTED_LANGUAGE_CODES = ["en", "zh-CN"] as const;
 export type SupportedLanguageCode = (typeof SUPPORTED_LANGUAGE_CODES)[number];
-export type LearningMode = "learn" | "fill" | "mc" | "match" | "dictation" | "listen" | "pronunciation" | "sentence" | "timed";
+export type LearningMode = "learn" | "fill" | "mc" | "match" | "dictation" | "listen" | "pronunciation" | "sentence" | "timed" | "tone" | "cloze";
 export type FillTarget = "term" | "pronunciation";
 export type LanguageConfig = { code: SupportedLanguageCode; label: string; nativeLabel: string; badge: string; termLabel: string; pronunciationLabel: string; meaningLabel: string; ttsLanguage: string; recognitionLanguage: string; fillTermLabel: string; fillUnknownLabel: string; supportedModes: readonly LearningMode[] };
 const COMMON: readonly LearningMode[] = ["learn", "fill", "mc", "match", "dictation", "listen", "pronunciation", "timed"];
 export const LANGUAGE_REGISTRY: Record<SupportedLanguageCode, LanguageConfig> = {
   en: { code:"en", label:"Tiếng Anh", nativeLabel:"English", badge:"EN", termLabel:"Từ / cụm từ tiếng Anh", pronunciationLabel:"IPA", meaningLabel:"Nghĩa tiếng Việt", ttsLanguage:"en-US", recognitionLanguage:"en-US", fillTermLabel:"Điền từ tiếng Anh", fillUnknownLabel:"Điền từ chưa nhớ", supportedModes:[...COMMON,"sentence"] },
-  "zh-CN": { code:"zh-CN", label:"Tiếng Trung", nativeLabel:"中文", badge:"中文", termLabel:"Chữ Hán", pronunciationLabel:"Pinyin", meaningLabel:"Nghĩa tiếng Việt", ttsLanguage:"zh-CN", recognitionLanguage:"zh-CN", fillTermLabel:"Điền chữ Hán", fillUnknownLabel:"Điền chữ Hán chưa nhớ", supportedModes:COMMON },
+  "zh-CN": { code:"zh-CN", label:"Tiếng Trung", nativeLabel:"中文", badge:"中文", termLabel:"Chữ Hán", pronunciationLabel:"Pinyin", meaningLabel:"Nghĩa tiếng Việt", ttsLanguage:"zh-CN", recognitionLanguage:"zh-CN", fillTermLabel:"Điền chữ Hán", fillUnknownLabel:"Điền chữ Hán chưa nhớ", supportedModes:[...COMMON,"tone","cloze"] },
 };
 export function isSupportedLanguageCode(value: unknown): value is SupportedLanguageCode { return typeof value === "string" && (SUPPORTED_LANGUAGE_CODES as readonly string[]).includes(value); }
 export function normalizeLanguageCode(value: unknown): SupportedLanguageCode { return value === "zh" || value === "zh-cn" || value === "zh-CN" ? "zh-CN" : "en"; }

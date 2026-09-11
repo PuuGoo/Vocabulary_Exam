@@ -140,6 +140,8 @@ function QuizPlayerInner() {
   const submittedRef = useRef(false);
   const draftHydratedRef = useRef(false);
   const timedEndsAtRef = useRef(Date.now() + minutes * 60 * 1000);
+  const masteryRunRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const masteryRecordedRef = useRef(new Set<number>());
 
   // navigation / autofocus
   const [jumpQuestion, setJumpQuestion] = useState("");
@@ -693,6 +695,15 @@ function submitJumpQuestion() {
     const wrongWordIds = practicedWords
       .filter((w) => !isWordCorrect(w))
       .map((w) => w.id);
+    if (set.languageCode === "zh-CN") {
+      const skill = mode === "mc" ? "meaning_recognition" : mode === "fill" ? (fillTarget === "pronunciation" ? "pronunciation_recall" : "orthography_production") : null;
+      if (skill) for (const word of practicedWords) {
+        if (masteryRecordedRef.current.has(word.id)) continue;
+        masteryRecordedRef.current.add(word.id);
+        const correct = isWordCorrect(word); const assisted = hintIds.has(word.id);
+        void fetch("/api/learning/mastery", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ wordId:word.id, skill, result:correct?(assisted?"assisted":"correct"):"incorrect", sourceMode:mode, eventKey:`quiz-${masteryRunRef.current}-${mode}-${fillTarget}-${word.id}` }) }).catch(()=>masteryRecordedRef.current.delete(word.id));
+      }
+    }
     try {
       const res = await fetch("/api/results", {
         method: "POST",

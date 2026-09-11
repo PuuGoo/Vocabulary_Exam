@@ -8,6 +8,12 @@ Trong bộ tiếng Trung, `term` là chữ Hán chính, `alternateTerm` là dạ
 
 Điền chữ Hán và Điền Pinyin là hai target độc lập: người học không bao giờ phải nhập cả hai trong một ô. Chấm Pinyin nghiêm ngặt chấp nhận dấu thanh (`xuéxí`) hoặc số thanh (`xue2xi2`); chế độ thư giãn chấp nhận `xuexi`. Admin/import tự đổi Pinyin có số sang dạng dấu để hiển thị nhưng không tự đoán thanh cho dữ liệu `xuexi`. Các dạng `ü`, `v`, `u:` và ký tự định dạng ẩn từ Excel/WPS/Google Sheets được chuẩn hóa. Sentence mode hiện được ẩn với Mandarin cho đến khi có tokenizer phù hợp. Muốn thêm ngôn ngữ sau này, mở rộng registry tại `src/lib/languages.ts` và bộ chấm tương ứng, không tạo progress hay quiz engine riêng.
 
+### Học thích ứng tiếng Trung
+
+Tiến độ chi tiết được lưu độc lập theo kỹ năng (nghĩa, chữ Hán, Pinyin, thanh điệu, nghe và nói) bên dưới cùng `wordId`; nút Đã nhớ/Chưa nhớ và lịch spaced repetition cũ vẫn được giữ nguyên. Smart Review kết hợp lịch đến hạn, mistakes và kỹ năng có bằng chứng yếu để xếp ưu tiên. Chế độ `Thanh điệu` chỉ nhận từ có Pinyin phân tích được; `Điền từ trong câu` chỉ dùng ví dụ hiện có chứa đúng một lần từ đích. Dữ liệu cũ không được tự gán điểm mastery.
+
+Từ nhiều cách đọc có thể dùng `word_senses` (ví dụ `行` với `xíng` và `háng`) mà không tách word/progress. Từ đơn giản tiếp tục dùng trực tiếp `words.pronunciation`, `words.meaning` và `words.example` như trước.
+
 ## Vocabulary pattern syntax
 
 Với hàng từ vựng có `wtype=pattern`, dùng dấu `;` để tách các cấu trúc đều bắt

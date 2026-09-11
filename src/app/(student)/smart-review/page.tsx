@@ -8,8 +8,9 @@ import { cx } from "@/components/ui";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import VerbIpa from "@/components/VerbIpa";
 import { getLanguageConfig, getSpeakText, getWordDisplayForms, getWordPronunciation } from "@/lib/languages";
+import { LEARNING_SKILL_LABELS, type LearningSkill } from "@/lib/learningSkills";
 
-type Reason = "difficult" | "forgotten" | "stale" | "new";
+type Reason = "difficult" | "forgotten" | "stale" | "new" | "weak_skill";
 type ReviewWord = {
   id: number;
   setId: number;
@@ -40,8 +41,11 @@ type ReviewWord = {
   nextReviewAt: string | null;
   timesWrong: number | null;
   reason: Reason;
+  weakSkill?: LearningSkill | null;
+  weakSkillScore?: number | null;
+  recommendedMode?: string | null;
 };
-type Summary = { total: number; due: number; difficult: number; forgotten: number; stale: number; new: number };
+type Summary = { total: number; due: number; difficult: number; forgotten: number; stale: number; new: number; weak_skill:number };
 
 const REASONS: Record<Reason, { label: string; detail: (word: ReviewWord) => string; className: string }> = {
   difficult: {
@@ -63,6 +67,11 @@ const REASONS: Record<Reason, { label: string; detail: (word: ReviewWord) => str
     label: "Từ mới",
     detail: () => "Bạn chưa học từ này trước đây",
     className: "border-line bg-[#f4f1e8] text-inksoft",
+  },
+  weak_skill: {
+    label: "Kỹ năng còn yếu",
+    detail: (word) => word.weakSkill ? `${LEARNING_SKILL_LABELS[word.weakSkill]} đang được ưu tiên${word.weakSkillScore == null ? "" : ` · ${word.weakSkillScore}%`}` : "Kỹ năng này cần thêm luyện tập",
+    className: "border-[#D8C9FF] bg-[#F4F0FF] text-[#6550DB]",
   },
 };
 
@@ -194,6 +203,7 @@ export default function SmartReviewPage() {
               {summary.forgotten > 0 && <span className="rounded-full bg-goldpale px-3 py-1 text-golddark">{summary.forgotten} từ chưa nhớ</span>}
               {summary.stale > 0 && <span className="rounded-full bg-[#e4ecf3] px-3 py-1 text-[#2b4a6b]">{summary.stale} từ đến hạn</span>}
               {summary.new > 0 && <span className="rounded-full bg-line/50 px-3 py-1 text-muted">{summary.new} từ mới</span>}
+              {summary.weak_skill > 0 && <span className="rounded-full bg-[#F4F0FF] px-3 py-1 text-[#6550DB]">{summary.weak_skill} kỹ năng yếu</span>}
             </div>
           )}
           <div className="mb-3 flex items-center justify-between gap-3 text-xs text-muted">

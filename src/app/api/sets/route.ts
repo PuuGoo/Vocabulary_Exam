@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, eq, or, isNull, inArray, and } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress } from "@/db/schema";
+import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress, userWordSkillProgress } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
@@ -10,6 +10,8 @@ import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/
 import { isSupportedLanguageCode } from "@/lib/languages";
 import { serializeLanguageSettings } from "@/lib/languageSettings";
 import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderDisplayPaths, getFolderLegacyPath, getVisibleFolderIds, requireAdminResourceAccess } from "@/lib/folderAuthorization";
+import { buildToneExercise } from "@/lib/toneTrainer";
+import { buildSentenceCloze } from "@/lib/sentenceCloze";
 
 export async function GET() {
   const session = await getSession();
@@ -52,22 +54,34 @@ export async function GET() {
       reviewStage: setReviewProgress.stage,
       nextSetReviewAt: setReviewProgress.nextReviewAt,
       initialCompletedAt: setReviewProgress.initialCompletedAt,
+      masteryOverall: sql<number | null>`round(avg(${userWordSkillProgress.masteryScore}))::int`,
+      hanziMastery: sql<number | null>`round(avg(${userWordSkillProgress.masteryScore}) filter (where ${userWordSkillProgress.skill}='orthography_production'))::int`,
+      pinyinMastery: sql<number | null>`round(avg(${userWordSkillProgress.masteryScore}) filter (where ${userWordSkillProgress.skill}='pronunciation_recall'))::int`,
+      toneMastery: sql<number | null>`round(avg(${userWordSkillProgress.masteryScore}) filter (where ${userWordSkillProgress.skill}='tone_accuracy'))::int`,
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
     .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
+    .leftJoin(userWordSkillProgress, and(eq(userWordSkillProgress.wordId, words.id), eq(userWordSkillProgress.userId, session.userId)))
     .leftJoin(classes, eq(classes.id, vocabSets.classId))
     .leftJoin(setReviewProgress, and(eq(setReviewProgress.setId, vocabSets.id), eq(setReviewProgress.userId, session.userId)))
     .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt)
     .orderBy(vocabSets.createdAt);
 
   const rows = classFilter ? await query.where(classFilter) : await query;
+  const chineseSets = rows.filter((row) => row.languageCode === "zh-CN");
+  const chineseSetById = new Map(chineseSets.map((row) => [row.id, row]));
+  const eligibilityWords = chineseSets.length ? await db.select({ id:words.id,setId:words.setId,term:words.term,alternateTerm:words.alternateTerm,pronunciation:words.pronunciation,example:words.example,examplePronunciation:words.examplePronunciation,exampleMeaning:words.exampleMeaning }).from(words).where(inArray(words.setId,chineseSets.map((row)=>row.id))) : [];
+  const eligibilityBySet=new Map<number,{tone:number;cloze:number}>();
+  for(const word of eligibilityWords){const value=eligibilityBySet.get(word.setId)||{tone:0,cloze:0};if(buildToneExercise(word.pronunciation).eligible)value.tone++;const set=chineseSetById.get(word.setId)!;if(buildSentenceCloze({word,set}).eligible)value.cloze++;eligibilityBySet.set(word.setId,value);}
   const displayPaths = adminAccess ? await getFolderDisplayPaths(adminAccess, rows.flatMap((row) => row.folderId ? [row.folderId] : [])) : new Map<number, string>();
 
   const categories = adminAccess ? [] : await db.select({ name: vocabCategories.name }).from(vocabCategories);
   const now = Date.now();
   return NextResponse.json({ sets: rows.map((row) => ({
     ...row,
+    toneEligibleCount: eligibilityBySet.get(row.id)?.tone || 0,
+    clozeEligibleCount: eligibilityBySet.get(row.id)?.cloze || 0,
     legacyCategory: row.category,
     category: adminAccess && row.folderId ? displayPaths.get(row.folderId) ?? row.category : row.category,
     reviewStatus: !row.initialCompletedAt ? "not_started" : row.reviewStage === 4 ? "consolidated" : row.nextSetReviewAt && row.nextSetReviewAt.getTime() <= now ? "due" : "learning",

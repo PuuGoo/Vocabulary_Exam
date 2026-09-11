@@ -16,7 +16,7 @@ import { relations, sql } from "drizzle-orm";
 
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab", "language_vocab"] as const;
-export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily", "writing"] as const;
+export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "tone", "cloze", "mixed", "daily", "writing"] as const;
 export const shareTargetTypeEnum = ["vocab_set", "question_collection"] as const;
 export const shareAccessModeEnum = ["restricted", "anyone_with_link"] as const;
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
@@ -254,6 +254,27 @@ export const words = pgTable("words", {
   setPositionIdx: uniqueIndex("words_set_position_idx").on(table.setId, table.position),
 }));
 
+// Optional, ordered readings/senses. Simple words continue to use the columns
+// on `words`; a row is created here only when context-specific readings are
+// needed (for example 行: xíng / háng).
+export const wordSenses = pgTable("word_senses", {
+  id: serial("id").primaryKey(),
+  wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  pronunciation: text("pronunciation"),
+  meaning: text("meaning").notNull(),
+  example: text("example"),
+  examplePronunciation: text("example_pronunciation"),
+  exampleMeaning: text("example_meaning"),
+  wtype: varchar("wtype", { length: 32 }),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  wordPositionIdx: uniqueIndex("word_senses_word_position_idx").on(table.wordId, table.position),
+  wordIdx: index("word_senses_word_idx").on(table.wordId),
+}));
+
 export const attempts = pgTable("attempts", {
   id: serial("id").primaryKey(),
   userId: integer("user_id")
@@ -399,6 +420,50 @@ export const wordProgress = pgTable(
     uniqPair: uniqueIndex("word_progress_user_word_idx").on(table.userId, table.wordId),
     dueIdx: index("word_progress_user_due_idx").on(table.userId, table.nextReviewAt),
   })
+);
+
+export const userWordSkillProgress = pgTable(
+  "user_word_skill_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    skill: varchar("skill", { length: 48 }).notNull(),
+    masteryScore: integer("mastery_score").notNull(),
+    practiceCount: integer("practice_count").notNull().default(0),
+    successCount: integer("success_count").notNull().default(0),
+    failureCount: integer("failure_count").notNull().default(0),
+    lastResult: varchar("last_result", { length: 24 }).notNull(),
+    lastPracticedAt: timestamp("last_practiced_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userWordSkillIdx: uniqueIndex("user_word_skill_progress_user_word_skill_idx").on(table.userId, table.wordId, table.skill),
+    userIdx: index("user_word_skill_progress_user_idx").on(table.userId),
+    wordIdx: index("user_word_skill_progress_word_idx").on(table.wordId),
+    userSkillIdx: index("user_word_skill_progress_user_skill_idx").on(table.userId, table.skill),
+  }),
+);
+
+// A compact event ledger makes retries idempotent without putting mastery in
+// the session JWT. Events intentionally cascade with their learner/word.
+export const userWordSkillEvents = pgTable(
+  "user_word_skill_events",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    eventKey: varchar("event_key", { length: 128 }).notNull(),
+    skill: varchar("skill", { length: 48 }).notNull(),
+    resultQuality: integer("result_quality").notNull(),
+    sourceMode: varchar("source_mode", { length: 32 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    eventIdx: uniqueIndex("user_word_skill_events_user_key_idx").on(table.userId, table.eventKey),
+    userWordIdx: index("user_word_skill_events_user_word_idx").on(table.userId, table.wordId),
+  }),
 );
 
 // A row exists only after the user explicitly completes the set's first Learn

@@ -29,6 +29,14 @@ test("restore validator accepts a complete legacy Lexora backup", () => {
   assert.equal(getBackupCounts(backup).appSettings, 0);
 });
 
+test("additive adaptive collections keep old checksummed backups restorable", () => {
+  const oldData = Object.fromEntries(BACKUP_COLLECTIONS.filter((name) => !["userWordSkillProgress","userWordSkillEvents","wordSenses"].includes(name)).map((name) => [name, []])) as unknown as Parameters<typeof createBackupChecksum>[0];
+  const checksum=createBackupChecksum(oldData);
+  const backup=parseBackupDocument({format:"lexora-backup",version:6,createdAt:new Date().toISOString(),integrity:{algorithm:"SHA-256",checksum},data:oldData});
+  assert.equal(backup.data.userWordSkillProgress.length,0);
+  assert.equal(verifyBackupChecksum(backup.integrityData,checksum),true);
+});
+
 test("v2 backup requires a SHA-256 integrity manifest", () => {
   const data = Object.fromEntries(BACKUP_COLLECTIONS.map((name) => [name, []]));
   assert.throws(

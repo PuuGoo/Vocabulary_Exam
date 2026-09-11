@@ -2,7 +2,7 @@ import { and, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from "drizzle-orm
 import { db } from "@/db";
 import {
   classMembers, learningGoals, mistakes, reviewSessions, setReviewProgress,
-  vocabSets, wordProgress, words,
+  userWordSkillProgress, vocabSets, wordProgress, words,
 } from "@/db/schema";
 import { nextSpacedProgress } from "@/lib/spacedRepetition";
 import {
@@ -12,6 +12,9 @@ import {
 import { dateInVietnam } from "@/lib/activity";
 import { getAdminAccess } from "@/lib/adminAuthorization";
 import { getVisibleFolderIds } from "@/lib/folderAuthorization";
+import { weakestEligibleSkill } from "@/lib/skillMastery";
+import { SKILL_RECOMMENDED_MODE, type LearningSkill } from "@/lib/learningSkills";
+import { buildToneExercise } from "@/lib/toneTrainer";
 
 // Keep candidate scans lean: a user can have thousands of due words and the
 // planner only needs scheduling metadata to rank them. Full card content is
@@ -19,6 +22,7 @@ import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 const wordCandidateSelection = {
   id: words.id, setId: words.setId, setName: vocabSets.name, setCategory: vocabSets.category,
   setType: vocabSets.type,
+  languageCode: vocabSets.languageCode, pronunciation: words.pronunciation,
   known: wordProgress.known, nextReviewAt: wordProgress.nextReviewAt,
   reviewStreak: wordProgress.reviewStreak, correctCount: wordProgress.correctCount,
   wrongCount: wordProgress.wrongCount, timesWrong: mistakes.timesWrong,
@@ -57,7 +61,7 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
   const dueWordWhere = and(eq(wordProgress.userId, userId), lte(wordProgress.nextReviewAt, now), allowed);
   const dueSetWhere = and(eq(setReviewProgress.userId, userId), lte(setReviewProgress.nextReviewAt, now), sql`${setReviewProgress.stage} between 1 and 3`, allowed);
 
-  const [dueWordRows, dueSetRows, goalRows, completedRows] = await Promise.all([
+  const [dueWordRows, dueSetRows, goalRows, completedRows, weakRows] = await Promise.all([
     db.select(wordCandidateSelection).from(wordProgress)
       .innerJoin(words, eq(words.id, wordProgress.wordId)).innerJoin(vocabSets, eq(vocabSets.id, words.setId))
       .leftJoin(mistakes, and(eq(mistakes.userId, userId), eq(mistakes.wordId, words.id)))
@@ -67,7 +71,18 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
     db.select({ dailyReviewWords: learningGoals.dailyReviewWords }).from(learningGoals).where(eq(learningGoals.userId, userId)).limit(1),
     db.select({ count: sql<number>`coalesce(sum(${reviewSessions.wordCount}), 0)::int` }).from(reviewSessions)
       .where(and(eq(reviewSessions.userId, userId), gte(reviewSessions.completedAt, todayStart), lt(reviewSessions.completedAt, tomorrowStart))),
+    db.selectDistinct({ wordId: userWordSkillProgress.wordId }).from(userWordSkillProgress)
+      .innerJoin(words, eq(words.id, userWordSkillProgress.wordId)).innerJoin(vocabSets, eq(vocabSets.id, words.setId))
+      .where(and(eq(userWordSkillProgress.userId, userId), lt(userWordSkillProgress.masteryScore, 70), allowed)).limit(500),
   ]);
+
+  const dueIds = new Set(dueWordRows.map((row) => row.id));
+  const additionalWeakIds = [...new Set(weakRows.map((row) => row.wordId))].filter((id) => !dueIds.has(id));
+  const weakCandidateRows = additionalWeakIds.length ? await db.select(wordCandidateSelection).from(words)
+    .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
+    .leftJoin(wordProgress, and(eq(wordProgress.userId, userId), eq(wordProgress.wordId, words.id)))
+    .leftJoin(mistakes, and(eq(mistakes.userId, userId), eq(mistakes.wordId, words.id)))
+    .where(and(inArray(words.id, additionalWeakIds), allowed)) : [];
 
   let dueSetReviews: DueSetReview[] = [];
   if (dueSetRows.length) {
@@ -88,8 +103,22 @@ export async function buildReviewPlanForUser(userId: number, role: string, optio
     }));
   }
 
+  const allCandidateIds = [...new Set([...dueWordRows, ...weakCandidateRows].map((row) => row.id).concat(dueSetReviews.flatMap((review) => review.words.map((word) => word.id))))];
+  const masteryRows = allCandidateIds.length ? await db.select().from(userWordSkillProgress).where(and(eq(userWordSkillProgress.userId, userId), inArray(userWordSkillProgress.wordId, allCandidateIds))) : [];
+  const masteryByWord = new Map<number, typeof masteryRows>();
+  for (const row of masteryRows) masteryByWord.set(row.wordId, [...(masteryByWord.get(row.wordId) || []), row]);
+  function withWeakSkill(word: ReviewWord) {
+    const candidate = word as ReviewWord & { languageCode?: string; pronunciation?: string | null };
+    const eligible: LearningSkill[] = candidate.languageCode === "zh-CN"
+      ? ["meaning_recognition", "orthography_production", "pronunciation_recall", ...(buildToneExercise(candidate.pronunciation).eligible ? ["tone_accuracy" as const] : []), "listening_recognition"]
+      : ["meaning_recognition", "orthography_production", "listening_recognition"];
+    const weak = weakestEligibleSkill((masteryByWord.get(word.id) || []) as Array<{ skill: LearningSkill; masteryScore: number; practiceCount: number; lastPracticedAt: Date }>, eligible);
+    const row = (masteryByWord.get(word.id) || []).find((item) => item.skill === weak);
+    return weak && row && row.masteryScore < 70 ? { ...word, weakSkill: weak, weakSkillScore: row.masteryScore, recommendedMode: SKILL_RECOMMENDED_MODE[weak] } : word;
+  }
+  dueSetReviews = dueSetReviews.map((review) => ({ ...review, words: review.words.map(withWeakSkill) }));
   const plan = buildDailyReviewPlan({
-    dueWords: dueWordRows.map((row) => normalizeWord(row as unknown as Record<string, unknown>)),
+    dueWords: [...dueWordRows, ...weakCandidateRows].map((row) => withWeakSkill(normalizeWord(row as unknown as Record<string, unknown>))),
     dueSetReviews, wordBudget: goalRows[0]?.dailyReviewWords || DEFAULT_DAILY_REVIEW_WORDS,
     completedToday: completedRows[0]?.count || 0, now, extra: options?.extra,
   });

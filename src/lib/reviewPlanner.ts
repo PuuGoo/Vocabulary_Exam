@@ -15,6 +15,8 @@ export type ReviewWord = {
   setName: string;
   setCategory?: string | null;
   setType?: string;
+  languageCode?: string | null;
+  pronunciation?: string | null;
   meaning?: string;
   term?: string | null;
   v1?: string | null;
@@ -29,6 +31,9 @@ export type ReviewWord = {
   correctCount: number;
   wrongCount: number;
   timesWrong: number;
+  weakSkill?: string | null;
+  weakSkillScore?: number | null;
+  recommendedMode?: string | null;
 };
 
 export type DueSetReview = {
@@ -43,7 +48,7 @@ export type DueSetReview = {
 export type PlannedWord = ReviewWord & {
   priorityScore: number;
   daysOverdue: number;
-  reasons: Array<"overdue" | "due" | "difficult" | "forgotten" | "set_review">;
+  reasons: Array<"overdue" | "due" | "difficult" | "forgotten" | "set_review" | "weak_skill">;
 };
 
 export type ReviewBatch = {
@@ -101,7 +106,7 @@ function deterministicNoise(wordId: number, seed: number) {
 
 function weakness(word: ReviewWord, now: Date) {
   const due = Boolean(word.nextReviewAt && word.nextReviewAt <= now);
-  return (due ? 500 : 0) + word.timesWrong * 45 + word.wrongCount * 12 + (word.known === false ? 180 : 0) + Math.max(0, 5 - word.reviewStreak) * 4;
+  return (due ? 500 : 0) + word.timesWrong * 45 + word.wrongCount * 12 + (word.known === false ? 180 : 0) + Math.max(0, 5 - word.reviewStreak) * 4 + (word.weakSkillScore == null ? 0 : Math.max(0, 70 - word.weakSkillScore) * 5);
 }
 
 export function selectSetReviewWords(review: DueSetReview, now = new Date()) {
@@ -128,11 +133,13 @@ export function rankReviewCandidate(word: ReviewWord, now = new Date(), setRevie
   if (due) reasons.push(daysOverdue > 0 ? "overdue" : "due");
   if (word.timesWrong > 0 || word.wrongCount > 0) reasons.push("difficult");
   if (word.known === false) reasons.push("forgotten");
+  if (word.weakSkill) reasons.push("weak_skill");
   if (setReview) reasons.push("set_review");
   const priorityScore =
     (due ? 1_000 : 0) + daysOverdue * 35 +
     word.timesWrong * 55 + word.wrongCount * 15 +
     (word.known === false ? 170 : 0) + Math.max(0, 4 - word.reviewStreak) * 8 +
+    (word.weakSkillScore == null ? 0 : Math.max(0, 70 - word.weakSkillScore) * 9) +
     (setReview ? 720 + Math.floor(Math.max(0, now.getTime() - setReview.nextReviewAt.getTime()) / DAY_MS) * 18 : 0);
   return { ...word, priorityScore, daysOverdue, reasons };
 }

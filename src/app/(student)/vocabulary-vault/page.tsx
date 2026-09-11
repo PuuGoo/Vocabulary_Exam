@@ -14,7 +14,7 @@ export default function VocabularyVaultRedirectPage() {
   }, [router]);
   return (
     <div className="flex min-h-[50vh] items-center justify-center text-sm text-muted">
-      Đang chuyển đến "Từ của tôi"...
+      Đang chuyển đến &quot;Từ của tôi&quot;...
     </div>
   );
 }

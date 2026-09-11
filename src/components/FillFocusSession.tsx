@@ -124,6 +124,8 @@ export default function FillFocusSession({
   const inputRef = useRef<HTMLInputElement>(null);
   const groupInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const correctionInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const masteryRunRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const masteryRecordedRef = useRef(new Set<number>());
 
   const queue = queues[group] || groups[group]?.map((word) => word.id) || [];
   const cursor = Math.min(cursors[group] || 0, Math.max(0, queue.length - 1));
@@ -270,6 +272,19 @@ export default function FillFocusSession({
     setQueues((current) => ({ ...current, [group]: scheduleDelayedRetry(current[group] || queue, currentWord.id, cursor, 4) }));
   }
 
+  function recordMastery(wordId: number, grade: LanguageAwareGrade, assisted: boolean) {
+    if (!persist || languageCode !== "zh-CN" || masteryRecordedRef.current.has(wordId)) return;
+    masteryRecordedRef.current.add(wordId);
+    const result = grade.correct ? (assisted ? "assisted" : "correct") : grade.nearMiss ? "near_miss" : "incorrect";
+    void fetch("/api/learning/mastery", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        wordId, skill: target === "pronunciation" ? "pronunciation_recall" : "orthography_production",
+        result, sourceMode: "fill", eventKey: `fill-${masteryRunRef.current}-${target}-${wordId}`,
+      }),
+    }).catch(() => { masteryRecordedRef.current.delete(wordId); });
+  }
+
   function checkPracticeAnswer() {
     if (!currentWord || feedback || !currentResponseComplete || !claimFillAction(actionLockRef)) return;
     const grade = gradeWord(currentWord, answers[currentWord.id]);
@@ -289,6 +304,7 @@ export default function FillFocusSession({
       }
     }
     setOutcomes((current) => ({ ...current, [currentWord.id]: outcome }));
+    if (!existing) recordMastery(currentWord.id, grade, Boolean((hintLevels[currentWord.id] || activeHintLevel) > 0 || audioBeforeAnswer[currentWord.id]));
     setFeedback({ correct: grade.correct, nearMiss: grade.nearMiss, reason:grade.languageReason, answer: currentResponses.join(" ; "), retry: Boolean(existing), groupGrade: grade });
     setNeedsCorrection(!grade.correct);
     setCorrection(Array.from({ length: grade.unmatchedGroups.length }, () => ""));
@@ -375,6 +391,7 @@ export default function FillFocusSession({
       if (languageCode !== "en" || target !== "term") {
         const grade=gradeWord(word,answers[word.id]);
         nextOutcomes[word.id]={...nextOutcomes[word.id],firstTryCorrect:grade.correct,correctAfterHint:false,finalCorrect:grade.correct};
+        recordMastery(word.id, grade, false);
       }
     }
     setOutcomes(nextOutcomes);
