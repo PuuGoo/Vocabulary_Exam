@@ -3,9 +3,11 @@ import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
-  topics, wordCollocations, wordFamilyMembers, wordFamilies, wordPatterns, wordPronunciations, wordTopics, words,
+  topics, vocabSets, wordCollocations, wordFamilyMembers, wordFamilies, wordPatterns, wordPronunciations, wordTopics, words,
 } from "@/db/schema";
-import { getSession } from "@/lib/auth";
+import { isAuthorizationError, requireAdminPermission, type AdminAccess } from "@/lib/adminAuthorization";
+import { requireAdminResourceAccess, type PositiveFolderAccess } from "@/lib/folderAuthorization";
+import type { AdminPermission } from "@/lib/adminPermissions";
 import { normalizeText } from "@/lib/text";
 import { loadWordContent } from "@/lib/wordContent";
 import { normalizeContentStatus, normalizeRegister } from "@/lib/vocabularyMeta";
@@ -64,10 +66,28 @@ type Transaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
 /** Every write below runs inside one transaction so a failed save leaves no partial content. */
 type DbLike = DbClient | Transaction;
 
+async function authorizeWordFolders(
+  ids: number[],
+  permission: AdminPermission,
+  level: PositiveFolderAccess,
+  access: AdminAccess,
+) {
+  const rows = await db.select({ id: words.id, folderId: vocabSets.folderId })
+    .from(words)
+    .innerJoin(vocabSets, eq(vocabSets.id, words.setId))
+    .where(inArray(words.id, ids));
+  if (rows.length !== ids.length) return NextResponse.json({ error: "Kh?ng t?m th?y t?." }, { status: 404 });
+  for (const folderId of new Set(rows.map((row) => row.folderId))) {
+    const scoped = await requireAdminResourceAccess({ permission, folderId, level, access });
+    if (isAuthorizationError(scoped)) return scoped;
+  }
+  return null;
+}
+
 /** Admin view of the 1-to-many vocabulary depth data, drafts included. */
 export async function GET(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.view");
+  if (isAuthorizationError(access)) return access;
 
   const url = new URL(req.url);
   const ids = (url.searchParams.get("wordIds") || url.searchParams.get("wordId") || "")
@@ -201,8 +221,8 @@ async function syncFamily(client: DbLike, wordId: number, family: z.infer<typeof
  * they are edited, so future per-collocation progress never dangles.
  */
 export async function PUT(req: NextRequest) {
-  const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireAdminPermission("vocab.edit");
+  if (isAuthorizationError(access)) return access;
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ.", issues: parsed.error.flatten() }, { status: 400 });
@@ -215,8 +235,8 @@ export async function PUT(req: NextRequest) {
     if (collocations) await syncCollocations(tx, wordId, collocations);
     if (patterns) await syncPatterns(tx, wordId, patterns);
     if (pronunciations) await syncPronunciations(tx, wordId, pronunciations);
-    if (topicNames) await syncTopics(tx, wordId, topicNames, session.userId);
-    if (family !== undefined) await syncFamily(tx, wordId, family, session.userId);
+    if (topicNames) await syncTopics(tx, wordId, topicNames, access.userId);
+    if (family !== undefined) await syncFamily(tx, wordId, family, access.userId);
   });
 
   const content = await loadWordContent([wordId], { includeUnpublished: true });
