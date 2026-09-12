@@ -247,3 +247,65 @@ src/
 **Động từ bất quy tắc** — cột: `meaning`, `v1`, `v2`, `v3`
 
 Dòng đầu tiên là tên cột (viết thường, không dấu).
+
+### Định dạng nâng cao (tuỳ chọn, vẫn tương thích ngược)
+
+File cũ chỉ có `term/meaning/ipa/example/wtype` vẫn nhập bình thường. Có thể bổ sung:
+
+- **Cột nâng cao ngay trên sheet từ vựng**: `wordkey`, `register`, `cefr` (A1–C2), `frequency`,
+  `ielts` (yes/no), `ieltsband`, `ieltsskills`, `usagecontext`, `contentstatus` (`draft`/`reviewed`/`approved`),
+  `notes`, cùng các cột nhiều giá trị `collocation`, `pattern`, `topic`, `wordfamily`.
+  Nhiều giá trị trong một ô được phân cách bằng `|` hoặc `;` (ví dụ `ieltsskills` = `reading | writing`).
+- **Sheet liên kết 1-n** trong cùng file `.xlsx`: `Collocations`, `Patterns`, `WordFamilies`, `Topics`.
+  Mỗi sheet có cột `wordKey` (ưu tiên, ổn định khi sắp xếp/lọc) hoặc `term` để nối về từ;
+  **không** dùng số thứ tự dòng làm khoá.
+  - `Collocations`: `wordKey`, `phrase`, `meaning`, `example`, `register`, `contentstatus`
+  - `Patterns`: `wordKey`, `pattern`, `meaning`, `example`, `contentstatus`
+  - `WordFamilies`: `wordKey`, `family`, `relation`
+  - `Topics`: `wordKey`, `topic`
+
+Xuất Excel một bộ từ vẫn giữ sheet `Từ vựng` như cũ, và chỉ khi có dữ liệu mới ghi thêm các sheet
+`Collocations` / `Patterns` / `Topics` / `WordFamilies` (không nhân bản một từ thành nhiều dòng trên sheet chính).
+Bản PDF có thêm khối tổng hợp “Collocation & cấu trúc”.
+
+Nội dung do AI gợi ý hoặc chưa chắc chắn nên để `contentstatus = draft`: học sinh và khách xem qua link
+chia sẻ sẽ không thấy bản nháp, chỉ admin thấy khi quản lý.
+
+## Học theo kỹ năng (vocabulary depth)
+
+Một từ không chỉ có “nghĩa”. Ngoài `wordProgress` (known + lịch spaced repetition) giữ nguyên như cũ,
+hệ thống ghi thêm **bằng chứng hành vi theo từng kỹ năng** trong `word_skill_progress`:
+`meaning_recognition`, `spelling_production`, `pronunciation_recall`, `listening_recognition`,
+`collocation_usage`, `pattern_usage`, `context_usage`, `paraphrase`, `speaking_usage`.
+
+- Điểm kỹ năng chỉ hiện khi đủ số lần luyện; chưa luyện thì báo **“chưa đủ dữ liệu”**, không hiển thị 0%.
+- Trả lời đúng nhưng có dùng gợi ý/nghe trước chỉ tính nửa trọng số.
+- “Đã nhớ” vẫn là tự đánh giá: từ đã biết nghĩa nhưng collocation yếu vẫn được ôn collocation.
+- Smart Review và Ôn tập hôm nay chọn **chế độ luyện theo kỹ năng yếu nhất** và nêu lý do
+  (“Collocation còn yếu”, “Bạn đã sai nhiều lần”, “Đã đến hạn ôn”).
+
+Ba chế độ luyện mới (chỉ hiện khi bộ từ thật sự có dữ liệu):
+
+- `/collocation/[setId]` — điền từ vào cụm (`make a ______`) hoặc viết lại cả cụm từ nghĩa tiếng Việt.
+- `/pattern/[setId]` — điền giới từ/danh động từ trong cấu trúc (`prevent sb ______ doing sth`),
+  hoặc viết lại cả cấu trúc. Cấu trúc nhiều nhóm phân cách `;` (kể cả dữ liệu cũ trong cột `wtype`)
+  vẫn được tách thành từng bài riêng.
+- `/cloze/[setId]` — điền từ vào chính câu ví dụ đã biên soạn. Chỉ tạo bài khi từ xuất hiện
+  nguyên dạng, không mơ hồ và không phá dấu câu/markup; không có ví dụ phù hợp thì bỏ qua.
+
+Chấm điểm dùng lại bộ grader cũ: chuẩn hoá hoa/thường và khoảng trắng, chấp nhận đúng các dạng
+đã được biên soạn (`burned/burnt`, `refrigerator / fridge`, `pose a threat / pose a risk`),
+không fuzzy-match để “nhận bừa” đáp án sai. Tìm kiếm thì ngược lại: có thể khớp gần đúng và quét cả
+collocation/pattern/chủ đề/họ từ, nhưng vẫn tôn trọng phân quyền thư mục và ẩn bản nháp.
+
+Phiên âm: IPA chuẩn **Anh-Anh (UK)** là nguồn sự thật và không bị ghi đè tự động; biến thể theo
+từ loại/nét nghĩa được lưu có cấu trúc ở `word_pronunciations` thay vì nhét chuỗi gạch chéo vào một ô.
+Trang luyện phát âm cho phép đổi giọng mẫu UK/US; phần nhận diện giọng nói giữ nguyên hành vi cũ và
+chỉ là ước lượng tương đồng của trình duyệt.
+
+Sao lưu: file backup lên phiên bản 4, kèm `wordCollocations`, `wordPatterns`, `wordPronunciations`,
+`topics`, `wordTopics`, `wordFamilies`, `wordFamilyMembers`, `wordSkillProgress`.
+File backup phiên bản 1–3 vẫn khôi phục được (các nhóm mới coi như rỗng).
+
+Migration: `npm run db:push`, hoặc chạy `drizzle/0028_vocabulary_depth.sql`
+(toàn bộ là additive + `IF NOT EXISTS`, không phá dữ liệu cũ).

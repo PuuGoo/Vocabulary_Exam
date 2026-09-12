@@ -6,6 +6,7 @@ import { mistakes, wordProgress, words, vocabSets } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { recordDailyActivity } from "@/lib/activity";
 import { recordWordOutcomes } from "@/lib/spacedProgress";
+import { recordSkillOutcomes } from "@/lib/skillProgress";
 import { signFlashcardUndo, verifyFlashcardUndo } from "@/lib/session";
 
 export async function GET() {
@@ -17,6 +18,7 @@ export async function GET() {
       id: mistakes.id,
       timesWrong: mistakes.timesWrong,
       lastWrongAt: mistakes.lastWrongAt,
+      lastReason: mistakes.lastReason,
       wordId: words.id,
       meaning: words.meaning,
       term: words.term,
@@ -90,6 +92,15 @@ export async function POST(req: NextRequest) {
     setId: parsed.data.setId,
     correct: parsed.data.learned,
   }], "flashcard");
+
+  // Self-rating is weak evidence on purpose: it moves meaning_recognition a
+  // little, never every skill, so "Đã nhớ" does not imply full mastery.
+  await recordSkillOutcomes(session.userId, [{
+    wordId: parsed.data.wordId,
+    skill: "meaning_recognition",
+    correct: parsed.data.learned,
+    assisted: true,
+  }], { mode: "flashcard" });
 
   await recordDailyActivity(session.userId, { wordsReviewed: 1 });
 

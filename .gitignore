@@ -15,3 +15,6 @@ android/build/
 .android-sdk/
 .android-sdk-commandline-tools.zip
 .android-sdk-extract/
+
+# Local publish snapshots (can contain .env and hundreds of MB)
+.publish-*/
