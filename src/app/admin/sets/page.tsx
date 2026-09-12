@@ -5,10 +5,13 @@ import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
 import Modal from "@/components/Modal";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import DocumentPreview from "@/components/DocumentPreview";
 import { compareDocumentsByFolderThenName, formatAggregatedDocumentName } from "@/lib/documentDisplay";
 import { SUPPORTED_DOCUMENT_ACCEPT, documentKind, isSupportedDocument } from "@/lib/categoryDocumentFile";
 import QuestionImportExportTools from "@/components/QuestionImportExportTools";
+import ShareDialog from "@/components/ShareDialog";
+import WordDepthEditor from "@/components/WordDepthEditor";
 import { safeSpreadsheetCell } from "@/lib/questionImportSpreadsheet";
 import { correctAnswerDistribution, DEFAULT_QUESTION_SHUFFLE_SETTINGS, optionLetter, planPermanentOptionShuffle, type PermanentShufflePlan, type QuestionShuffleMode, type QuestionShuffleSettings, type ShuffleQuestion } from "@/lib/questionShuffle";
 
@@ -26,6 +29,17 @@ type Word = {
   example?: string | null;
   wtype?: string | null;
   ipa?: string | null;
+  /** Optional, admin-curated depth metadata (§5–6). */
+  contentKind?: string | null;
+  contentStatus?: string | null;
+  register?: string | null;
+  cefrLevel?: string | null;
+  frequency?: string | null;
+  ieltsRelevant?: boolean;
+  ieltsBandRelevance?: string | null;
+  ieltsSkills?: string[];
+  usageContext?: string[];
+  notes?: string | null;
 };
 type SetDetail = SetSummary & { words: Word[] };
 type WordMatch = {
@@ -49,6 +63,7 @@ type CategorySummary = { id: number; name: string; count: number };
 type CategoryDocument = { id: number; category: string; title: string; fileName: string; fileType: string; fileSize: number; createdAt: string };
 type VisibleCategoryDocument = CategoryDocument & { displayTitle: string; displayFileName: string; aggregateOrder: number | null };
 type DocumentSort = "newest" | "oldest" | "name" | "size";
+type SetWorkspaceTab = "overview" | "vocabulary" | "questions" | "documents" | "settings";
 type QuestionType = "speaking" | "multiple_choice" | "essay";
 type AdminShuffleQuestion = ShuffleQuestion & { questionText: string };
 type OptionShufflePreview = { mode: QuestionShuffleMode; questions: AdminShuffleQuestion[]; plans: PermanentShufflePlan[] };
@@ -72,6 +87,7 @@ function toShuffleQuestion(question: any): AdminShuffleQuestion {
 }
 
 export default function AdminSetsPage() {
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategorySummary[]>([]);
@@ -93,6 +109,7 @@ export default function AdminSetsPage() {
   const [newType, setNewType] = useState<"ielts_vocab" | "irregular_verb">("ielts_vocab");
   const [newClassId, setNewClassId] = useState<string>("");
   const [detail, setDetail] = useState<SetDetail | null>(null);
+  const [detailTab, setDetailTab] = useState<SetWorkspaceTab>("overview");
   const [editSetName, setEditSetName] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [savingSetName, setSavingSetName] = useState(false);
@@ -106,6 +123,7 @@ export default function AdminSetsPage() {
   const [openingDetailId, setOpeningDetailId] = useState<number | null>(null);
   const [detailWordQuery, setDetailWordQuery] = useState("");
   const [previewSetId, setPreviewSetId] = useState<number | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ targetType: "vocab_set" | "question_collection"; targetId: number; title: string; setType?: string } | null>(null);
   const [draggingSetId, setDraggingSetId] = useState<number | null>(null);
   const [dragOverSetId, setDragOverSetId] = useState<number | null>(null);
   const [movingSetId, setMovingSetId] = useState<number | null>(null);
@@ -194,7 +212,7 @@ export default function AdminSetsPage() {
 
   async function runQuestionBulk(action: "delete" | "duplicate" | "move" | "copy") {
     if (!selectedQuestionIds.length) return;
-    if (action === "delete" && !confirm(`Xóa ${selectedQuestionIds.length} câu hỏi đã chọn?`)) return;
+    if (action === "delete" && !await confirmAction({ title: "Xóa câu hỏi đã chọn?", description: `${selectedQuestionIds.length} câu hỏi sẽ bị xóa. Hành động này không thể hoàn tác.`, confirmLabel: "Xóa câu hỏi", tone: "danger" })) return;
     if ((action === "move" || action === "copy") && !questionBulkTarget) return toast("Hãy chọn thư mục đích.");
     try { const response = await fetch("/api/admin/category-questions/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ids: selectedQuestionIds, ...(questionBulkTarget ? { category: questionBulkTarget } : {}) }) }); const data = await response.json(); if (!response.ok) return toast(data.error || "Không thể thực hiện bulk action."); toast(`Đã xử lý ${data.affected} câu hỏi.`); setSelectedQuestionIds([]); await refreshCategoryQuestions(); } catch { toast("Không thể kết nối để xử lý câu hỏi."); }
   }
@@ -465,7 +483,7 @@ export default function AdminSetsPage() {
   }
 
   async function deleteCategoryDocument(document: CategoryDocument) {
-    if (!confirm(`Xóa tài liệu “${document.title}”?`)) return;
+    if (!await confirmAction({ title: "Xóa tài liệu?", description: `“${document.title}” sẽ bị xóa khỏi thư mục. Hành động này không thể hoàn tác.`, confirmLabel: "Xóa tài liệu", tone: "danger" })) return;
     const res = await fetch(`/api/admin/category-documents?id=${document.id}`, { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return toast(data.error || "Không thể xóa tài liệu.");
@@ -556,7 +574,7 @@ export default function AdminSetsPage() {
   }
 
   async function deleteCategoryQuestion(id: number) {
-    if (!confirm("Xóa câu hỏi này?")) return;
+    if (!await confirmAction({ title: "Xóa câu hỏi?", description: "Câu hỏi sẽ bị xóa khỏi ngân hàng. Hành động này không thể hoàn tác.", confirmLabel: "Xóa câu hỏi", tone: "danger" })) return;
     try {
       const res = await fetch("/api/admin/category-questions", {
         method: "DELETE",
@@ -606,7 +624,7 @@ export default function AdminSetsPage() {
   async function replaceCategoryDocument(document: CategoryDocument, file: File) {
     if (replacingDocumentId !== null) return;
     if (!isSupportedDocument(file.name, file.type) || file.size < 1) return toast("Chỉ chấp nhận file PDF, DOCX hoặc DOC hợp lệ.");
-    if (!confirm(`Thay nội dung “${document.title}” bằng file “${file.name}”?`)) return;
+    if (!await confirmAction({ title: "Thay file tài liệu?", description: `Nội dung “${document.title}” sẽ được thay bằng “${file.name}”.`, confirmLabel: "Thay file", tone: "warning" })) return;
     setReplacingDocumentId(document.id);
     try {
       setDocumentUploadProgress({ fileName: file.name, fileIndex: 1, totalFiles: 1, percent: 0 });
@@ -770,7 +788,7 @@ export default function AdminSetsPage() {
     const detail = category.count
       ? `${category.count} bộ từ trong danh mục sẽ được chuyển về “Chưa phân loại”.`
       : "Danh mục này hiện chưa có bộ từ.";
-    if (!confirm(`Xóa danh mục “${category.name}”? ${detail}`)) return;
+    if (!await confirmAction({ title: "Xóa danh mục?", description: `Danh mục “${category.name}” sẽ bị xóa. ${detail}`, confirmLabel: "Xóa danh mục", tone: "danger" })) return;
     setCategorySubmitting(true);
     try {
       const res = await fetch(`/api/admin/categories?id=${category.id}`, { method: "DELETE" });
@@ -846,7 +864,7 @@ export default function AdminSetsPage() {
   }
 
   async function deleteSet(id: number) {
-    if (!confirm("Xoá bộ từ vựng này? Hành động không thể hoàn tác.")) return;
+    if (!await confirmAction({ title: "Xóa bộ từ?", description: "Toàn bộ từ trong bộ này sẽ bị xóa. Hành động không thể hoàn tác.", confirmLabel: "Xóa bộ từ", tone: "danger" })) return;
     try {
       const res = await fetch(`/api/sets/${id}`, { method: "DELETE" });
       if (!res.ok) return toast("Không thể xoá bộ từ vựng.");
@@ -861,7 +879,7 @@ export default function AdminSetsPage() {
 
   async function deleteSelectedSets() {
     if (selectedSetIds.length === 0 || bulkDeletingSets) return;
-    if (!confirm(`Xóa vĩnh viễn ${selectedSetIds.length} bộ từ đã chọn và toàn bộ từ bên trong?`)) return;
+    if (!await confirmAction({ title: "Xóa các bộ từ đã chọn?", description: `${selectedSetIds.length} bộ và toàn bộ từ bên trong sẽ bị xóa vĩnh viễn.`, confirmLabel: "Xóa các bộ", tone: "danger" })) return;
     setBulkDeletingSets(true);
     try {
       const res = await fetch("/api/admin/sets/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", ids: selectedSetIds }) });
@@ -927,6 +945,40 @@ export default function AdminSetsPage() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.set) throw new Error(data.error || "Không thể tải dữ liệu bộ từ.");
       const current = data.set as SetDetail;
+      // Vocabulary depth travels with the set payload; exports stay relational so a
+      // word is never exploded into duplicate rows on the main sheet.
+      const depth: Record<string, {
+        collocations?: Array<{ phrase: string; meaning?: string | null; example?: string | null; register?: string | null }>;
+        patterns?: Array<{ pattern: string; meaning?: string | null; example?: string | null }>;
+        topics?: string[];
+        families?: Array<{ label: string }>;
+      }> = data.content || {};
+      const depthOf = (wordId: number) => depth[String(wordId)] || {};
+      const collocationRows = current.words.flatMap((word) => (depthOf(word.id).collocations || []).map((item) => ({
+        wordId: word.id, term: word.term || "", phrase: item.phrase, meaning: item.meaning || "", example: item.example || "", register: item.register || "",
+      })));
+      const patternRows = current.words.flatMap((word) => (depthOf(word.id).patterns || []).map((item) => ({
+        wordId: word.id, term: word.term || "", pattern: item.pattern, meaning: item.meaning || "", example: item.example || "",
+      })));
+      const topicRows = current.words.flatMap((word) => (depthOf(word.id).topics || []).map((topic) => ({
+        wordId: word.id, term: word.term || "", topic,
+      })));
+      const familyRows = current.words.flatMap((word) => (depthOf(word.id).families || []).map((family) => ({
+        wordId: word.id, term: word.term || "", family: family.label,
+      })));
+      const depthContent = collocationRows.length || patternRows.length ? [
+        { text: "Collocation & cấu trúc", fontSize: 12, bold: true, margin: [0, 14, 0, 6] },
+        { table: { headerRows: 1, widths: [110, "*", "*"], body: [
+          ["Từ", "Collocation", "Cấu trúc"],
+          ...current.words
+            .map((word) => [
+              word.term || "",
+              (depthOf(word.id).collocations || []).map((item) => item.phrase).join("\n"),
+              (depthOf(word.id).patterns || []).map((item) => item.pattern).join("\n"),
+            ])
+            .filter(([, collocations, patterns]) => collocations || patterns),
+        ] }, layout: { fillColor: (rowIndex: number) => rowIndex === 0 ? "#EFECFF" : null, hLineColor: () => "#DCD9E8", vLineColor: () => "#DCD9E8" } },
+      ] : [];
       const safeName = current.name.replace(/[\\/:*?"<>|]/g, "-").trim() || `bo-tu-${current.id}`;
       const rows = current.words.map((word, index) => current.type === "irregular_verb"
         ? { STT: index + 1, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
@@ -937,6 +989,11 @@ export default function AdminSetsPage() {
         sheet["!cols"] = current.type === "irregular_verb" ? [{ wch: 6 }, { wch: 28 }, ...Array.from({ length: 6 }, () => ({ wch: 18 }))] : [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 52 }];
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, sheet, "Từ vựng");
+        // Optional relational sheets; re-import links them back by `term`.
+        if (collocationRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(collocationRows), "Collocations");
+        if (patternRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(patternRows), "Patterns");
+        if (topicRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(topicRows), "Topics");
+        if (familyRows.length) XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(familyRows), "WordFamilies");
         XLSX.writeFile(workbook, `${safeName}.xlsx`);
       } else {
         const [{ default: pdfMake }, { default: pdfFonts }] = await Promise.all([import("pdfmake/build/pdfmake"), import("pdfmake/build/vfs_fonts")]);
@@ -949,7 +1006,7 @@ export default function AdminSetsPage() {
           { text: current.name, fontSize: 18, bold: true, color: "#242337", margin: [0, 0, 0, 4] },
           { text: `${current.category || "Chưa phân loại"} · ${current.words.length} mục`, fontSize: 9, color: "#6F6C82", margin: [0, 0, 0, 14] },
           { table: { headerRows: 1, widths: current.type === "irregular_verb" ? [28, "*", "*", "*", "*"] : [28, 115, 145, 65, "*"], body }, layout: { fillColor: (row: number) => row === 0 ? "#EFECFF" : row % 2 === 0 ? "#FAF9FD" : null, hLineColor: () => "#DCD9E8", vLineColor: () => "#DCD9E8" } },
-        ], defaultStyle: { font: "Roboto", fontSize: 8, color: "#242337" }, footer: (page: number, pages: number) => ({ text: `${page}/${pages}`, alignment: "center", fontSize: 8, color: "#8B899F" }) }).download(`${safeName}.pdf`);
+        ...depthContent], defaultStyle: { font: "Roboto", fontSize: 8, color: "#242337" }, footer: (page: number, pages: number) => ({ text: `${page}/${pages}`, alignment: "center", fontSize: 8, color: "#8B899F" }) }).download(`${safeName}.pdf`);
       }
       toast(`Đã tạo file ${format.toUpperCase()} cho “${current.name}”.`);
     } catch (error) { toast(error instanceof Error ? error.message : "Không thể xuất bộ từ."); }
@@ -964,6 +1021,7 @@ export default function AdminSetsPage() {
       if (!res.ok) return toast("Không thể mở bộ từ vựng.");
       const data = await res.json();
       setDetail(data.set);
+      setDetailTab(focusWordId ? "vocabulary" : "overview");
       setFocusedWordId(focusWordId ?? null);
       setEditSetName(data.set.name);
       setEditCategory(data.set.category || "");
@@ -992,7 +1050,7 @@ export default function AdminSetsPage() {
     if (!detail || selectedWordIds.length === 0 || !moveTargetSetId || movingWords) return;
     const target = compatibleMoveTargets.find((set) => set.id === Number(moveTargetSetId));
     if (!target) return;
-    if (!confirm(`Di chuyển ${selectedWordIds.length} từ từ “${detail.name}” sang “${target.name}”?`)) return;
+    if (!await confirmAction({ title: "Di chuyển từ?", description: `${selectedWordIds.length} từ sẽ được chuyển từ “${detail.name}” sang “${target.name}”.`, confirmLabel: "Di chuyển", tone: "warning" })) return;
     setMovingWords(true);
     try {
       const res = await fetch("/api/admin/words/bulk", {
@@ -1048,7 +1106,7 @@ export default function AdminSetsPage() {
     if (!detail) return;
     const target = detail.words.find((word) => word.id === wordId);
     const label = target?.term || target?.v1 || target?.meaning || "từ này";
-    if (!confirm(`Xoá “${label}” khỏi bộ từ?`)) return;
+    if (!await confirmAction({ title: "Xóa từ khỏi bộ?", description: `“${label}” sẽ bị xóa khỏi bộ từ. Hành động này không thể hoàn tác.`, confirmLabel: "Xóa từ", tone: "danger" })) return;
     try {
       const res = await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
       if (!res.ok) return toast("Không thể xoá từ.");
@@ -1063,7 +1121,7 @@ export default function AdminSetsPage() {
 
   async function deleteSelectedWords() {
     if (!detail || selectedWordIds.length === 0 || bulkDeletingWords) return;
-    if (!confirm(`Xóa ${selectedWordIds.length} từ đã chọn khỏi “${detail.name}”?`)) return;
+    if (!await confirmAction({ title: "Xóa các từ đã chọn?", description: `${selectedWordIds.length} từ sẽ bị xóa khỏi “${detail.name}”. Hành động này không thể hoàn tác.`, confirmLabel: "Xóa các từ", tone: "danger" })) return;
     setBulkDeletingWords(true);
     try {
       const res = await fetch("/api/admin/words/bulk", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: selectedWordIds }) });
@@ -1098,10 +1156,10 @@ export default function AdminSetsPage() {
     setEditingWordId(null);
   }
 
-  function closeDetail() {
+  async function closeDetail() {
     // A child editor handles Escape/overlay first; keep the parent open behind it.
     if (showAddWord || editingWordId !== null) return;
-    if (detail && editSetName.trim() !== detail.name && !confirm("Tên bộ từ chưa được lưu. Bạn có muốn đóng và bỏ thay đổi?")) return;
+    if (detail && editSetName.trim() !== detail.name && !await confirmAction({ title: "Bỏ thay đổi chưa lưu?", description: "Tên bộ từ đã thay đổi nhưng chưa được lưu.", confirmLabel: "Bỏ thay đổi", tone: "warning" })) return;
     setDetail(null);
     setFocusedWordId(null);
     setDetailWordQuery("");
@@ -1201,6 +1259,7 @@ export default function AdminSetsPage() {
 
   return (
     <div className={cx.panel}>
+      {confirmDialog}
       <h2 className={cx.h2}>Các bộ từ vựng</h2>
       <div className={cx.desc}>
         Quản lý các bộ từ vựng dùng để kiểm tra. Bạn có thể thêm bộ mới, hoặc nhập nhanh bằng CSV/Excel ở tab
@@ -1616,7 +1675,8 @@ export default function AdminSetsPage() {
                       <span className="text-xs text-muted">{category.count} bộ từ</span>
                     </div>
                     <button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} disabled={categorySubmitting} onClick={() => { setEditingCategoryId(category.id); setEditingCategoryName(category.name.split(" / ").pop() || category.name); }}>Đổi tên</button>
-                    <button className="min-h-9 rounded-[9px] border border-[#F2D6D6] bg-white px-3 text-xs font-bold text-[#B65353] transition hover:bg-[#FFF5F5]" disabled={categorySubmitting} onClick={() => void deleteCategory(category)}>Xóa</button>
+                    <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-2`} onClick={() => setShareTarget({ targetType: "question_collection", targetId: category.id, title: category.name })}>Chia sẻ</button>
+                    <button type="button" className="min-h-9 rounded-[9px] border border-[#F2D6D6] bg-white px-3 text-xs font-bold text-[#B65353] transition hover:bg-[#FFF5F5]" disabled={categorySubmitting} onClick={() => void deleteCategory(category)}>Xóa</button>
                   </div>
                 )}
               </div>
@@ -1674,6 +1734,7 @@ export default function AdminSetsPage() {
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
+              <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type })}>Chia sẻ</button>
               <div className="relative" data-preview-menu>
                 <button
                   type="button"
@@ -1768,6 +1829,32 @@ export default function AdminSetsPage() {
               <span className="hidden sm:inline">Bộ sau</span> →
             </button>
           </div>
+          <nav className="mb-4 flex gap-1 overflow-x-auto border-b border-line" aria-label="Khu vực quản lý bộ từ">
+            {([
+              ["overview", "Tổng quan"],
+              ["vocabulary", "Từ vựng"],
+              ["questions", "Câu hỏi"],
+              ["documents", "Tài liệu"],
+              ["settings", "Cài đặt"],
+            ] as const).map(([value, label]) => (
+              <button key={value} type="button" aria-current={detailTab === value ? "page" : undefined} onClick={() => setDetailTab(value)} className={`min-h-11 shrink-0 border-b-2 px-3 text-sm font-bold ${detailTab === value ? "border-gold text-golddark" : "border-transparent text-muted hover:text-ink"}`}>{label}</button>
+            ))}
+          </nav>
+
+          {detailTab === "overview" && <section className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4"><span className="text-xs text-muted">Từ vựng</span><b className="mt-1 block text-2xl">{detail.words.length}</b></div>
+            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4"><span className="text-xs text-muted">Danh mục</span><b className="mt-1 block truncate text-sm">{detail.category || "Chưa phân loại"}</b></div>
+            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4"><span className="text-xs text-muted">Phạm vi</span><b className="mt-1 block truncate text-sm">{detail.className || "Công khai"}</b></div>
+            <div className="flex flex-wrap gap-2 sm:col-span-3"><button type="button" className={`${cx.btn} ${cx.btnGold}`} onClick={() => setDetailTab("vocabulary")}>Quản lý từ vựng</button><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setDetailTab("questions")}>Quản lý câu hỏi</button><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setDetailTab("settings")}>Cài đặt bộ</button></div>
+          </section>}
+
+          {(detailTab === "questions" || detailTab === "documents") && <section className="rounded-xl border border-line bg-[#FBFAFE] p-5">
+            <h3 className="font-serif text-lg font-bold">{detailTab === "questions" ? "Câu hỏi trong thư mục" : "Tài liệu trong thư mục"}</h3>
+            <p className="mt-2 text-sm text-muted">Nội dung này được dùng chung theo hierarchy danh mục hiện có để các bộ cùng chủ đề không bị nhân bản dữ liệu.</p>
+            {detail.category ? <button type="button" className={`${cx.btn} ${cx.btnGold} mt-4`} onClick={() => { setSelectedCategory(detail.category || ALL_CATEGORIES); setDetail(null); }}>{detailTab === "questions" ? "Mở quản lý câu hỏi" : "Mở quản lý tài liệu"}</button> : <p className="mt-3 text-sm font-semibold text-bad">Hãy gán bộ vào một danh mục trong tab Cài đặt trước.</p>}
+          </section>}
+
+          {detailTab === "settings" && <>
           <div className="mb-4 grid grid-cols-1 items-end gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
             <div>
               <label className={cx.label} htmlFor="edit-set-name">Tên bộ từ vựng</label>
@@ -1839,6 +1926,8 @@ export default function AdminSetsPage() {
               <button type="button" className="text-xs font-bold text-gold hover:underline" onClick={() => setShowCategoryManager(true)}>Quản lý danh mục</button>
             </div>
           </div>
+          </>}
+          {detailTab === "vocabulary" && <>
           <div className="mb-4 rounded-[11px] border border-line bg-[#FBFAFE] p-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold text-ink" htmlFor="detail-word-search">Tìm trong bộ này</label>
@@ -2085,6 +2174,14 @@ export default function AdminSetsPage() {
                     </div>
                   </>
                 )}
+                {detail?.type !== "irregular_verb" && editingWordId !== null && (
+                  <WordDepthEditor
+                    wordId={editingWordId}
+                    term={editForm.term}
+                    word={detail.words.find((item) => item.id === editingWordId)}
+                    onSaved={() => { if (detail) void openDetail(detail.id, editingWordId ?? undefined); }}
+                  />
+                )}
                 <div className="md:col-span-2 flex gap-2">
                   <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} onClick={saveEditWord}>
                     Lưu
@@ -2096,9 +2193,12 @@ export default function AdminSetsPage() {
               </div>
             </Modal>
           )}
+          </>}
           </div>
         </Modal>
       )}
+
+      {shareTarget && <ShareDialog {...shareTarget} onClose={() => setShareTarget(null)} />}
     </div>
   );
 }

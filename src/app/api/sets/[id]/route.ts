@@ -3,6 +3,7 @@ import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
+import { loadWordContent } from "@/lib/wordContent";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
@@ -31,7 +32,17 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     for (const row of progressRows) progress[row.wordId] = row.known;
   }
 
-  return NextResponse.json({ set: { ...set, words: wordList }, progress });
+  // Vocabulary depth travels with the set in one batched load, so practice modes
+  // never issue a request per word.
+  const content = wordList.length ? await loadWordContent(wordList.map((word) => word.id)) : new Map();
+  const contentByWordId: Record<number, unknown> = {};
+  for (const [wordId, value] of content) {
+    if (value.collocations.length || value.patterns.length || value.topics.length || value.families.length || value.pronunciations.length) {
+      contentByWordId[wordId] = value;
+    }
+  }
+
+  return NextResponse.json({ set: { ...set, words: wordList }, progress, content: contentByWordId });
 }
 
 const patchSchema = z.object({

@@ -74,6 +74,22 @@ export async function verifyFlashcardUndo(token: string): Promise<FlashcardUndoP
   }
 }
 
+export type ShareAccessPayload = { scope: "share-access"; shareId: number; passwordVersion: number };
+export const SHARE_ACCESS_MAX_AGE_SECONDS = 60 * 60 * 12;
+
+export async function signShareAccess(shareId: number, passwordVersion: number) {
+  return new SignJWT({ scope: "share-access", shareId, passwordVersion })
+    .setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${SHARE_ACCESS_MAX_AGE_SECONDS}s`).sign(secretKey);
+}
+
+export async function verifyShareAccess(token: string): Promise<ShareAccessPayload | null> {
+  try {
+    const { payload } = await jwtVerify(token, secretKey);
+    if (payload.scope !== "share-access" || !Number.isInteger(payload.shareId) || !Number.isInteger(payload.passwordVersion)) return null;
+    return payload as unknown as ShareAccessPayload;
+  } catch { return null; }
+}
+
 export function sessionCookieOptions() {
   return {
     httpOnly: true,

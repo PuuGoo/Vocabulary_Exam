@@ -9,25 +9,26 @@ export type SubjectQuestion = {
   id: number;
   question: string;
   answer: string;
-  questionType: "multiple_choice" | "essay";
+  questionType: "multiple_choice" | "true_false" | "essay";
   options: string[];
   correctOption: string | null;
   correctOptions: string[];
   explanation: string;
 };
 
-type Mode = "overview" | "multiple_choice" | "essay" | "final";
+export type SubjectPracticeMode = "overview" | "multiple_choice" | "essay" | "final";
 
-export default function SubjectQuestionPractice({ category, questions, shuffleSettings = DEFAULT_QUESTION_SHUFFLE_SETTINGS, speakingCount = 0, spellCheckEnabled, onSpellCheckChange }: { category: string; questions: SubjectQuestion[]; shuffleSettings?: QuestionShuffleSettings; speakingCount?: number; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void }) {
+export default function SubjectQuestionPractice({ category, questions, shuffleSettings = DEFAULT_QUESTION_SHUFFLE_SETTINGS, speakingCount = 0, spellCheckEnabled, onSpellCheckChange, initialMode = "overview", onExit }: { category: string; questions: SubjectQuestion[]; shuffleSettings?: QuestionShuffleSettings; speakingCount?: number; spellCheckEnabled: boolean; onSpellCheckChange: (enabled: boolean) => void; initialMode?: SubjectPracticeMode; onExit?: () => void }) {
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("overview");
-  const multipleChoice = useMemo(() => questions.filter((question) => question.questionType === "multiple_choice"), [questions]);
+  const [mode, setMode] = useState<SubjectPracticeMode>(initialMode);
+  const multipleChoice = useMemo(() => questions.filter((question) => question.questionType === "multiple_choice" || question.questionType === "true_false"), [questions]);
   const essays = useMemo(() => questions.filter((question) => question.questionType === "essay"), [questions]);
   const finalQuestions = useMemo(() => multipleChoice.slice(-10), [multipleChoice]);
 
-  if (mode === "multiple_choice") return <MultipleChoiceQuiz category={category} attemptKind="all" title="Luyện trắc nghiệm" questions={multipleChoice} shuffleSettings={shuffleSettings} onBack={() => setMode("overview")} />;
-  if (mode === "final") return <MultipleChoiceQuiz category={category} attemptKind="final" title={`Bài tổng hợp · ${finalQuestions.length} câu trắc nghiệm cuối`} questions={finalQuestions} shuffleSettings={shuffleSettings} onBack={() => setMode("overview")} />;
-  if (mode === "essay") return <EssayPractice questions={essays} onBack={() => setMode("overview")} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={onSpellCheckChange} />;
+  const back = onExit || (() => setMode("overview"));
+  if (mode === "multiple_choice") return <MultipleChoiceQuiz category={category} attemptKind="all" title="Luyện trắc nghiệm" questions={multipleChoice} shuffleSettings={shuffleSettings} onBack={back} />;
+  if (mode === "final") return <MultipleChoiceQuiz category={category} attemptKind="final" title={`Bài tổng hợp · ${finalQuestions.length} câu trắc nghiệm cuối`} questions={finalQuestions} shuffleSettings={shuffleSettings} onBack={back} />;
+  if (mode === "essay") return <EssayPractice questions={essays} onBack={back} spellCheckEnabled={spellCheckEnabled} onSpellCheckChange={onSpellCheckChange} />;
 
   return <div className="mx-auto max-w-4xl space-y-5">
     <div className="flex flex-wrap items-start justify-between gap-3">

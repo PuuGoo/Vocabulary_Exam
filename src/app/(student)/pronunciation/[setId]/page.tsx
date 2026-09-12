@@ -87,6 +87,8 @@ export default function PronunciationPage() {
   const [transcript, setTranscript] = useState("");
   const [score, setScore] = useState<number | null>(null);
   const [supported, setSupported] = useState(true);
+  // UK is canonical for IELTS; the sample voice is switchable, recognition is untouched.
+  const [voice, setVoice] = useState<"en-GB" | "en-US">("en-GB");
   const [ratings, setRatings] = useState<Array<{ wordId: number; good: boolean }>>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -208,10 +210,10 @@ export default function PronunciationPage() {
     if (!target || !("speechSynthesis" in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(target.split("/")[0].trim());
-    utterance.lang = "en-US";
+    utterance.lang = voice;
     utterance.rate = rate;
     window.speechSynthesis.speak(utterance);
-  }, [target]);
+  }, [target, voice]);
 
   const startListening = useCallback(() => {
     const browserWindow = window as typeof window & { SpeechRecognition?: RecognitionConstructor; webkitSpeechRecognition?: RecognitionConstructor };
@@ -324,6 +326,22 @@ export default function PronunciationPage() {
             <div className="text-xs uppercase tracking-widest text-muted">Đọc to từ sau</div>
             <div className="mt-3 font-serif text-3xl font-bold">{target}</div>
             {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <div className="mt-1 text-lg text-golddark">{word.ipa}</div>}
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
+              <span className="font-semibold text-muted">Giọng mẫu:</span>
+              {(["en-GB", "en-US"] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-pressed={voice === option}
+                  aria-label={`Nghe mẫu giọng ${option === "en-GB" ? "Anh-Anh" : "Anh-Mỹ"}`}
+                  className={`min-h-8 rounded-full border px-3 font-bold ${voice === option ? "border-gold bg-goldpale text-golddark" : "border-line bg-white text-muted"}`}
+                  onClick={() => setVoice(option)}
+                >
+                  {option === "en-GB" ? "UK" : "US"}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[0.7rem] text-muted">IPA hiển thị theo chuẩn Anh-Anh (UK) và giữ nguyên ký hiệu trọng âm ˈ ˌ. Điểm bên dưới là mức tương đồng do trình duyệt ước lượng, không phải chấm điểm phát âm chuyên sâu.</p>
             <div className="mt-2 text-sm text-muted">{word.wtype ? `(${word.wtype}) · ` : ""}{word.meaning}</div>
             {set.type === "irregular_verb" && <div className="mt-2 text-xs text-muted">Các dạng: {word.v1} — {word.v2} — {word.v3}</div>}
             <div className="mt-6 flex flex-wrap justify-center gap-2">

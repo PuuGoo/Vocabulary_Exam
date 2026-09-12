@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql, eq, or, isNull, inArray } from "drizzle-orm";
+import { sql, eq, or, isNull, inArray, and } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words, classMembers, classes } from "@/db/schema";
+import {
+  classMembers, classes, setReviewProgress, vocabCategories, vocabSets, wordCollocations, wordPatterns,
+  wordProgress, words,
+} from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
@@ -31,17 +34,45 @@ export async function GET() {
       className: classes.name,
       createdAt: vocabSets.createdAt,
       count: sql<number>`count(distinct ${words.id})::int`,
+      unknownCount: sql<number>`count(distinct ${wordProgress.wordId}) filter (where ${wordProgress.known} = false)::int`,
+      reviewStage: setReviewProgress.stage,
+      nextSetReviewAt: setReviewProgress.nextReviewAt,
+      initialCompletedAt: setReviewProgress.initialCompletedAt,
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
+    .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
     .leftJoin(classes, eq(classes.id, vocabSets.classId))
-    .groupBy(vocabSets.id, classes.name)
+    .leftJoin(setReviewProgress, and(eq(setReviewProgress.setId, vocabSets.id), eq(setReviewProgress.userId, session.userId)))
+    .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt)
     .orderBy(vocabSets.createdAt);
 
   const rows = classFilter ? await query.where(classFilter) : await query;
 
+  // Depth availability per set, in one grouped query: the study UI only offers
+  // collocation / pattern / cloze practice when the content really exists.
+  const depthRows = await db
+    .select({
+      setId: words.setId,
+      collocations: sql<number>`count(distinct ${wordCollocations.id})::int`,
+      patterns: sql<number>`count(distinct ${wordPatterns.id})::int`,
+      examples: sql<number>`count(distinct case when coalesce(${words.example}, '') <> '' and coalesce(${words.term}, '') <> '' then ${words.id} end)::int`,
+    })
+    .from(words)
+    .leftJoin(wordCollocations, eq(wordCollocations.wordId, words.id))
+    .leftJoin(wordPatterns, eq(wordPatterns.wordId, words.id))
+    .groupBy(words.setId);
+  const depthBySetId = new Map(depthRows.map((row) => [row.setId, row]));
+
   const categories = await db.select({ name: vocabCategories.name }).from(vocabCategories);
-  return NextResponse.json({ sets: rows, categories: categories.map((category) => category.name) });
+  const now = Date.now();
+  return NextResponse.json({ sets: rows.map((row) => ({
+    ...row,
+    collocationCount: depthBySetId.get(row.id)?.collocations ?? 0,
+    patternCount: depthBySetId.get(row.id)?.patterns ?? 0,
+    exampleCount: depthBySetId.get(row.id)?.examples ?? 0,
+    reviewStatus: !row.initialCompletedAt ? "not_started" : row.reviewStage === 4 ? "consolidated" : row.nextSetReviewAt && row.nextSetReviewAt.getTime() <= now ? "due" : "learning",
+  })), categories: categories.map((category) => category.name) });
 }
 
 const createSchema = z.object({

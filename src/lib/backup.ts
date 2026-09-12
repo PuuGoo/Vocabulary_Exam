@@ -1,12 +1,15 @@
 export const BACKUP_FORMAT = "lexora-backup";
-export const BACKUP_VERSION = 2;
-export const SUPPORTED_BACKUP_VERSIONS = [1, BACKUP_VERSION] as const;
+export const BACKUP_VERSION = 4;
+export const SUPPORTED_BACKUP_VERSIONS = [1, 2, 3, BACKUP_VERSION] as const;
 
 export const BACKUP_COLLECTIONS = [
   "users", "classes", "classMembers", "vocabCategories", "categoryDocuments", "vocabSets", "words", "attempts",
   "assignments", "assignmentExtensions", "assignmentSubmissions", "teachBackNotes",
-  "mistakes", "wordProgress", "wordBookmarks", "studySessions", "learningGoals",
+  "mistakes", "wordProgress", "setReviewProgress", "reviewSessions", "wordBookmarks", "studySessions", "learningGoals",
   "dailyActivities",
+  // Vocabulary depth (v4). Older backups simply do not contain these keys.
+  "wordCollocations", "wordPatterns", "wordPronunciations",
+  "topics", "wordTopics", "wordFamilies", "wordFamilyMembers", "wordSkillProgress",
   "appSettings",
 ] as const;
 
@@ -20,6 +23,13 @@ export type BackupDocument = {
   integrity?: { algorithm: "SHA-256"; checksum: string };
   data: BackupData;
 };
+
+/** Collections that may be absent from older backup versions. */
+const OPTIONAL_COLLECTIONS = new Set<string>([
+  "vocabCategories", "categoryDocuments", "appSettings", "setReviewProgress", "reviewSessions",
+  "wordCollocations", "wordPatterns", "wordPronunciations",
+  "topics", "wordTopics", "wordFamilies", "wordFamilyMembers", "wordSkillProgress",
+]);
 
 export function parseBackupDocument(value: unknown): BackupDocument {
   if (!value || typeof value !== "object") throw new Error("File JSON không hợp lệ.");
@@ -37,7 +47,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
   for (const collection of BACKUP_COLLECTIONS) {
     const rows = rawData[collection];
     // These collections were added after v1, so older backups remain restorable.
-    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings") && rows === undefined) {
+    if (OPTIONAL_COLLECTIONS.has(collection) && rows === undefined) {
       data[collection] = [];
       continue;
     }
@@ -47,7 +57,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
     data[collection] = rows as BackupRow[];
   }
   let integrity: BackupDocument["integrity"];
-  if (document.version === BACKUP_VERSION) {
+  if (Number(document.version) >= 2) {
     const rawIntegrity = document.integrity as Record<string, unknown> | undefined;
     if (rawIntegrity?.algorithm !== "SHA-256" || typeof rawIntegrity.checksum !== "string" || !/^[a-f0-9]{64}$/i.test(rawIntegrity.checksum)) {
       throw new Error("File sao lưu thiếu mã kiểm tra toàn vẹn.");

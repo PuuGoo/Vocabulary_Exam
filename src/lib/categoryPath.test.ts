@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   categoryBreadcrumbs,
   categoryPathsWithAncestors,
+  countDescendantDueSets,
   listChildCategoryFolders,
   parentCategoryPath,
   searchCategorizedItems,
@@ -63,4 +64,16 @@ test("ancestor generation uses folder basenames without flattening hierarchy", (
 test("global search finds a set in a nested folder from root", () => {
   assert.deepEqual(searchCategorizedItems("unit 01", sets).map((set) => set.name), ["Deep unit"]);
   assert.deepEqual(searchCategorizedItems("countries", sets).map((set) => set.name), ["Countries"]);
+});
+
+test("folder due aggregate includes descendants, arbitrary depth and uncategorized sets", () => {
+  const progressSets = [
+    { category: "Vocabulary / IELTS / Unit 01", reviewStatus: "due" },
+    { category: "Vocabulary / IELTS / Unit 02", reviewStatus: "learning" },
+    { category: "Vocabulary / General", reviewStatus: "due" },
+    { category: null, reviewStatus: "due" },
+  ];
+  assert.equal(countDescendantDueSets("Vocabulary", progressSets), 2);
+  assert.equal(countDescendantDueSets("Vocabulary / IELTS", progressSets), 1);
+  assert.equal(countDescendantDueSets(UNCATEGORIZED_PATH, progressSets), 1);
 });

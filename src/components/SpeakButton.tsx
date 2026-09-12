@@ -1,6 +1,10 @@
 "use client";
 
-export default function SpeakButton({ text, className = "" }: { text: string; className?: string }) {
+/**
+ * `lang` defaults to the existing en-US voice so current screens are unchanged.
+ * English IELTS screens pass "en-GB" because UK IPA is the canonical reference.
+ */
+export default function SpeakButton({ text, className = "", lang = "en-US" }: { text: string; className?: string; lang?: string }) {
   function speak(e: React.MouseEvent) {
     e.stopPropagation();
     if (!text) return;
@@ -8,7 +12,7 @@ export default function SpeakButton({ text, className = "" }: { text: string; cl
     window.speechSynthesis.cancel();
     const cleanText = text.split("/")[0].trim(); // if "burned/burnt", just read the first form
     const utter = new SpeechSynthesisUtterance(cleanText);
-    utter.lang = "en-US";
+    utter.lang = lang;
     utter.rate = 0.9;
     window.speechSynthesis.speak(utter);
   }

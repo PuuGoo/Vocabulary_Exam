@@ -2,7 +2,9 @@ import { db } from "@/db";
 import {
   appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments,
   classes, classMembers, dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users,
-  vocabCategories, vocabSets, wordBookmarks, wordProgress, words,
+  vocabCategories, vocabSets, wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
+  topics, wordCollocations, wordFamilies, wordFamilyMembers, wordPatterns, wordPronunciations,
+  wordSkillProgress, wordTopics,
 } from "@/db/schema";
 import {
   BACKUP_FORMAT, BACKUP_VERSION, backupFilename, sanitizeBackupUsers, serializeCategoryDocuments,
@@ -14,7 +16,9 @@ export async function createBackupExport(createdBy?: { id: number; username: str
   const [
     userRows, classRows, memberRows, categoryRows, documentRows, setRows, wordRows, attemptRows,
     assignmentRows, extensionRows, submissionRows, teachBackRows, mistakeRows, progressRows,
-    bookmarkRows, sessionRows, goalRows, activityRows, settingRows,
+    setReviewRows, reviewSessionRows, bookmarkRows, sessionRows, goalRows, activityRows, settingRows,
+    collocationRows, patternRows, pronunciationRows, topicRows, wordTopicRows, familyRows,
+    familyMemberRows, skillProgressRows,
   ] = await db.transaction(
     async (tx) => Promise.all([
       tx.select().from(users), tx.select().from(classes), tx.select().from(classMembers),
@@ -22,8 +26,12 @@ export async function createBackupExport(createdBy?: { id: number; username: str
       tx.select().from(words), tx.select().from(attempts), tx.select().from(assignments),
       tx.select().from(assignmentExtensions), tx.select().from(assignmentSubmissions),
       tx.select().from(teachBackNotes), tx.select().from(mistakes), tx.select().from(wordProgress),
+      tx.select().from(setReviewProgress), tx.select().from(reviewSessions),
       tx.select().from(wordBookmarks), tx.select().from(studySessions), tx.select().from(learningGoals),
       tx.select().from(dailyActivities), tx.select().from(appSettings),
+      tx.select().from(wordCollocations), tx.select().from(wordPatterns), tx.select().from(wordPronunciations),
+      tx.select().from(topics), tx.select().from(wordTopics), tx.select().from(wordFamilies),
+      tx.select().from(wordFamilyMembers), tx.select().from(wordSkillProgress),
     ]),
     { isolationLevel: "repeatable read", accessMode: "read only" },
   );
@@ -34,8 +42,12 @@ export async function createBackupExport(createdBy?: { id: number; username: str
     vocabSets: setRows, words: wordRows, attempts: attemptRows, assignments: assignmentRows,
     assignmentExtensions: extensionRows, assignmentSubmissions: serializeSubmissionFiles(submissionRows),
     teachBackNotes: teachBackRows, mistakes: mistakeRows, wordProgress: progressRows,
+    setReviewProgress: setReviewRows, reviewSessions: reviewSessionRows,
     wordBookmarks: bookmarkRows, studySessions: sessionRows, learningGoals: goalRows,
     dailyActivities: activityRows, appSettings: settingRows,
+    wordCollocations: collocationRows, wordPatterns: patternRows, wordPronunciations: pronunciationRows,
+    topics: topicRows, wordTopics: wordTopicRows, wordFamilies: familyRows,
+    wordFamilyMembers: familyMemberRows, wordSkillProgress: skillProgressRows,
   };
   const counts = Object.fromEntries(Object.entries(data).map(([name, rows]) => [name, rows.length]));
   const now = new Date();

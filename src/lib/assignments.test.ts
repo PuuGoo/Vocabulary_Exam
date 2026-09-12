@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { assignmentHref, assignmentProgress, type AssignmentForProgress, type AttemptForAssignment } from "./assignments";
+import { assignmentHref, assignmentProgress, modesForSetType, type AssignmentForProgress, type AssignmentMode, type AttemptForAssignment } from "./assignments";
 
 const createdAt = new Date("2026-07-20T00:00:00Z");
 const beforeDue = new Date("2026-07-21T12:00:00Z");
@@ -25,4 +25,24 @@ test("timed assignments only match timed fill attempts", () => {
   assert.equal(assignmentProgress(timed, [attempt({ mode: "fill", timed: false })], beforeDue).status, "pending");
   assert.equal(assignmentProgress(timed, [attempt({ mode: "fill", timed: true })], beforeDue).status, "completed");
   assert.equal(assignmentHref({ setId: 4, mode: "timed", timeLimitMinutes: 25 }), "/quiz/4?mode=fill&timed=1&minutes=25");
+});
+
+test("fill assignments open the first-attempt Test flow", () => {
+  assert.equal(assignmentHref({ setId: 42, mode: "fill", timeLimitMinutes: null }), "/quiz/42?mode=fill&session=test");
+});
+
+test("depth modes are assignable for IELTS sets and route to their drills", () => {
+  assert.equal(assignmentHref({ setId: 7, mode: "collocation", timeLimitMinutes: null }), "/collocation/7");
+  assert.equal(assignmentHref({ setId: 7, mode: "cloze", timeLimitMinutes: null }), "/cloze/7");
+  assert.equal(assignmentHref({ setId: 7, mode: "pattern", timeLimitMinutes: null }), "/pattern/7");
+  const ieltsModes = modesForSetType("ielts_vocab");
+  assert.ok(["collocation", "cloze", "pattern"].every((mode) => ieltsModes.includes(mode as AssignmentMode)));
+  // Irregular verbs have no collocation/pattern content, so the modes stay hidden.
+  assert.deepEqual(modesForSetType("irregular_verb"), ["fill", "match", "dictation", "pronunciation", "timed"]);
+});
+
+test("a completed collocation drill satisfies a collocation assignment", () => {
+  const collocationAssignment = { ...assignment, mode: "collocation" };
+  assert.equal(assignmentProgress(collocationAssignment, [attempt({ mode: "fill" })], beforeDue).status, "pending");
+  assert.equal(assignmentProgress(collocationAssignment, [attempt({ mode: "collocation" })], beforeDue).status, "completed");
 });

@@ -16,6 +16,20 @@ import { relations } from "drizzle-orm";
 export const roleEnum = ["admin", "student"] as const;
 export const setTypeEnum = ["irregular_verb", "ielts_vocab"] as const;
 export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "mixed", "daily", "writing"] as const;
+export const shareTargetTypeEnum = ["vocab_set", "question_collection"] as const;
+export const shareAccessModeEnum = ["restricted", "anyone_with_link"] as const;
+// Vocabulary depth vocabularies. Kept as const tuples so libs can derive unions
+// instead of scattering string literals across the codebase.
+export const contentKindEnum = ["word", "phrase", "collocation", "pattern", "chunk"] as const;
+export const contentStatusEnum = ["draft", "reviewed", "approved"] as const;
+export const registerEnum = ["formal", "neutral", "informal", "academic", "spoken"] as const;
+export const cefrLevelEnum = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+export const ieltsSkillEnum = ["listening", "reading", "speaking", "writing"] as const;
+export const usageContextEnum = ["academic", "general", "spoken", "written"] as const;
+export const mistakeReasonEnum = [
+  "wrong_meaning", "wrong_spelling", "wrong_collocation",
+  "wrong_pattern", "wrong_pronunciation", "wrong_context",
+] as const;
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable(
@@ -90,6 +104,37 @@ export const vocabSets = pgTable("vocab_sets", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+export const shareLinks = pgTable(
+  "share_links",
+  {
+    id: serial("id").primaryKey(),
+    tokenHash: varchar("token_hash", { length: 128 }).notNull(),
+    customSlug: varchar("custom_slug", { length: 64 }),
+    passwordEnabled: boolean("password_enabled").notNull().default(false),
+    passwordHash: text("password_hash"),
+    passwordVersion: integer("password_version").notNull().default(0),
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+    targetType: varchar("target_type", { length: 32 }).notNull(),
+    targetId: integer("target_id").notNull(),
+    createdByUserId: integer("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    accessMode: varchar("access_mode", { length: 32 }).notNull().default("restricted"),
+    allowedModes: text("allowed_modes").notNull().default("[]"),
+    contentSelection: text("content_selection").notNull().default('["vocab","quiz","essay","speaking","documents"]'),
+    includeNewContent: boolean("include_new_content").notNull().default(true),
+    contentSnapshot: text("content_snapshot").notNull().default("{}"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+      tokenIdx: uniqueIndex("share_links_token_hash_idx").on(table.tokenHash),
+      customSlugIdx: uniqueIndex("share_links_custom_slug_idx").on(table.customSlug),
+      targetIdx: index("share_links_target_idx").on(table.targetType, table.targetId),
+      creatorIdx: index("share_links_creator_idx").on(table.createdByUserId),
+  }),
+);
+
 export const categoryDocuments = pgTable(
   "category_documents",
   {
@@ -126,6 +171,18 @@ export const words = pgTable("words", {
   example: text("example"),
   wtype: varchar("wtype", { length: 32 }),
   ipa: varchar("ipa", { length: 128 }), // phonetic transcription, e.g. /wɜːrd/
+  // Language-neutral vocabulary depth metadata. Everything here is optional and
+  // admin-curated; never inferred automatically, never required for a word to work.
+  contentKind: varchar("content_kind", { length: 24 }).notNull().default("word"), // word | phrase | collocation | pattern | chunk
+  contentStatus: varchar("content_status", { length: 16 }).notNull().default("approved"), // draft | reviewed | approved
+  register: varchar("register", { length: 24 }), // formal | neutral | informal | academic | spoken
+  cefrLevel: varchar("cefr_level", { length: 8 }), // A1 | A2 | B1 | B2 | C1 | C2
+  frequency: varchar("frequency", { length: 24 }),
+  ieltsRelevant: boolean("ielts_relevant").notNull().default(false),
+  ieltsBandRelevance: varchar("ielts_band_relevance", { length: 16 }),
+  ieltsSkills: text("ielts_skills").notNull().default("[]"), // JSON array: listening | reading | speaking | writing
+  usageContext: text("usage_context").notNull().default("[]"), // JSON array: academic | general | spoken | written
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -244,6 +301,9 @@ export const mistakes = pgTable(
       .references(() => vocabSets.id, { onDelete: "cascade" }),
     timesWrong: integer("times_wrong").notNull().default(1),
     lastWrongAt: timestamp("last_wrong_at").notNull().defaultNow(),
+    // Why the last miss happened: wrong_meaning | wrong_spelling | wrong_collocation |
+    // wrong_pattern | wrong_pronunciation | wrong_context. Null keeps legacy rows valid.
+    lastReason: varchar("last_reason", { length: 32 }),
   },
   (table) => ({
     uniqPair: uniqueIndex("mistakes_user_word_idx").on(table.userId, table.wordId),
@@ -274,6 +334,54 @@ export const wordProgress = pgTable(
     uniqPair: uniqueIndex("word_progress_user_word_idx").on(table.userId, table.wordId),
     dueIdx: index("word_progress_user_due_idx").on(table.userId, table.nextReviewAt),
   })
+);
+
+// A row exists only after the user explicitly completes the set's first Learn
+// session. Existing catalogue sets therefore remain NOT_STARTED after rollout.
+export const setReviewProgress = pgTable(
+  "set_review_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    setId: integer("set_id").notNull().references(() => vocabSets.id, { onDelete: "cascade" }),
+    stage: integer("stage").notNull().default(1), // next checkpoint: 1..3; 4 = consolidated
+    initialCompletedAt: timestamp("initial_completed_at", { withTimezone: true }).notNull(),
+    review1CompletedAt: timestamp("review_1_completed_at", { withTimezone: true }),
+    review2CompletedAt: timestamp("review_2_completed_at", { withTimezone: true }),
+    review3CompletedAt: timestamp("review_3_completed_at", { withTimezone: true }),
+    lastReviewAt: timestamp("last_review_at", { withTimezone: true }),
+    nextReviewAt: timestamp("next_review_at", { withTimezone: true }),
+    lastAccuracy: integer("last_accuracy"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("set_review_progress_user_set_idx").on(table.userId, table.setId),
+    dueIdx: index("set_review_progress_user_due_idx").on(table.userId, table.nextReviewAt),
+  }),
+);
+
+export const reviewSessions = pgTable(
+  "review_sessions",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    idempotencyKey: varchar("idempotency_key", { length: 96 }).notNull(),
+    sessionType: varchar("session_type", { length: 24 }).notNull(),
+    setId: integer("set_id").references(() => vocabSets.id, { onDelete: "set null" }),
+    setReviewStage: integer("set_review_stage"),
+    wordCount: integer("word_count").notNull(),
+    correctCount: integer("correct_count").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+    // Which learning dimension a review batch targeted, so Smart Review history
+    // can explain itself. Null for legacy sessions.
+    mode: varchar("mode", { length: 24 }),
+    skill: varchar("skill", { length: 32 }),
+  },
+  (table) => ({
+    uniqRequest: uniqueIndex("review_sessions_user_key_idx").on(table.userId, table.idempotencyKey),
+    dailyIdx: index("review_sessions_user_completed_idx").on(table.userId, table.completedAt),
+  }),
 );
 export const quizProgress = pgTable(
   "quiz_progress",
@@ -363,6 +471,7 @@ export const learningGoals = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     dailyWords: integer("daily_words").notNull().default(10),
+    dailyReviewWords: integer("daily_review_words").notNull().default(40),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => ({
@@ -420,8 +529,14 @@ export const vocabSetsRelations = relations(vocabSets, ({ many, one }) => ({
   class: one(classes, { fields: [vocabSets.classId], references: [classes.id] }),
 }));
 
-export const wordsRelations = relations(words, ({ one }) => ({
+export const wordsRelations = relations(words, ({ one, many }) => ({
   set: one(vocabSets, { fields: [words.setId], references: [vocabSets.id] }),
+  collocations: many(wordCollocations),
+  patterns: many(wordPatterns),
+  topicLinks: many(wordTopics),
+  familyMemberships: many(wordFamilyMembers),
+  pronunciations: many(wordPronunciations),
+  skillProgress: many(wordSkillProgress),
 }));
 
 export const attemptsRelations = relations(attempts, ({ one }) => ({
@@ -434,6 +549,165 @@ export const mistakesRelations = relations(mistakes, ({ one }) => ({
   word: one(words, { fields: [mistakes.wordId], references: [words.id] }),
   set: one(vocabSets, { fields: [mistakes.setId], references: [vocabSets.id] }),
 }));
+
+// ---------------------------------------------------------------------------
+// Vocabulary depth: collocations, patterns, families, topics, pronunciation
+// variants and per-skill mastery. All rows hang off `words` so the existing
+// wordProgress / mistakes / Smart Review infrastructure keeps working unchanged.
+// ---------------------------------------------------------------------------
+
+export const wordCollocations = pgTable(
+  "word_collocations",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    phrase: text("phrase").notNull(),
+    meaning: text("meaning"),
+    example: text("example"),
+    register: varchar("register", { length: 24 }),
+    contentStatus: varchar("content_status", { length: 16 }).notNull().default("approved"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    wordIdx: index("word_collocations_word_idx").on(table.wordId),
+    uniqPhrase: uniqueIndex("word_collocations_word_phrase_idx").on(table.wordId, table.phrase),
+  }),
+);
+
+export const wordPatterns = pgTable(
+  "word_patterns",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    pattern: text("pattern").notNull(),
+    meaning: text("meaning"),
+    example: text("example"),
+    contentStatus: varchar("content_status", { length: 16 }).notNull().default("approved"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    wordIdx: index("word_patterns_word_idx").on(table.wordId),
+    uniqPattern: uniqueIndex("word_patterns_word_pattern_idx").on(table.wordId, table.pattern),
+  }),
+);
+
+export const topics = pgTable(
+  "topics",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({ nameIdx: uniqueIndex("topics_name_idx").on(table.name) }),
+);
+
+export const wordTopics = pgTable(
+  "word_topics",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("word_topics_word_topic_idx").on(table.wordId, table.topicId),
+    topicIdx: index("word_topics_topic_idx").on(table.topicId),
+  }),
+);
+
+export const wordFamilies = pgTable(
+  "word_families",
+  {
+    id: serial("id").primaryKey(),
+    label: varchar("label", { length: 128 }).notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({ labelIdx: uniqueIndex("word_families_label_idx").on(table.label) }),
+);
+
+export const wordFamilyMembers = pgTable(
+  "word_family_members",
+  {
+    id: serial("id").primaryKey(),
+    familyId: integer("family_id").notNull().references(() => wordFamilies.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    relation: varchar("relation", { length: 32 }),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("word_family_members_family_word_idx").on(table.familyId, table.wordId),
+    wordIdx: index("word_family_members_word_idx").on(table.wordId),
+  }),
+);
+
+// Structured pronunciation variants (per part of speech / sense) so UK IPA stays
+// canonical without stuffing slash-separated alternatives into `words.ipa`.
+export const wordPronunciations = pgTable(
+  "word_pronunciations",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    ipa: varchar("ipa", { length: 128 }).notNull(),
+    partOfSpeech: varchar("part_of_speech", { length: 32 }),
+    sense: text("sense"),
+    locale: varchar("locale", { length: 16 }).notNull().default("en-GB"),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({ wordIdx: index("word_pronunciations_word_idx").on(table.wordId) }),
+);
+
+// Behavioural evidence per learning dimension. `mastery` stays NULL until there
+// is enough evidence, so the UI can say "chưa đủ dữ liệu" instead of showing 0%.
+export const wordSkillProgress = pgTable(
+  "word_skill_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    skill: varchar("skill", { length: 32 }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    correctCount: integer("correct_count").notNull().default(0),
+    assistedCount: integer("assisted_count").notNull().default(0),
+    streak: integer("streak").notNull().default(0),
+    mastery: integer("mastery"),
+    lastMode: varchar("last_mode", { length: 32 }),
+    lastResult: boolean("last_result"),
+    lastPracticedAt: timestamp("last_practiced_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqTriple: uniqueIndex("word_skill_progress_user_word_skill_idx").on(table.userId, table.wordId, table.skill),
+    userSkillIdx: index("word_skill_progress_user_skill_idx").on(table.userId, table.skill),
+    userWeakIdx: index("word_skill_progress_user_mastery_idx").on(table.userId, table.mastery),
+  }),
+);
+
+export type WordCollocation = typeof wordCollocations.$inferSelect;
+export type WordPattern = typeof wordPatterns.$inferSelect;
+export type Topic = typeof topics.$inferSelect;
+export type WordTopic = typeof wordTopics.$inferSelect;
+export type WordFamily = typeof wordFamilies.$inferSelect;
+export type WordFamilyMember = typeof wordFamilyMembers.$inferSelect;
+export type WordPronunciation = typeof wordPronunciations.$inferSelect;
+export type WordSkillProgress = typeof wordSkillProgress.$inferSelect;
+export type ContentKind = (typeof contentKindEnum)[number];
+export type ContentStatus = (typeof contentStatusEnum)[number];
+export type WordRegister = (typeof registerEnum)[number];
+export type CefrLevel = (typeof cefrLevelEnum)[number];
+export type IeltsSkill = (typeof ieltsSkillEnum)[number];
+export type UsageContext = (typeof usageContextEnum)[number];
+export type MistakeReason = (typeof mistakeReasonEnum)[number];
 
 export const writingProgress = pgTable(
   "writing_progress",
@@ -494,6 +768,8 @@ export type TeachBackNote = typeof teachBackNotes.$inferSelect;
 export type ClassRow = typeof classes.$inferSelect;
 export type Mistake = typeof mistakes.$inferSelect;
 export type WordProgress = typeof wordProgress.$inferSelect;
+export type SetReviewProgress = typeof setReviewProgress.$inferSelect;
+export type ReviewSession = typeof reviewSessions.$inferSelect;
 export type QuizProgress = typeof quizProgress.$inferSelect;
 export type WritingProgress = typeof writingProgress.$inferSelect;
 export type WordBookmark = typeof wordBookmarks.$inferSelect;

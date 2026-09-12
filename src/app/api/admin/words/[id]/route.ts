@@ -3,6 +3,10 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { words } from "@/db/schema";
+import {
+  normalizeCefrLevel, normalizeContentKind, normalizeContentStatus, normalizeRegister,
+  parseIeltsSkills, parseUsageContext, stringifyListColumn,
+} from "@/lib/vocabularyMeta";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 
@@ -27,6 +31,18 @@ const patchSchema = z.object({
   example: z.string().trim().optional(),
   wtype: z.string().trim().optional(),
   ipa: z.string().trim().optional(),
+  // Optional, admin-curated depth metadata. Unknown values are dropped instead
+  // of guessed, and an empty string clears the field.
+  contentKind: z.string().trim().optional(),
+  contentStatus: z.string().trim().optional(),
+  register: z.string().trim().optional(),
+  cefrLevel: z.string().trim().optional(),
+  frequency: z.string().trim().max(24).optional(),
+  ieltsRelevant: z.boolean().optional(),
+  ieltsBandRelevance: z.string().trim().max(16).optional(),
+  ieltsSkills: z.union([z.array(z.string()), z.string()]).optional(),
+  usageContext: z.union([z.array(z.string()), z.string()]).optional(),
+  notes: z.string().trim().max(2000).optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -39,10 +55,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
   if (Object.keys(parsed.data).length === 0) return NextResponse.json({ error: "Không có thay đổi." }, { status: 400 });
 
-  const patch: Record<string, string> = {};
-  for (const [k, v] of Object.entries(parsed.data)) {
-    if (v !== undefined) patch[k] = normalizeText(v);
+  const { contentKind, contentStatus, register, cefrLevel, ieltsRelevant, ieltsSkills, usageContext, ...textFields } = parsed.data;
+  const patch: Record<string, string | boolean | null> = {};
+  for (const [key, value] of Object.entries(textFields)) {
+    if (typeof value !== "string") continue;
+    patch[key] = normalizeText(value);
   }
+  if (contentKind !== undefined) patch.contentKind = normalizeContentKind(contentKind) ?? "word";
+  if (contentStatus !== undefined) patch.contentStatus = normalizeContentStatus(contentStatus) ?? "approved";
+  if (register !== undefined) patch.register = normalizeRegister(register);
+  if (cefrLevel !== undefined) patch.cefrLevel = normalizeCefrLevel(cefrLevel);
+  if (ieltsRelevant !== undefined) patch.ieltsRelevant = ieltsRelevant;
+  if (ieltsSkills !== undefined) {
+    patch.ieltsSkills = stringifyListColumn(parseIeltsSkills(Array.isArray(ieltsSkills) ? JSON.stringify(ieltsSkills) : ieltsSkills));
+  }
+  if (usageContext !== undefined) {
+    patch.usageContext = stringifyListColumn(parseUsageContext(Array.isArray(usageContext) ? JSON.stringify(usageContext) : usageContext));
+  }
+  if (!Object.keys(patch).length) return NextResponse.json({ error: "Không có thay đổi." }, { status: 400 });
 
   const [updated] = await db.update(words).set(patch).where(eq(words.id, Number(params.id))).returning();
   return NextResponse.json({ word: updated });

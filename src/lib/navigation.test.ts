@@ -4,7 +4,7 @@ import test from "node:test";
 import { ADMIN_NAV_SECTIONS, ADMIN_QUICK_LINKS, STUDENT_PRIMARY_NAV, STUDENT_QUICK_LINKS } from "./navigation";
 
 test("student primary navigation is limited to five core destinations", () => {
-  assert.deepEqual(STUDENT_PRIMARY_NAV.map((item) => item.href), ["/dashboard", "/study", "/assignments", "/vocabulary-vault", "/progress"]);
+  assert.deepEqual(STUDENT_PRIMARY_NAV.map((item) => item.href), ["/dashboard", "/study", "/assignments", "/my-words", "/progress"]);
   assert.equal(STUDENT_PRIMARY_NAV.some((item) => item.href.startsWith("/admin")), false);
 });
 test("admin navigation contains no student primary destinations", () => {
@@ -12,7 +12,7 @@ test("admin navigation contains no student primary destinations", () => {
   assert.equal(paths.every((path) => path === "/admin" || path.startsWith("/admin/")), true);
 });
 test("secondary learning features remain discoverable", () => {
-  for (const path of ["/smart-review", "/daily-challenge", "/mixed-practice", "/feynman", "/dictionary", "/notebook", "/history", "/leaderboard", "/print-sets", "/review"]) assert.equal(STUDENT_QUICK_LINKS.some((item) => item.href === path), true, path);
+  for (const path of ["/smart-review", "/review-center", "/daily-challenge", "/mixed-practice", "/feynman", "/dictionary", "/notebook", "/history", "/leaderboard", "/print-sets", "/review"]) assert.equal(STUDENT_QUICK_LINKS.some((item) => item.href === path), true, path);
   assert.equal(ADMIN_QUICK_LINKS.some((item) => item.href === "/admin/backup"), true);
 });
 test("dashboards contain no former demo data", () => {

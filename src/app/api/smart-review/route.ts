@@ -3,8 +3,14 @@ import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { classMembers, mistakes, vocabSets, wordProgress, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { availableModesForWord, availableSkillsForWord } from "@/lib/practiceAvailability";
+import { recommendReviewMode, type ReviewReasonCode } from "@/lib/reviewModePolicy";
+import { loadCollocationsByWordId, loadPatternsByWordId, loadSkillRowsByWord } from "@/lib/wordContent";
+import { WORD_SKILL_LIST, rankSkillsForPractice, summarizeSkillMastery } from "@/lib/wordSkills";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// Skill evidence is loaded for a bounded shortlist only, never for the whole catalogue.
+const SKILL_SHORTLIST_MAX = 200;
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -63,7 +69,7 @@ export async function GET(req: NextRequest) {
   const ranked = candidates.map((word) => {
     const ageDays = word.reviewedAt ? Math.max(0, Math.floor((now - word.reviewedAt.getTime()) / DAY_MS)) : null;
     const due = Boolean(word.nextReviewAt && word.nextReviewAt.getTime() <= now);
-    let reason: "difficult" | "forgotten" | "stale" | "new";
+    let reason: "difficult" | "forgotten" | "stale" | "new" | "weak_skill" | "unpracticed";
     let priority: number;
     if ((word.timesWrong || 0) > 0) {
       reason = "difficult";
@@ -82,11 +88,61 @@ export async function GET(req: NextRequest) {
   }).filter((word) => word.due || word.nextReviewAt === null);
 
   ranked.sort((a, b) => b.priority - a.priority || a.random - b.random);
-  const selected = ranked.slice(0, count).map(({ priority: _priority, random: _random, ...word }) => word);
+  const shortlist = ranked.slice(0, Math.min(SKILL_SHORTLIST_MAX, count * 4));
+  const enriched = await attachSkillGuidance(session.userId, shortlist);
+  enriched.sort((a, b) => b.priority - a.priority || a.random - b.random);
+  const selected = enriched.slice(0, count).map(({ priority: _priority, random: _random, ...word }) => word);
   const summary = selected.reduce(
-    (result, word) => ({ ...result, [word.reason]: result[word.reason] + 1 }),
-    { total: selected.length, due: selected.filter((word) => word.due).length, difficult: 0, forgotten: 0, stale: 0, new: 0 }
+    (result, word) => ({ ...result, [word.reason]: (result[word.reason] || 0) + 1 }),
+    { total: selected.length, due: selected.filter((word) => word.due).length, difficult: 0, forgotten: 0, stale: 0, new: 0, weak_skill: 0, unpracticed: 0 } as Record<string, number>
   );
 
   return NextResponse.json({ words: selected, summary });
+}
+
+type RankedWord = {
+  id: number; setId: number; setType: string; term: string | null; example: string | null;
+  wtype: string | null; ipa: string | null; ageDays: number | null; due: boolean;
+  reason: "difficult" | "forgotten" | "stale" | "new" | "weak_skill" | "unpracticed";
+  priority: number; random: number;
+};
+
+/**
+ * Adds "which dimension should I practise" to the existing ranking. Scheduling
+ * itself is untouched: a weak skill only nudges priority below due/mistake
+ * signals, exactly like the daily review planner.
+ */
+async function attachSkillGuidance(userId: number, shortlist: RankedWord[]) {
+  if (!shortlist.length) return shortlist;
+  const ids = shortlist.map((word) => word.id);
+  const [collocations, patterns, skillRows] = await Promise.all([
+    loadCollocationsByWordId(ids),
+    loadPatternsByWordId(ids),
+    loadSkillRowsByWord(userId, ids, WORD_SKILL_LIST),
+  ]);
+
+  return shortlist.map((word) => {
+    const content = { collocations: collocations.get(word.id) || [], patterns: patterns.get(word.id) || [] };
+    const available = availableSkillsForWord(word, content);
+    const mastery = summarizeSkillMastery(skillRows.get(word.id) || [], available);
+    const priorities = rankSkillsForPractice(mastery, available);
+    const modes = availableModesForWord(word, content);
+    const recommendation = recommendReviewMode({
+      reasons: [word.reason] as ReviewReasonCode[],
+      skillPriorities: priorities,
+      availableModes: modes,
+      fallbackMode: modes.includes("fill") ? "fill" : undefined,
+    });
+    const boosted = recommendation.reason === "weak_skill" ? 60 : recommendation.reason === "unpracticed" ? 20 : 0;
+    const reason = boosted && word.reason !== "difficult" && word.reason !== "forgotten"
+      ? recommendation.reason
+      : word.reason;
+    return {
+      ...word,
+      reason: reason as RankedWord["reason"],
+      priority: word.priority + boosted,
+      recommendation,
+      mastery: { overall: mastery.overall, bySkill: mastery.bySkill },
+    };
+  });
 }

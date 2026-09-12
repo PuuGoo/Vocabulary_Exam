@@ -3,7 +3,9 @@ import { db } from "@/db";
 import {
   appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
-  wordBookmarks, wordProgress, words,
+  wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions,
+  wordCollocations, wordFamilies, wordFamilyMembers, wordPatterns, wordPronunciations, wordSkillProgress,
+  wordTopics, topics,
 } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
@@ -231,7 +233,7 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
     for (const row of backup.data.mistakes) {
       const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const setId = setMap.get(number(row, "setId", -1)); const key = pair(userId ?? -1, wordId ?? -1);
       if (userId == null || wordId == null || setId == null || mistakeKeys.has(key)) { report.skipped.mistakes++; continue; }
-      await tx.insert(mistakes).values({ userId, wordId, setId, timesWrong: number(row, "timesWrong", 1), lastWrongAt: date(row, "lastWrongAt") }); mistakeKeys.add(key); report.added.mistakes++;
+      await tx.insert(mistakes).values({ userId, wordId, setId, timesWrong: number(row, "timesWrong", 1), lastWrongAt: date(row, "lastWrongAt"), lastReason: nullableText(row, "lastReason") }); mistakeKeys.add(key); report.added.mistakes++;
     }
 
     const progressRows = await tx.select().from(wordProgress); const progressKeys = new Set(progressRows.map((item) => pair(item.userId, item.wordId)));
@@ -239,6 +241,101 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const key = pair(userId ?? -1, wordId ?? -1);
       if (userId == null || wordId == null || progressKeys.has(key)) { report.skipped.wordProgress++; continue; }
       await tx.insert(wordProgress).values({ userId, wordId, known: bool(row, "known"), intervalDays: number(row, "intervalDays"), reviewStreak: number(row, "reviewStreak"), correctCount: number(row, "correctCount"), wrongCount: number(row, "wrongCount"), lastMode: nullableText(row, "lastMode"), lastReviewedAt: nullableDate(row, "lastReviewedAt"), nextReviewAt: nullableDate(row, "nextReviewAt"), updatedAt: date(row, "updatedAt") }); progressKeys.add(key); report.added.wordProgress++;
+    }
+
+    // --- Vocabulary depth (added in backup v4; absent in older files) ---------
+    const collocationRows = await tx.select({ wordId: wordCollocations.wordId, phrase: wordCollocations.phrase }).from(wordCollocations);
+    const collocationKeys = new Set(collocationRows.map((item) => `${item.wordId}\u0000${item.phrase.trim().toLocaleLowerCase("vi")}`));
+    for (const row of backup.data.wordCollocations) {
+      const wordId = wordMap.get(number(row, "wordId", -1)); const phrase = text(row, "phrase").trim(); const key = `${wordId}\u0000${phrase.toLocaleLowerCase("vi")}`;
+      if (wordId == null || !phrase || collocationKeys.has(key)) { report.skipped.wordCollocations++; continue; }
+      await tx.insert(wordCollocations).values({ wordId, phrase, meaning: nullableText(row, "meaning"), example: nullableText(row, "example"), register: nullableText(row, "register"), contentStatus: text(row, "contentStatus", "approved"), position: number(row, "position"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      collocationKeys.add(key); report.added.wordCollocations++;
+    }
+
+    const patternRows = await tx.select({ wordId: wordPatterns.wordId, pattern: wordPatterns.pattern }).from(wordPatterns);
+    const patternKeys = new Set(patternRows.map((item) => `${item.wordId}\u0000${item.pattern.trim().toLocaleLowerCase("vi")}`));
+    for (const row of backup.data.wordPatterns) {
+      const wordId = wordMap.get(number(row, "wordId", -1)); const pattern = text(row, "pattern").trim(); const key = `${wordId}\u0000${pattern.toLocaleLowerCase("vi")}`;
+      if (wordId == null || !pattern || patternKeys.has(key)) { report.skipped.wordPatterns++; continue; }
+      await tx.insert(wordPatterns).values({ wordId, pattern, meaning: nullableText(row, "meaning"), example: nullableText(row, "example"), contentStatus: text(row, "contentStatus", "approved"), position: number(row, "position"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      patternKeys.add(key); report.added.wordPatterns++;
+    }
+
+    const pronunciationRows = await tx.select({ wordId: wordPronunciations.wordId, ipa: wordPronunciations.ipa, partOfSpeech: wordPronunciations.partOfSpeech }).from(wordPronunciations);
+    const pronunciationKeys = new Set(pronunciationRows.map((item) => `${item.wordId}\u0000${item.ipa}\u0000${item.partOfSpeech ?? ""}`));
+    for (const row of backup.data.wordPronunciations) {
+      const wordId = wordMap.get(number(row, "wordId", -1)); const ipa = text(row, "ipa").trim(); const key = `${wordId}\u0000${ipa}\u0000${text(row, "partOfSpeech")}`;
+      if (wordId == null || !ipa || pronunciationKeys.has(key)) { report.skipped.wordPronunciations++; continue; }
+      await tx.insert(wordPronunciations).values({ wordId, ipa, partOfSpeech: nullableText(row, "partOfSpeech"), sense: nullableText(row, "sense"), locale: text(row, "locale", "en-GB"), isPrimary: bool(row, "isPrimary"), position: number(row, "position"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      pronunciationKeys.add(key); report.added.wordPronunciations++;
+    }
+
+    const topicMap = new Map<number, number>();
+    const existingTopics = await tx.select().from(topics);
+    const topicsByName = new Map(existingTopics.map((item) => [item.name.trim().toLocaleLowerCase("vi"), item.id]));
+    for (const row of backup.data.topics) {
+      const id = oldId(row); const name = text(row, "name").trim();
+      if (id == null || !name) { report.skipped.topics++; continue; }
+      const key = name.toLocaleLowerCase("vi"); let mapped = topicsByName.get(key);
+      if (mapped == null) {
+        const [created] = await tx.insert(topics).values({ name, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt") }).returning({ id: topics.id });
+        mapped = created.id; topicsByName.set(key, mapped); report.added.topics++;
+      } else report.skipped.topics++;
+      topicMap.set(id, mapped);
+    }
+
+    const wordTopicRows = await tx.select().from(wordTopics); const wordTopicKeys = new Set(wordTopicRows.map((item) => pair(item.wordId, item.topicId)));
+    for (const row of backup.data.wordTopics) {
+      const wordId = wordMap.get(number(row, "wordId", -1)); const topicId = topicMap.get(number(row, "topicId", -1)); const key = pair(wordId ?? -1, topicId ?? -1);
+      if (wordId == null || topicId == null || wordTopicKeys.has(key)) { report.skipped.wordTopics++; continue; }
+      await tx.insert(wordTopics).values({ wordId, topicId, createdAt: date(row, "createdAt") }); wordTopicKeys.add(key); report.added.wordTopics++;
+    }
+
+    const familyMap = new Map<number, number>();
+    const existingFamilies = await tx.select().from(wordFamilies);
+    const familiesByLabel = new Map(existingFamilies.map((item) => [item.label.trim().toLocaleLowerCase("vi"), item.id]));
+    for (const row of backup.data.wordFamilies) {
+      const id = oldId(row); const label = text(row, "label").trim();
+      if (id == null || !label) { report.skipped.wordFamilies++; continue; }
+      const key = label.toLocaleLowerCase("vi"); let mapped = familiesByLabel.get(key);
+      if (mapped == null) {
+        const [created] = await tx.insert(wordFamilies).values({ label, createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null, createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") }).returning({ id: wordFamilies.id });
+        mapped = created.id; familiesByLabel.set(key, mapped); report.added.wordFamilies++;
+      } else report.skipped.wordFamilies++;
+      familyMap.set(id, mapped);
+    }
+
+    const familyMemberRows = await tx.select().from(wordFamilyMembers); const familyMemberKeys = new Set(familyMemberRows.map((item) => pair(item.familyId, item.wordId)));
+    for (const row of backup.data.wordFamilyMembers) {
+      const familyId = familyMap.get(number(row, "familyId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const key = pair(familyId ?? -1, wordId ?? -1);
+      if (familyId == null || wordId == null || familyMemberKeys.has(key)) { report.skipped.wordFamilyMembers++; continue; }
+      await tx.insert(wordFamilyMembers).values({ familyId, wordId, relation: nullableText(row, "relation"), position: number(row, "position"), createdAt: date(row, "createdAt") }); familyMemberKeys.add(key); report.added.wordFamilyMembers++;
+    }
+
+    const skillRows = await tx.select().from(wordSkillProgress); const skillKeys = new Set(skillRows.map((item) => `${item.userId}:${item.wordId}:${item.skill}`));
+    for (const row of backup.data.wordSkillProgress) {
+      const userId = userMap.get(number(row, "userId", -1)); const wordId = wordMap.get(number(row, "wordId", -1)); const skill = text(row, "skill").trim();
+      const key = `${userId}:${wordId}:${skill}`;
+      if (userId == null || wordId == null || !skill || skillKeys.has(key)) { report.skipped.wordSkillProgress++; continue; }
+      await tx.insert(wordSkillProgress).values({ userId, wordId, skill, attempts: number(row, "attempts"), correctCount: number(row, "correctCount"), assistedCount: number(row, "assistedCount"), streak: number(row, "streak"), mastery: nullableNumber(row, "mastery"), lastMode: nullableText(row, "lastMode"), lastResult: typeof row.lastResult === "boolean" ? row.lastResult : null, lastPracticedAt: nullableDate(row, "lastPracticedAt"), updatedAt: date(row, "updatedAt") });
+      skillKeys.add(key); report.added.wordSkillProgress++;
+    }
+
+    const setReviewRows = await tx.select().from(setReviewProgress); const setReviewKeys = new Set(setReviewRows.map((item) => pair(item.userId, item.setId)));
+    for (const row of backup.data.setReviewProgress) {
+      const userId = userMap.get(number(row, "userId", -1)); const setId = setMap.get(number(row, "setId", -1)); const key = pair(userId ?? -1, setId ?? -1);
+      if (userId == null || setId == null || setReviewKeys.has(key)) { report.skipped.setReviewProgress++; continue; }
+      await tx.insert(setReviewProgress).values({ userId, setId, stage: number(row, "stage", 1), initialCompletedAt: date(row, "initialCompletedAt"), review1CompletedAt: nullableDate(row, "review1CompletedAt"), review2CompletedAt: nullableDate(row, "review2CompletedAt"), review3CompletedAt: nullableDate(row, "review3CompletedAt"), lastReviewAt: nullableDate(row, "lastReviewAt"), nextReviewAt: nullableDate(row, "nextReviewAt"), lastAccuracy: nullableNumber(row, "lastAccuracy"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      setReviewKeys.add(key); report.added.setReviewProgress++;
+    }
+
+    const reviewSessionRows = await tx.select().from(reviewSessions); const reviewSessionKeys = new Set(reviewSessionRows.map((item) => `${item.userId}:${item.idempotencyKey}`));
+    for (const row of backup.data.reviewSessions) {
+      const userId = userMap.get(number(row, "userId", -1)); const oldSetId = nullableNumber(row, "setId"); const setId = oldSetId == null ? null : setMap.get(oldSetId) ?? null; const idempotencyKey = text(row, "idempotencyKey"); const key = `${userId}:${idempotencyKey}`;
+      if (userId == null || !idempotencyKey || reviewSessionKeys.has(key)) { report.skipped.reviewSessions++; continue; }
+      await tx.insert(reviewSessions).values({ userId, idempotencyKey, sessionType: text(row, "sessionType", "word_srs"), setId, setReviewStage: nullableNumber(row, "setReviewStage"), wordCount: number(row, "wordCount"), correctCount: number(row, "correctCount"), completedAt: date(row, "completedAt") });
+      reviewSessionKeys.add(key); report.added.reviewSessions++;
     }
 
     const bookmarkRows = await tx.select().from(wordBookmarks); const bookmarkKeys = new Set(bookmarkRows.map((item) => pair(item.userId, item.wordId)));
@@ -258,7 +355,7 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
     const goalRows = await tx.select().from(learningGoals); const goalUsers = new Set(goalRows.map((item) => item.userId));
     for (const row of backup.data.learningGoals) {
       const userId = userMap.get(number(row, "userId", -1)); if (userId == null || goalUsers.has(userId)) { report.skipped.learningGoals++; continue; }
-      await tx.insert(learningGoals).values({ userId, dailyWords: number(row, "dailyWords", 10), updatedAt: date(row, "updatedAt") }); goalUsers.add(userId); report.added.learningGoals++;
+      await tx.insert(learningGoals).values({ userId, dailyWords: number(row, "dailyWords", 10), dailyReviewWords: number(row, "dailyReviewWords", 40), updatedAt: date(row, "updatedAt") }); goalUsers.add(userId); report.added.learningGoals++;
     }
 
     const activityRows = await tx.select().from(dailyActivities); const activityKeys = new Set(activityRows.map((item) => `${item.userId}:${item.activityDate}`));

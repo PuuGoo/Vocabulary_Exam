@@ -7,8 +7,11 @@ import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
 import { useSwipeNavigation } from "@/hooks/useSwipeNavigation";
 import VerbIpa from "@/components/VerbIpa";
+import SkillMasteryPanel, { type SkillMasteryData } from "@/components/SkillMasteryPanel";
+import { reviewModeHref, type ReviewReasonCode } from "@/lib/reviewModePolicy";
+import type { WordSkill } from "@/lib/wordSkills";
 
-type Reason = "difficult" | "forgotten" | "stale" | "new";
+type Reason = "difficult" | "forgotten" | "stale" | "new" | "weak_skill" | "unpracticed";
 type ReviewWord = {
   id: number;
   setId: number;
@@ -33,10 +36,13 @@ type ReviewWord = {
   nextReviewAt: string | null;
   timesWrong: number | null;
   reason: Reason;
+  /** Which dimension Smart Review suggests, and why this word is due today. */
+  recommendation?: { mode: string | null; skill: WordSkill | null; reason: ReviewReasonCode; label: string };
+  mastery?: SkillMasteryData;
 };
-type Summary = { total: number; due: number; difficult: number; forgotten: number; stale: number; new: number };
+type Summary = { total: number; due: number; difficult: number; forgotten: number; stale: number; new: number; weak_skill?: number; unpracticed?: number };
 
-const REASONS: Record<Reason, { label: string; detail: (word: ReviewWord) => string; className: string }> = {
+const REASONS: Record<Exclude<Reason, "weak_skill" | "unpracticed">, { label: string; detail: (word: ReviewWord) => string; className: string }> = {
   difficult: {
     label: "Hay trả lời sai",
     detail: (word) => `Bạn đã sai từ này ${word.timesWrong || 1} lần`,
@@ -58,6 +64,21 @@ const REASONS: Record<Reason, { label: string; detail: (word: ReviewWord) => str
     className: "border-line bg-[#f4f1e8] text-inksoft",
   },
 };
+
+// Depth reasons are additive: the existing four keep their wording untouched.
+const DEPTH_REASONS: Record<"weak_skill" | "unpracticed", { label: string; detail: (word: ReviewWord) => string; className: string }> = {
+  weak_skill: {
+    label: "Kỹ năng còn yếu",
+    detail: (word) => word.recommendation?.label || "Một kỹ năng của từ này đang yếu",
+    className: "border-[#CFC7FF] bg-[#F7F5FF] text-[#6550DB]",
+  },
+  unpracticed: {
+    label: "Chưa luyện kỹ năng này",
+    detail: (word) => word.recommendation?.label || "Có một chiều luyện tập bạn chưa thử",
+    className: "border-line bg-[#F7F7FB] text-muted",
+  },
+};
+const REASON_META: Record<Reason, { label: string; detail: (word: ReviewWord) => string; className: string }> = { ...REASONS, ...DEPTH_REASONS };
 
 export default function SmartReviewPage() {
   const [count, setCount] = useState("10");
@@ -92,6 +113,7 @@ export default function SmartReviewPage() {
   }, [count, loadAttempt]);
 
   const word = words?.[index];
+  const recommendHref = word?.recommendation ? reviewModeHref(word.recommendation.mode, word.setId) : null;
   const finished = !!words && words.length > 0 && index >= words.length;
 
   const mark = useCallback(async (learned: boolean) => {
@@ -184,6 +206,8 @@ export default function SmartReviewPage() {
               {summary.difficult > 0 && <span className="rounded-full bg-badbg px-3 py-1 text-bad">{summary.difficult} từ hay sai</span>}
               {summary.forgotten > 0 && <span className="rounded-full bg-goldpale px-3 py-1 text-golddark">{summary.forgotten} từ chưa nhớ</span>}
               {summary.stale > 0 && <span className="rounded-full bg-[#e4ecf3] px-3 py-1 text-[#2b4a6b]">{summary.stale} từ đến hạn</span>}
+              {(summary.weak_skill || 0) > 0 && <span className="rounded-full bg-[#F7F5FF] px-3 py-1 text-[#6550DB]">{summary.weak_skill} từ yếu kỹ năng</span>}
+              {(summary.unpracticed || 0) > 0 && <span className="rounded-full bg-[#F7F7FB] px-3 py-1 text-muted">{summary.unpracticed} từ chưa luyện đủ chiều</span>}
               {summary.new > 0 && <span className="rounded-full bg-line/50 px-3 py-1 text-muted">{summary.new} từ mới</span>}
             </div>
           )}
@@ -191,9 +215,15 @@ export default function SmartReviewPage() {
             <span>Thẻ {index + 1}/{words.length}</span><span>{word.setName}</span>
           </div>
           <div className="mb-4 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(index / words.length) * 100}%` }} /></div>
-          <div className={`mb-3 inline-flex rounded-full border px-3 py-1 text-xs font-medium ${REASONS[word.reason].className}`} title={REASONS[word.reason].detail(word)}>
-            {REASONS[word.reason].label} · {REASONS[word.reason].detail(word)}
+          <div className={`mb-3 inline-flex rounded-full border px-3 py-1 text-xs font-medium ${REASON_META[word.reason].className}`} title={REASON_META[word.reason].detail(word)}>
+            {REASON_META[word.reason].label} · {REASON_META[word.reason].detail(word)}
           </div>
+          {word.recommendation ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center rounded-full border border-[#DCD8F3] bg-[#F7F5FF] px-3 py-1 font-bold text-[#6550DB]">Hôm nay ôn vì: {word.recommendation.label}</span>
+              {recommendHref ? <Link href={recommendHref} className="inline-flex min-h-9 items-center rounded-full bg-[#6550DB] px-3 font-bold text-white">Luyện ngay →</Link> : null}
+            </div>
+          ) : null}
           {word.reviewStreak ? <div className="mb-3 text-xs text-muted">Chuỗi nhớ {word.reviewStreak} lần · nếu nhớ, lịch ôn tiếp tục giãn dần</div> : null}
           <button
             type="button"
@@ -210,6 +240,7 @@ export default function SmartReviewPage() {
               <><span className="mb-3 text-[0.7rem] uppercase tracking-widest text-muted">{word.setType === "irregular_verb" ? "V1 — V2 — V3" : "Từ tiếng Anh"}</span><span className="flex flex-wrap items-center justify-center gap-3 font-serif text-2xl font-bold">{word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term}<span onClick={(event) => event.stopPropagation()}><SpeakButton text={word.setType === "irregular_verb" ? word.v1 || "" : word.term || ""} /></span></span>{word.setType === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : word.ipa && <span className="mt-1 text-lg text-golddark">{word.ipa}</span>}{word.wtype && <span className="mt-2 text-sm text-muted">({word.wtype})</span>}{word.example && <span className="mt-3 max-w-xl text-sm italic text-muted">VD: {word.example}</span>}</>
             )}
           </button>
+          {word.mastery ? <SkillMasteryPanel summary={word.mastery} className="mt-4 rounded-xl border border-line bg-white p-3" /> : null}
           <div className="mt-2 text-center text-xs font-semibold text-muted sm:hidden">Vuốt trái: chưa nhớ · Vuốt phải: đã nhớ</div>
           <div className="mt-5 flex flex-wrap justify-center gap-3">
             <button className={`${cx.btn} ${cx.btnGhost} border-bad/50 text-bad`} disabled={saving} onClick={() => void mark(false)}>❌ Chưa nhớ <kbd className="ml-1 rounded border border-current/30 px-1.5 py-0.5 text-[0.68rem]">1</kbd></button>

@@ -1,38 +1,67 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Modal from "@/components/Modal";
+import { normalizeSearch } from "@/lib/search";
 
 type Tab = { href: string; label: string };
-type SetSummary = { id: number; name: string; type: string };
-type Command = { href: string; label: string; description: string; kind: "Trang" | "Bộ từ" };
+export type SetSummary = { id: number; name: string; type: string };
+export type Command = { href: string; label: string; description: string; kind: "Trang" | "Bộ từ" | "Quản trị" };
 
-function searchable(value: string) {
-  return value
-    .toLocaleLowerCase("vi")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .replace(/đ/g, "d");
+export function runStudentSetCommands(sets: SetSummary[]): Command[] {
+  return sets.flatMap((set) => [
+    { href: `/learn/${set.id}`, label: `Học · ${set.name}`, description: "Flashcard", kind: "Bộ từ" as const },
+    { href: `/quiz/${set.id}?mode=fill`, label: `Điền từ · ${set.name}`, description: set.type === "irregular_verb" ? "Điền V1/V2/V3" : "Điền từ tiếng Anh", kind: "Bộ từ" as const },
+    { href: `/quiz/${set.id}?mode=mc`, label: `Trắc nghiệm · ${set.name}`, description: "Câu hỏi trắc nghiệm", kind: "Bộ từ" as const },
+    { href: `/match/${set.id}`, label: `Ghép cặp · ${set.name}`, description: "Ghép từ với nghĩa", kind: "Bộ từ" as const },
+    { href: `/dictation/${set.id}`, label: `Nghe & viết · ${set.name}`, description: "Luyện chính tả", kind: "Bộ từ" as const },
+  ]);
 }
 
-export default function QuickSwitcher({ open, onClose, tabs }: { open: boolean; onClose: () => void; tabs: Tab[] }) {
+export function runAdminSetCommands(sets: SetSummary[]): Command[] {
+  return sets.map((set) => ({
+    href: `/admin/sets?openSet=${set.id}`,
+    label: `Quản lý · ${set.name}`,
+    description: "Mở bộ từ trong khu quản trị",
+    kind: "Quản trị",
+  }));
+}
+
+export default function QuickSwitcher({
+  open,
+  onClose,
+  tabs,
+  mode = "student",
+}: {
+  open: boolean;
+  onClose: () => void;
+  tabs: Tab[];
+  mode?: "student" | "admin";
+}) {
   const [query, setQuery] = useState("");
   const [sets, setSets] = useState<SetSummary[]>([]);
   const [loadingSets, setLoadingSets] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const isAdmin = mode === "admin";
 
   useEffect(() => {
+    if (!open) return;
+    if (isAdmin && query.trim().length < 2) {
+      // Admin only loads sets after the user starts searching; no learning actions are created here.
+      setLoadingSets(false);
+      return;
+    }
     if (!open || sets.length > 0) return;
     let cancelled = false;
     setLoadingSets(true);
     fetch("/api/sets")
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("load failed")))
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("load failed"))))
       .then((data) => { if (!cancelled) setSets(data.sets || []); })
       .catch(() => undefined)
       .finally(() => { if (!cancelled) setLoadingSets(false); });
     return () => { cancelled = true; };
-  }, [open, sets.length]);
+  }, [isAdmin, open, query, sets.length]);
 
   useEffect(() => {
     if (!open) setQuery("");
@@ -44,20 +73,17 @@ export default function QuickSwitcher({ open, onClose, tabs }: { open: boolean; 
     const pageCommands: Command[] = uniqueTabs.map((item) => ({
       href: item.href,
       label: item.label,
-      description: "Mở trang",
+      description: isAdmin ? "Mở trang quản trị" : "Mở trang",
       kind: "Trang",
     }));
-    const setCommands: Command[] = sets.flatMap((set) => [
-      { href: `/learn/${set.id}`, label: `Học bài · ${set.name}`, description: "Flashcard", kind: "Bộ từ" as const },
-      { href: `/quiz/${set.id}?mode=fill`, label: `Điền từ · ${set.name}`, description: set.type === "irregular_verb" ? "Điền V1/V2/V3" : "Điền từ tiếng Anh", kind: "Bộ từ" as const },
-      { href: `/match/${set.id}`, label: `Ghép cặp · ${set.name}`, description: "Ghép từ với nghĩa", kind: "Bộ từ" as const },
-      { href: `/dictation/${set.id}`, label: `Nghe & viết · ${set.name}`, description: "Luyện chính tả", kind: "Bộ từ" as const },
-    ]);
-    const normalizedQuery = searchable(query.trim());
-    return [...pageCommands, ...setCommands]
-      .filter((command) => !normalizedQuery || searchable(`${command.label} ${command.description}`).includes(normalizedQuery))
-      .slice(0, 20);
-  }, [query, sets, tabs]);
+    const setCommands: Command[] = isAdmin
+      ? runAdminSetCommands(sets)
+      : runStudentSetCommands(sets);
+    const normalizedQuery = normalizeSearch(query.trim());
+    const list = [...pageCommands, ...setCommands];
+    if (!normalizedQuery) return list.slice(0, 20);
+    return list.filter((command) => normalizeSearch(`${command.label} ${command.description} ${command.kind}`).includes(normalizedQuery)).slice(0, 20);
+  }, [isAdmin, query, sets, tabs]);
 
   useEffect(() => { setActiveIndex(0); }, [query]);
   useEffect(() => {
@@ -79,7 +105,7 @@ export default function QuickSwitcher({ open, onClose, tabs }: { open: boolean; 
         autoFocus
         autoComplete="off"
         className="mb-3 w-full rounded-lg border border-line bg-[#fffefb] px-3 py-3 text-base outline-none focus:border-gold"
-        placeholder="Gõ tên chức năng hoặc bộ từ..."
+        placeholder={isAdmin ? "Gõ tên trang quản trị hoặc bộ từ..." : "Gõ tên chức năng hoặc bộ từ..."}
         value={query}
         role="combobox"
         aria-expanded="true"

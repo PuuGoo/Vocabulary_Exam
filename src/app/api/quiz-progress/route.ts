@@ -7,7 +7,7 @@ import { getSession } from "@/lib/auth";
 
 const schema = z.object({
   setId: z.number().int().nullable().optional(),
-  mode: z.enum(["fill", "mc", "dictation", "match", "pronunciation", "sentence", "writing", "mixed"]),
+  mode: z.enum(["fill", "fill_unknown", "mc", "dictation", "match", "pronunciation", "sentence", "writing", "mixed"]),
   timed: z.boolean().optional(),
   timedMinutes: z.number().int().min(1).max(120).nullable().optional(),
   retest: z.boolean().optional(),

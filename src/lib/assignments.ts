@@ -1,7 +1,14 @@
-export const ASSIGNMENT_MODES = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "timed"] as const;
+export const ASSIGNMENT_MODES = [
+  "fill", "mc", "match", "dictation", "pronunciation", "sentence", "timed",
+  // Depth modes are assignable for IELTS vocabulary sets only.
+  "collocation", "cloze", "pattern",
+] as const;
 export type AssignmentMode = (typeof ASSIGNMENT_MODES)[number];
 
 export const ASSIGNMENT_MODE_LABELS: Record<AssignmentMode, string> = {
+  collocation: "Collocation",
+  cloze: "Điền theo ngữ cảnh",
+  pattern: "Luyện cấu trúc",
   fill: "Điền từ",
   mc: "Trắc nghiệm",
   match: "Ghép cặp",
@@ -33,7 +40,7 @@ export type AssignmentStatus = "pending" | "in_progress" | "overdue" | "complete
 export function modesForSetType(type: string): AssignmentMode[] {
   return type === "irregular_verb"
     ? ["fill", "match", "dictation", "pronunciation", "timed"]
-    : ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "timed"];
+    : ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "collocation", "cloze", "pattern", "timed"];
 }
 
 export function attemptMatchesMode(attempt: AttemptForAssignment, assignment: AssignmentForProgress) {
@@ -72,6 +79,9 @@ export function assignmentHref(input: { setId: number; mode: string; timeLimitMi
   if (input.mode === "dictation") return `/dictation/${setId}`;
   if (input.mode === "pronunciation") return `/pronunciation/${setId}`;
   if (input.mode === "sentence") return `/sentence/${setId}`;
+  if (input.mode === "collocation") return `/collocation/${setId}`;
+  if (input.mode === "cloze") return `/cloze/${setId}`;
+  if (input.mode === "pattern") return `/pattern/${setId}`;
   if (input.mode === "timed") return `/quiz/${setId}?mode=fill&timed=1&minutes=${input.timeLimitMinutes || 15}`;
-  return `/quiz/${setId}?mode=fill`;
+  return `/quiz/${setId}?mode=fill&session=test`;
 }

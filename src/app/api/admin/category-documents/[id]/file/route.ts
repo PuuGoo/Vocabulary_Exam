@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { categoryDocuments } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { buildCategoryDocumentResponse } from "@/lib/categoryDocumentResponse";
 
 export const runtime = "nodejs";
 
@@ -13,14 +14,5 @@ export async function GET(_request: Request, { params }: { params: { id: string 
   if (!Number.isInteger(id) || id < 1) return NextResponse.json({ error: "Tài liệu không hợp lệ." }, { status: 400 });
   const [document] = await db.select().from(categoryDocuments).where(eq(categoryDocuments.id, id)).limit(1);
   if (!document) return NextResponse.json({ error: "Không tìm thấy tài liệu." }, { status: 404 });
-  const encodedName = encodeURIComponent(document.fileName).replace(/['()]/g, escape);
-  return new Response(new Uint8Array(document.fileData), {
-    headers: {
-      "Content-Type": document.fileType || "application/octet-stream",
-      "Content-Length": String(document.fileSize),
-      "Content-Disposition": `inline; filename="document${document.fileName.toLowerCase().endsWith(".docx") ? ".docx" : document.fileName.toLowerCase().endsWith(".doc") ? ".doc" : ".pdf"}"; filename*=UTF-8''${encodedName}`,
-      "Cache-Control": "private, max-age=3600",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+  return buildCategoryDocumentResponse(document);
 }

@@ -3,6 +3,7 @@ import { and, asc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { classMembers, vocabSets, wordBookmarks, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { loadDepthMatches, wordDepthSearchFilter } from "@/lib/wordSearch";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -31,7 +32,11 @@ export async function GET(req: NextRequest) {
     ilike(words.v2, pattern),
     ilike(words.v3, pattern),
     ilike(words.ipa, pattern),
-    ilike(vocabSets.name, pattern)
+    ilike(words.example, pattern),
+    ilike(vocabSets.name, pattern),
+    // Published collocations / patterns / topics / families only: draft content
+    // stays invisible to students exactly as private folders do.
+    wordDepthSearchFilter(pattern)
   );
   const rows = await db
     .select({
@@ -59,5 +64,9 @@ export async function GET(req: NextRequest) {
     )
     .limit(50);
 
-  return NextResponse.json({ results: rows, query: queryText });
+  const depth = await loadDepthMatches(rows.map((row) => row.id), queryText);
+  return NextResponse.json({
+    results: rows.map((row) => ({ ...row, depth: depth.get(row.id) ?? null })),
+    query: queryText,
+  });
 }

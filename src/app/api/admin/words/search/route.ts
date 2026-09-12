@@ -3,6 +3,7 @@ import { asc, eq, ilike, or } from "drizzle-orm";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { loadDepthMatches, wordDepthSearchFilter } from "@/lib/wordSearch";
 
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -46,9 +47,16 @@ export async function GET(request: NextRequest) {
       ilike(words.v3, pattern),
       ilike(vocabSets.name, pattern),
       ilike(vocabSets.category, pattern),
+      ilike(words.ipa, pattern),
+      // Admin search sees drafts too, and matches collocations / patterns /
+      // topics / word families, e.g. "decision" finds "make a decision".
+      wordDepthSearchFilter(pattern, { includeUnpublished: true }),
     ))
     .orderBy(asc(vocabSets.name), asc(words.term), asc(words.v1))
     .limit(50);
 
-  return NextResponse.json({ matches });
+  const depth = await loadDepthMatches(matches.map((match) => match.wordId), query, { includeUnpublished: true });
+  return NextResponse.json({
+    matches: matches.map((match) => ({ ...match, depth: depth.get(match.wordId) ?? null })),
+  });
 }

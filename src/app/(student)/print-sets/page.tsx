@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "@/components/Toast";
 import { cx } from "@/components/ui";
+import SetPicker from "@/components/SetPicker";
 
-type SetSummary = { id: number; name: string; type: string; count: number; className: string | null };
+type SetSummary = { id: number; name: string; type: string; count: number; className: string | null; category?: string | null };
 type PrintableWord = { id: number; setId: number; setName: string; setType: string; meaning: string; term: string | null; v1: string | null; v2: string | null; v3: string | null; ipa: string | null; wtype: string | null; example: string | null };
 type PrintableSet = { id: number; name: string; type: string; words: PrintableWord[] };
 type Layout = "list" | "cards" | "worksheet";
@@ -23,7 +24,7 @@ function exampleHint(word: PrintableWord) {
 export default function PrintSetsPage() {
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
-  const [search, setSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [title, setTitle] = useState("Phiếu học từ vựng IELTS");
   const [layout, setLayout] = useState<Layout>("list");
   const [showIpa, setShowIpa] = useState(true);
@@ -45,16 +46,11 @@ export default function PrintSetsPage() {
     return () => { active = false; };
   }, [loadAttempt]);
 
-  const filteredSets = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("vi");
-    return (sets || []).filter((item) => !query || `${item.name} ${item.className || ""}`.toLocaleLowerCase("vi").includes(query));
-  }, [search, sets]);
   const totalWords = documentSets.reduce((sum, item) => sum + item.words.length, 0);
 
-  function toggleSet(id: number) {
-    if (selectedIds.includes(id)) { setSelectedIds((current) => current.filter((item) => item !== id)); return; }
-    if (selectedIds.length >= 5) { toast("Mỗi phiếu hỗ trợ tối đa 5 bộ từ để bản in không quá dài."); return; }
-    setSelectedIds((current) => [...current, id]);
+  function handleSelect(ids: number[]) {
+    if (ids.length > 5) { toast("Mỗi phiếu hỗ trợ tối đa 5 bộ từ để bản in không quá dài."); return; }
+    setSelectedIds(ids);
   }
 
   async function generate() {
@@ -74,6 +70,8 @@ export default function PrintSetsPage() {
     }
   }
 
+  const selectedSets = (sets || []).filter((item) => selectedIds.includes(item.id));
+
   return (
     <div>
       <section className={`${cx.panel} print:hidden`}>
@@ -82,9 +80,32 @@ export default function PrintSetsPage() {
         {sets === null ? <div className={cx.empty} role="status">Đang tải các bộ từ...</div> : loadError ? <div className={cx.empty}>Không thể tải danh sách.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div> : (
           <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
             <div className="rounded-xl border border-line bg-white p-4">
-              <div className="mb-3 flex items-center justify-between gap-2"><div><h3 className="font-semibold">Chọn tối đa 5 bộ</h3><div className="text-xs text-muted">Đã chọn {selectedIds.length}/5</div></div>{selectedIds.length > 0 && <button className="text-xs text-muted hover:underline" onClick={() => setSelectedIds([])}>Bỏ chọn</button>}</div>
-              <input type="search" className={`${cx.input} !mb-3`} placeholder="Tìm bộ từ..." value={search} onChange={(event) => setSearch(event.target.value)} />
-              <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">{filteredSets.map((item) => { const selected = selectedIds.includes(item.id); return <label key={item.id} className={`flex cursor-pointer items-center gap-3 rounded-lg border p-3 ${selected ? "border-gold bg-goldpale/40" : "border-line hover:border-gold/60"}`}><input type="checkbox" checked={selected} onChange={() => toggleSet(item.id)} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{item.name}</span><span className="text-xs text-muted">{item.count} từ · {item.type === "irregular_verb" ? "Động từ bất quy tắc" : "IELTS"}</span></span></label>; })}{filteredSets.length === 0 && <div className="py-6 text-center text-sm text-muted">Không tìm thấy bộ từ.</div>}</div>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div><h3 className="font-semibold">Chọn tối đa 5 bộ</h3><div className="text-xs text-muted">Đã chọn {selectedIds.length}/5</div></div>
+                {selectedIds.length > 0 && <button className="text-xs text-muted hover:underline" onClick={() => setSelectedIds([])}>Bỏ chọn</button>}
+              </div>
+              {sets.length > 0 && (
+                <SetPicker
+                  sets={sets}
+                  mode="multiple"
+                  selected={selectedIds}
+                  onSelect={handleSelect}
+                  maxMultiple={5}
+                  open={pickerOpen}
+                  onOpenChange={setPickerOpen}
+                  renderTrigger={(count, label) => (
+                    <span className={`flex min-h-11 w-full items-center justify-between rounded-[11px] border border-gold/60 bg-goldpale/30 px-4 text-sm font-bold ${count ? "text-golddark" : "text-muted"}`}>
+                      {count ? `Đã chọn ${count} bộ` : "Chọn thư mục / bộ từ"}
+                      <span aria-hidden="true">▾</span>
+                    </span>
+                  )}
+                />
+              )}
+              {selectedSets.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  {selectedSets.map((item) => <div key={item.id} className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-sm"><span className="min-w-0 flex-1 truncate">{item.name}</span><span className="text-xs text-muted">{item.count} từ</span></div>)}
+                </div>
+              )}
             </div>
             <div className="h-fit rounded-xl border border-gold/50 bg-goldpale/30 p-4 lg:sticky lg:top-4">
               <h3 className="font-semibold">Thiết lập bản in</h3>

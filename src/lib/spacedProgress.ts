@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { wordProgress, words } from "@/db/schema";
 import { nextSpacedProgress } from "@/lib/spacedRepetition";
@@ -26,18 +26,23 @@ export async function recordWordOutcomes(userId: number, outcomes: WordOutcome[]
   const previousByWord = new Map(existing.map((item) => [item.wordId, item]));
   const reviewedAt = new Date();
 
-  for (const outcome of validOutcomes) {
+  const nextRows = validOutcomes.map((outcome) => {
     const next = nextSpacedProgress(previousByWord.get(outcome.wordId), outcome.correct, reviewedAt);
-    await db.insert(wordProgress).values({
+    return {
       userId,
       wordId: outcome.wordId,
       ...next,
       lastMode: mode,
-    }).onConflictDoUpdate({
-      target: [wordProgress.userId, wordProgress.wordId],
-      set: { ...next, lastMode: mode },
-    });
-  }
+    };
+  });
+  await db.insert(wordProgress).values(nextRows).onConflictDoUpdate({
+    target: [wordProgress.userId, wordProgress.wordId],
+    set: {
+      known: sql`excluded.known`, intervalDays: sql`excluded.interval_days`, reviewStreak: sql`excluded.review_streak`,
+      correctCount: sql`excluded.correct_count`, wrongCount: sql`excluded.wrong_count`, lastMode: sql`excluded.last_mode`,
+      lastReviewedAt: sql`excluded.last_reviewed_at`, nextReviewAt: sql`excluded.next_review_at`, updatedAt: sql`excluded.updated_at`,
+    },
+  });
 
   return validOutcomes.length;
 }
