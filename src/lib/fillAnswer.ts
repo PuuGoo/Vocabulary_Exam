@@ -101,6 +101,17 @@ function expandTokenSlash(phrase: string): string[] {
  *    -> "be used to doing sth"),
  *  - otherwise kept as an independent alternative ("refrigerator / fridge").
  */
+/** True when token-level slash expansion duplicates an adjacent word (e.g. "to to"). */
+function hasAdjacentDuplicate(variants: readonly string[]): boolean {
+  for (const variant of variants) {
+    const words = variant.split(/\s+/).filter(Boolean);
+    for (let i = 0; i < words.length - 1; i++) {
+      if (words[i] === words[i + 1]) return true;
+    }
+  }
+  return false;
+}
+
 function expandPhraseSlashAlternatives(alternatives: string[]): string[] {
   const [first, ...rest] = alternatives;
   const results = [...expandTokenSlash(first)];
@@ -127,56 +138,10 @@ function expandPhraseSlashAlternatives(alternatives: string[]): string[] {
 }
 
 /**
- * Preserve the project's existing slash convention while also accepting a
- * readable whole-answer form such as "refrigerator / fridge".
- *
- */
-/**
  * Decide whether a phrase's slash marks phrase-level variants (shared prefix /
  * preposition completion / token duplication) or a single-word slot. Phrase-level
  * avoids the cartesian product bug where "claim to be/to do sth" became
  * "claim to be do sth" / "claim to to do sth".
- */
-function shouldExpandPhraseSlash(phrase: string): boolean {
-  const parts = phrase.split(/\s*\/\s*/).map((part) => part.trim()).filter(Boolean);
-  if (parts.length < 2) return false;
-
-  const baseTokens = parts[0].split(/\s+/).filter(Boolean);
-  const lastToken = baseTokens[baseTokens.length - 1];
-  const prefixTail = baseTokens[baseTokens.length - 2];
-
-  // First alternative ends in a preposition that takes a complement ("be used to / doing sth").
-  if (lastToken && PHRASE_SLASH_PREPOSITIONS.has(lastToken)) return true;
-
-  // An alternative re-states the shared prefix tail ("claim to be / to do sth").
-  for (const alt of parts.slice(1)) {
-    const firstWord = alt.split(/\s+/)[0];
-    if (prefixTail && firstWord === prefixTail) return true;
-  }
-
-  // Token-level expansion would duplicate an adjacent word (a sure sign of
-  // cross-contamination), or fail entirely when "/" is a standalone token
-  // surrounded by spaces ("refrigerator / fridge").
-  const tokenVariants = expandTokenSlash(phrase);
-  if (tokenVariants.length === 0) return true;
-  for (const variant of tokenVariants) {
-    const words = variant.split(/\s+/).filter(Boolean);
-    for (let i = 0; i < words.length - 1; i++) {
-      if (words[i] === words[i + 1]) return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Preserve the project's existing slash convention while also accepting a
- * readable whole-answer form such as "refrigerator / fridge".
- *
- * Slash of any spacing ("claim to be / to do sth" or "claim to be/to do sth")
- * marks variants within one structure and is expanded with a shared prefix.
- * Slash inside a single slot word ("burned/burnt", "in an/the outfit") stays at
- * the token level.
  */
 export function getAcceptedAnswers(answerKey: string | null | undefined): string[] {
   const raw = (answerKey || "").trim();
@@ -184,11 +149,25 @@ export function getAcceptedAnswers(answerKey: string | null | undefined): string
   const wholeAlternatives = raw.split(/\s+[|;]\s+/).map((item) => item.trim()).filter(Boolean);
   const phrases = wholeAlternatives.length > 1 ? wholeAlternatives : [raw];
   const expanded = phrases.flatMap((phrase) => {
+    // Token-level expansion handles single-token slashes correctly
+    // (e.g. "burned/burnt", "in an/the outfit", "debate on/about/over sth").
+    const tokenResults = expandTokenSlash(phrase);
+    // Token-level produces wrong results when "/" is a standalone token
+    // surrounded by spaces ("claim to be /to do sth") or produces adjacent
+    // duplicates ("claim to be/to do sth" -> "to to"). In both cases,
+    // tokenResults.length <= 1 with a slash present signals the expansion
+    // was broken, so fall back to phrase-level.
+    if (tokenResults.length > 1 && !hasAdjacentDuplicate(tokenResults)) {
+      return tokenResults;
+    }
+    // Token-level failed (empty "/" token or adjacent duplicates like "to to"):
+    // fall back to phrase-level expansion for shared-prefix patterns
+    // (e.g. "claim to be / to do sth", "be used to / doing sth").
     const slashAlternatives = phrase.split(/\s*\/\s*/).map((item) => item.trim()).filter(Boolean);
-    if (slashAlternatives.length > 1 && shouldExpandPhraseSlash(phrase)) {
+    if (slashAlternatives.length > 1) {
       return expandPhraseSlashAlternatives(slashAlternatives);
     }
-    return expandTokenSlash(phrase);
+    return tokenResults;
   });
   return [...new Set(expanded.map(normalizeFillAnswer).filter(Boolean))];
 }

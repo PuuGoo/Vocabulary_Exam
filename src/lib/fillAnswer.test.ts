@@ -66,6 +66,7 @@ test("accepted answers preserve token and whole-answer slash conventions", () =>
   assert.deepEqual(getAcceptedAnswers("burned/burnt"), ["burned", "burnt"]);
   assert.deepEqual(getAcceptedAnswers("refrigerator / fridge"), ["refrigerator", "fridge"]);
   assert.deepEqual(getAcceptedAnswers("in an/the outfit"), ["in an outfit", "in the outfit"]);
+});
 
 test("phrase slash variants share a common prefix without duplicating tokens", () => {
   assert.deepEqual(getAcceptedAnswers("claim to be / to do sth"), ["claim to be", "claim to do sth"]);
@@ -109,7 +110,6 @@ test("phrase slash variants are graded as accepted alternatives", () => {
   assert.deepEqual(gradeFillAnswer("claim to do sth", "claim to be / to do sth"), { correct: true, nearMiss: false, acceptedAnswers: ["claim to be", "claim to do sth"] });
   assert.equal(gradeFillAnswer("claim to be do sth", "claim to be / to do sth").correct, false);
   assert.equal(gradeFillAnswer("claim to to do sth", "claim to be / to do sth").correct, false);
-});
 });
 
 test("ordinary words and legacy alternatives remain one answer group", () => {
