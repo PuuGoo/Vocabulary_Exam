@@ -66,6 +66,43 @@ test("accepted answers preserve token and whole-answer slash conventions", () =>
   assert.deepEqual(getAcceptedAnswers("burned/burnt"), ["burned", "burnt"]);
   assert.deepEqual(getAcceptedAnswers("refrigerator / fridge"), ["refrigerator", "fridge"]);
   assert.deepEqual(getAcceptedAnswers("in an/the outfit"), ["in an outfit", "in the outfit"]);
+
+test("phrase slash variants share a common prefix without duplicating tokens", () => {
+  assert.deepEqual(getAcceptedAnswers("claim to be / to do sth"), ["claim to be", "claim to do sth"]);
+  assert.deepEqual(getAcceptedAnswers("be used to / doing sth"), ["be used to", "be used to doing sth"]);
+  assert.deepEqual(getAcceptedAnswers("look forward to / doing sth"), ["look forward to", "look forward to doing sth"]);
+});
+
+test("phrase slash parsing never invents duplicated or merged tokens", () => {
+  const variants = getAcceptedAnswers("claim to be / to do sth");
+  assert.ok(!variants.some((variant) => variant.includes("to to")));
+  assert.ok(!variants.some((variant) => variant.includes("be do")));
+  assert.equal(variants.length, 2);
+  const used = getAcceptedAnswers("be used to / doing sth");
+  assert.ok(!used.some((variant) => variant.includes("to to")));
+  assert.ok(!used.some((variant) => variant.includes("used to to")));
+  const forward = getAcceptedAnswers("look forward to / doing sth");
+  assert.ok(!forward.some((variant) => variant.includes("to to")));
+});
+
+test("either/not-only phrasal pairs are kept as one whole accepted answer", () => {
+  assert.deepEqual(getAcceptedAnswers("either ... or ..."), ["either ... or ..."]);
+  assert.deepEqual(getAcceptedAnswers("not only ... but also ..."), ["not only ... but also ..."]);
+});
+
+test("phrase slash variants are plain accepted answers, not separate required groups", () => {
+  const parsed = parseFillAnswerGroups("claim to be / to do sth", "verb");
+  assert.equal(parsed.kind, "single");
+  assert.equal(parsed.groups.length, 1);
+  assert.deepEqual(parsed.groups[0].acceptedAnswers, ["claim to be", "claim to do sth"]);
+});
+
+test("phrase slash variants are graded as accepted alternatives", () => {
+  assert.deepEqual(gradeFillAnswer("claim to be", "claim to be / to do sth"), { correct: true, nearMiss: false, acceptedAnswers: ["claim to be", "claim to do sth"] });
+  assert.deepEqual(gradeFillAnswer("claim to do sth", "claim to be / to do sth"), { correct: true, nearMiss: false, acceptedAnswers: ["claim to be", "claim to do sth"] });
+  assert.equal(gradeFillAnswer("claim to be do sth", "claim to be / to do sth").correct, false);
+  assert.equal(gradeFillAnswer("claim to to do sth", "claim to be / to do sth").correct, false);
+});
 });
 
 test("ordinary words and legacy alternatives remain one answer group", () => {

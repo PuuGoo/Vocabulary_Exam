@@ -74,19 +74,77 @@ export function normalizeFillAnswer(value: string | null | undefined) {
  * Preserve the project's existing slash convention while also accepting a
  * readable whole-answer form such as "refrigerator / fridge".
  */
+/** Prepositions that can end a phrase and take a complement after a slash. */
+const PHRASE_SLASH_PREPOSITIONS = new Set([
+  "to", "in", "on", "at", "for", "from", "with", "about", "of", "into", "onto",
+  "upon", "against", "between", "among", "through", "over", "up", "down", "off",
+  "away", "back", "by", "as", "than",
+]);
+
+/** Expand token-level slash alternatives ("an/the", "burned/burnt"). */
+function expandTokenSlash(phrase: string): string[] {
+  const tokens = phrase.split(/\s+/);
+  let results = [""];
+  for (const token of tokens) {
+    const alternatives = token.split("/").map((item) => item.trim()).filter(Boolean);
+    results = results.flatMap((result) => alternatives.map((alternative) => `${result} ${alternative}`.trim()));
+  }
+  return results;
+}
+
+/**
+ * Expand phrase-level slash alternatives ("claim to be / to do sth") into full
+ * accepted forms. The first alternative is the base. Each later alternative is:
+ *  - merged when it repeats the base's prefix tail ("claim to be / to do sth"
+ *    -> "claim to do sth"),
+ *  - appended when the base ends in a preposition ("be used to / doing sth"
+ *    -> "be used to doing sth"),
+ *  - otherwise kept as an independent alternative ("refrigerator / fridge").
+ */
+function expandPhraseSlashAlternatives(alternatives: string[]): string[] {
+  const [first, ...rest] = alternatives;
+  const results = [...expandTokenSlash(first)];
+  const firstTokens = first.split(/\s+/);
+  const prefix = firstTokens.slice(0, -1).join(" ");
+  const prefixTail = firstTokens[firstTokens.length - 2];
+  const lastToken = firstTokens[firstTokens.length - 1];
+  for (const alt of rest) {
+    const altForms = expandTokenSlash(alt);
+    const altTokens = alt.split(/\s+/);
+    if (prefixTail && altTokens[0] === prefixTail) {
+      for (const form of altForms) {
+        results.push(`${prefix} ${form.split(/\s+/).slice(1).join(" ")}`.trim());
+      }
+    } else if (lastToken && PHRASE_SLASH_PREPOSITIONS.has(lastToken)) {
+      for (const form of altForms) {
+        results.push(`${first} ${form}`.trim());
+      }
+    } else {
+      results.push(...altForms);
+    }
+  }
+  return results;
+}
+
+/**
+ * Preserve the project's existing slash convention while also accepting a
+ * readable whole-answer form such as "refrigerator / fridge".
+ *
+ * Slash with spaces ("claim to be / to do sth") marks variants within one
+ * structure and is expanded with a shared prefix. Slash without spaces
+ * ("burned/burnt", "in an/the outfit") stays at the token level.
+ */
 export function getAcceptedAnswers(answerKey: string | null | undefined): string[] {
   const raw = (answerKey || "").trim();
   if (!raw) return [];
-  const wholeAlternatives = raw.split(/\s+[|;/]\s+/).map((item) => item.trim()).filter(Boolean);
+  const wholeAlternatives = raw.split(/\s+[|;]\s+/).map((item) => item.trim()).filter(Boolean);
   const phrases = wholeAlternatives.length > 1 ? wholeAlternatives : [raw];
   const expanded = phrases.flatMap((phrase) => {
-    const tokens = phrase.split(/\s+/);
-    let results = [""];
-    for (const token of tokens) {
-      const alternatives = token.split("/").map((item) => item.trim()).filter(Boolean);
-      results = results.flatMap((result) => alternatives.map((alternative) => `${result} ${alternative}`.trim()));
+    const slashAlternatives = phrase.split(/\s+\/\s+/).map((item) => item.trim()).filter(Boolean);
+    if (slashAlternatives.length > 1) {
+      return expandPhraseSlashAlternatives(slashAlternatives);
     }
-    return results;
+    return expandTokenSlash(phrase);
   });
   return [...new Set(expanded.map(normalizeFillAnswer).filter(Boolean))];
 }
