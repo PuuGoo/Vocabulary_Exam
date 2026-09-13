@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { getFillModeLabel, normalizeLanguageCode, type FillTarget } from "@/lib/languages";
 
-type StudyMode = "learn" | "fill" | "mc" | "match" | "dictation" | "listen" | "pronunciation" | "sentence" | "timed" | "tone" | "cloze";
+type StudyMode = "learn" | "fill" | "mc" | "match" | "dictation" | "listen" | "pronunciation" | "sentence" | "timed" | "tone" | "cloze" | "collocation" | "pattern";
 type StudyModeNavItem = {
   key: string;
   mode: StudyMode;
@@ -25,6 +25,8 @@ const items: StudyModeNavItem[] = [
   { key: "dictation", mode: "dictation", label: "Nghe và viết", icon: "🎧", href: (id) => `/dictation/${id}` },
   { key: "listen", mode: "listen", label: "Nghe rảnh tay", icon: "🔊", href: (id) => `/listen/${id}` },
   { key: "pronunciation", mode: "pronunciation", label: "Luyện phát âm", icon: "🎙️", href: (id) => `/pronunciation/${id}` },
+  { key: "collocation", mode: "collocation", label: "Luyện collocation", icon: "📝", href: (id) => `/collocation/${id}` },
+  { key: "pattern", mode: "pattern", label: "Luyện cấu trúc", icon: "🏐", href: (id) => `/pattern/${id}` },
   { key: "sentence", mode: "sentence", label: "Xếp câu", icon: "🧩", href: (id) => `/sentence/${id}` },
   { key: "timed", mode: "timed", label: "Thi thử tính giờ", icon: "⏱", href: (id) => `/quiz/${id}?mode=fill&timed=1&minutes=15` },
 ];

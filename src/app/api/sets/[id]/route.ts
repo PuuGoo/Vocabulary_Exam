@@ -10,6 +10,7 @@ import { getAdminAccess, isAuthorizationError, requireAdminPermission } from "@/
 import { writeAdminAudit } from "@/lib/adminAudit";
 import { serializeLanguageSettings } from "@/lib/languageSettings";
 import { findVisibleFolderIdByLegacyPath, getFolderDisplayPath, getFolderLegacyPath, requireAdminResourceAccess } from "@/lib/folderAuthorization";
+import { loadWordContent } from "@/lib/wordContent";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -45,7 +46,14 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     for (const row of progressRows) progress[row.wordId] = row.known;
   }
 
-  return NextResponse.json({ set: { ...set, legacyCategory: set.category, category: displayCategory, words: wordList }, progress });
+  // Vocabulary depth content (collocations, patterns, topics, pronunciations, families).
+  // Only published content is ever served to learners.
+  const wordIds = wordList.map((w) => w.id);
+  const contentByWordId = wordIds.length ? await loadWordContent(wordIds) : new Map();
+  const content: Record<string, unknown> = {};
+  for (const [wordId, item] of contentByWordId) content[String(wordId)] = item;
+
+  return NextResponse.json({ set: { ...set, legacyCategory: set.category, category: displayCategory, words: wordList }, progress, content });
 }
 
 const patchSchema = z.object({

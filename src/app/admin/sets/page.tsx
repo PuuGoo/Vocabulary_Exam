@@ -19,6 +19,7 @@ import { useAdminPermissions } from "@/components/AdminPermissionProvider";
 import { getFillModeLabel, getLanguageConfig } from "@/lib/languages";
 import { getChineseSettings } from "@/lib/languageSettings";
 import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
+import WordDepthEditor from "@/components/WordDepthEditor";
 
 type SetSummary = { id: number; name: string; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -2262,6 +2263,15 @@ export default function AdminSetsPage() {
                     </div>}
                     {detail.languageCode === "zh-CN" && <><div><label className={cx.label}>Lượng từ</label><input className={`${cx.input} !mb-0`} value={editForm.classifier} onChange={e=>setEditForm({...editForm,classifier:e.target.value})}/></div><div><label className={cx.label}>Trình độ</label><input className={`${cx.input} !mb-0`} value={editForm.level} onChange={e=>setEditForm({...editForm,level:e.target.value})}/></div><div><label className={cx.label}>Pinyin ví dụ</label><input className={`${cx.input} !mb-0`} value={editForm.examplePronunciation} onChange={e=>setEditForm({...editForm,examplePronunciation:e.target.value})}/></div><div><label className={cx.label}>Nghĩa ví dụ</label><input className={`${cx.input} !mb-0`} value={editForm.exampleMeaning} onChange={e=>setEditForm({...editForm,exampleMeaning:e.target.value})}/></div></>}
                   </>
+                )}
+                {editingWordId !== null && detail.type !== "irregular_verb" && (
+                  <div className="md:col-span-2">
+                    <WordDepthEditor
+                      wordId={editingWordId}
+                      term={editForm.term}
+                      onSaved={saveEditWord}
+                    />
+                  </div>
                 )}
                 <div className="md:col-span-2 flex gap-2">
                   <button className={`${cx.btn} ${cx.btnGold} !px-3 !py-1.5`} onClick={saveEditWord}>

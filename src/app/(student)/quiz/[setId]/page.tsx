@@ -12,6 +12,7 @@ import { useUnsavedChangesWarning } from "@/hooks/useUnsavedChangesWarning";
 import { isLearningDraftFresh, restoreItemsByIds } from "@/lib/learningDraft";
 import { useCurrentUserId } from "@/components/UserSessionContext";
 import FillFocusSession from "@/components/FillFocusSession";
+import WordDepthPanel from "@/components/WordDepthPanel";
 import { getAcceptedAnswers, gradeFillAnswer, gradeFillAnswerGroups, maskAnswerInExample, parseFillAnswerGroups } from "@/lib/fillAnswer";
 import { fillScopeDraftSegment, filterWordsByFillScope, quizProgressMode, resolveFillWordScope } from "@/lib/unknownFill";
 import { gradeLanguageAnswer, getTargetAcceptedAnswers } from "@/lib/languageAnswer";
@@ -37,7 +38,7 @@ type Word = {
   level?: string | null;
   classifier?: string | null;
 };
-type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?:string; languageSettings?:unknown; words: Word[] };
+type SetDetail = { id: number; name: string; type: "irregular_verb" | "ielts_vocab" | "language_vocab"; languageCode?:string; languageSettings?:unknown; words: Word[]; content?: Record<string, { collocations?: Array<{ id?: number; phrase: string; meaning?: string | null; example?: string | null; register?: string | null }>; patterns?: Array<{ id?: number; pattern: string; meaning?: string | null; example?: string | null }>; topics?: string[]; families?: Array<{ id?: number; label: string; members: Array<{ wordId: number; term: string | null; meaning: string; relation: string | null }> }>; pronunciations?: Array<{ id?: number; ipa: string; partOfSpeech?: string | null; sense?: string | null; locale?: string; isPrimary?: boolean }> }> };
 type QuizDraft = {
   savedAt: number;
   wordIds: number[];
@@ -121,6 +122,7 @@ function QuizPlayerInner() {
   const [loadError, setLoadError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [mistakeIdByWordId, setMistakeIdByWordId] = useState<Record<number, number>>({});
+  const [wordContent, setWordContent] = useState<Record<string, unknown>>({});
   const [quickRecommendation, setQuickRecommendation] = useState<{ reviewCount: number; newCount: number } | null>(null);
   const [group, setGroup] = useState(0);
   const [answers, setAnswers] = useState<Record<number, Record<string, string>>>({});
@@ -277,6 +279,7 @@ function QuizPlayerInner() {
             }
           }
           setSet(loadedSet);
+          if (loadedSet.content) setWordContent(loadedSet.content);
           setMistakeIdByWordId(mistakeMap);
           draftHydratedRef.current = true;
         }
@@ -1041,6 +1044,18 @@ function submitJumpQuestion() {
           </div>
         </section>
       )}
+
+      {allGroupsGraded && !grading && set?.words && (() => {
+        const firstWithDepth = set.words.find((w: Word) => (wordContent as Record<string, unknown>)[String(w.id)]);
+        if (!firstWithDepth) return null;
+        const depth = (wordContent as Record<string, unknown>)[String(firstWithDepth.id)] as any;
+        return (
+          <div className="mb-6 mt-4 rounded-xl border border-line bg-white p-4">
+            <h4 className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">Nội dung sâu cho “{firstWithDepth.term}”</h4>
+            <WordDepthPanel content={depth} />
+          </div>
+        );
+      })()}
 
       {!retest && !quickMode && (
         <div className="mb-3 flex items-center justify-center gap-2 flex-wrap rounded-xl border border-line bg-white px-3 py-2.5" role="group" aria-label="Chọn phạm vi câu hỏi">
