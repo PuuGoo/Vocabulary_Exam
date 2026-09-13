@@ -1855,7 +1855,7 @@ export default function AdminSetsPage() {
       )}
 
       {detail && (
-        <Modal title={detail.name} onClose={closeDetail} wide>
+        <Modal title={detail.name} onClose={closeDetail} wide fillViewport>
           <div>
           <div className={cx.desc}>
             {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : detail.type === "language_vocab" ? getLanguageConfig(detail.languageCode).label : "Từ vựng IELTS"} · {detail.words.length} mục
@@ -1994,7 +1994,7 @@ export default function AdminSetsPage() {
                 Lưu danh mục
               </button>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-muted">Các bộ cùng danh mục được gom thành một thư mục trên trang học tập.</p>
               <button type="button" className="text-xs font-bold text-gold hover:underline" onClick={() => setShowCategoryManager(true)}>Quản lý danh mục</button>
             </div>
@@ -2117,7 +2117,7 @@ export default function AdminSetsPage() {
               Không tìm thấy từ phù hợp trong bộ này.
             </div>
           ) : (
-          <div className="max-h-[52vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white" onDragOver={(event) => { if (draggingWordId === null) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientY < bounds.top + 56) event.currentTarget.scrollTop -= 28; else if (event.clientY > bounds.bottom - 56) event.currentTarget.scrollTop += 28; }}>
+          <div className="max-h-[68vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white" onDragOver={(event) => { if (draggingWordId === null) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientY < bounds.top + 56) event.currentTarget.scrollTop -= 28; else if (event.clientY > bounds.bottom - 56) event.currentTarget.scrollTop += 28; }}>
             <table className={cx.table}>
               <thead>
                 <tr>
@@ -2148,8 +2148,8 @@ export default function AdminSetsPage() {
               <tbody>
                 {filteredDetailWords.map((w) => (
                   <tr key={w.id} ref={(element) => { if (element) wordRowRefs.set(w.id, element); else wordRowRefs.delete(w.id); }} tabIndex={focusedWordId === w.id ? -1 : undefined} onDragOver={(event) => { if (draggingWordId !== null && !detailWordQuery.trim()) { event.preventDefault(); setDragOverWordId(w.id); } }} onDrop={(event) => { event.preventDefault(); dropWordBefore(w.id); }} className={`${selectedWordIds.includes(w.id) ? "bg-[#F5F2FF]" : "hover:bg-goldpale/30"} ${focusedWordId === w.id ? "ring-2 ring-inset ring-[#7865EE]" : ""} ${draggingWordId === w.id ? "opacity-50" : ""} ${dragOverWordId === w.id ? "border-t-2 border-t-[#7865EE]" : ""}`}>
-                    <td className={cx.td}><div className="flex min-w-[44px] flex-col items-center gap-1"><button type="button" draggable={!reorderingWords && !detailWordQuery.trim() && editingWordId !== w.id} onDragStart={(event) => { setDraggingWordId(w.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(w.id)); }} onDragEnd={() => { setDraggingWordId(null); setDragOverWordId(null); }} disabled={reorderingWords || Boolean(detailWordQuery.trim()) || editingWordId === w.id} className="flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-line bg-white text-lg text-muted disabled:cursor-not-allowed disabled:opacity-35 active:cursor-grabbing" aria-label={`Kéo để đổi thứ tự ${w.term || w.v1 || w.meaning}`} title={detailWordQuery.trim() ? "Xóa tìm kiếm để sắp xếp" : "Kéo để đổi thứ tự"}>⠿</button><div className="flex gap-1"><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingWords || Boolean(detailWordQuery.trim()) || w.position === 1} onClick={() => moveWordByOffset(w.id, -1)} aria-label={`Đưa ${w.term || w.v1 || w.meaning} lên`}>↑</button><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingWords || Boolean(detailWordQuery.trim()) || w.position === detail.words.length} onClick={() => moveWordByOffset(w.id, 1)} aria-label={`Đưa ${w.term || w.v1 || w.meaning} xuống`}>↓</button></div></div></td>
-                    <td className={cx.td}><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" aria-label={`Chọn ${w.term || w.v1 || w.meaning}`} checked={selectedWordIds.includes(w.id)} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...current, w.id] : current.filter((id) => id !== w.id))} /></td>
+                    <td className={cx.td}><div className="flex min-w-[52px] flex-col items-center gap-1.5"><button type="button" draggable={!reorderingWords && !detailWordQuery.trim() && editingWordId !== w.id} onDragStart={(event) => { setDraggingWordId(w.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", String(w.id)); }} onDragEnd={() => { setDraggingWordId(null); setDragOverWordId(null); }} disabled={reorderingWords || Boolean(detailWordQuery.trim()) || editingWordId === w.id} className="flex h-9 w-9 cursor-grab items-center justify-center rounded-lg border border-line bg-white text-lg text-muted disabled:cursor-not-allowed disabled:opacity-35 active:cursor-grabbing" aria-label={`Kéo để đổi thứ tự ${w.term || w.v1 || w.meaning}`} title={detailWordQuery.trim() ? "Xóa tìm kiếm để sắp xếp" : "Kéo để đổi thứ tự"}>⠿</button><div className="flex gap-1"><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingWords || Boolean(detailWordQuery.trim()) || w.position === 1} onClick={() => moveWordByOffset(w.id, -1)} aria-label={`Đưa ${w.term || w.v1 || w.meaning} lên`}>↑</button><button type="button" className="h-7 w-7 rounded border border-line bg-white text-xs disabled:opacity-30" disabled={reorderingWords || Boolean(detailWordQuery.trim()) || w.position === detail.words.length} onClick={() => moveWordByOffset(w.id, 1)} aria-label={`Đưa ${w.term || w.v1 || w.meaning} xuống`}>↓</button></div></div></td>
+                    <td className={cx.td}><input type="checkbox" className="h-5 w-5 accent-[#7865EE]" aria-label={`Chọn ${w.term || w.v1 || w.meaning}`} checked={selectedWordIds.includes(w.id)} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...current, w.id] : current.filter((id) => id !== w.id))} /></td>
                     <td className={`${cx.td} font-mono font-bold text-[#6550DB]`}>{w.position}</td>
                     {detail.type === "irregular_verb" ? (
                       <>
@@ -2193,13 +2193,13 @@ export default function AdminSetsPage() {
                     </td>
                     <td className={cx.td}>
                       <div className="flex flex-wrap gap-1.5">
-                        {adminAccess.can("vocab.reorder") && <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} disabled={reorderingWords} onClick={() => moveWordToExactPosition(w)}>
+                        {adminAccess.can("vocab.reorder") && <button className={`${cx.btn} ${cx.btnGhost} !px-2.5 !py-1.5`} disabled={reorderingWords} onClick={() => moveWordToExactPosition(w)}>
                           Chuyển đến STT…
                         </button>}
-                        {adminAccess.can("vocab.edit") && <button className={`${cx.btn} ${cx.btnGhost} !px-2 !py-1`} onClick={() => startEditWord(w)}>
+                        {adminAccess.can("vocab.edit") && <button className={`${cx.btn} ${cx.btnGhost} !px-2.5 !py-1.5`} onClick={() => startEditWord(w)}>
                           Sửa
                         </button>}
-                        {adminAccess.can("vocab.delete") && <button className={`${cx.btn} ${cx.btnDanger} !px-2 !py-1`} onClick={() => deleteWord(w.id)}>
+                        {adminAccess.can("vocab.delete") && <button className={`${cx.btn} ${cx.btnDanger} !px-2.5 !py-1.5`} onClick={() => deleteWord(w.id)}>
                           Xoá
                         </button>}
                       </div>

@@ -1190,7 +1190,7 @@ function submitJumpQuestion() {
               type="button"
               title={`Câu ${idx + 1}`}
               onClick={() => goGroup(g, w.id)}
-              className={`min-h-10 min-w-10 rounded-full text-[0.72rem] font-semibold border flex items-center justify-center ${cls}`}
+              className={`min-h-11 min-w-11 rounded-full text-[0.75rem] font-semibold border flex items-center justify-center ${cls}`}
             >
               {idx + 1}
             </button>
@@ -1210,9 +1210,9 @@ function submitJumpQuestion() {
               if (el) rowRefs.set(w.id, el);
               else rowRefs.delete(w.id);
             }}
-            className="grid scroll-mb-40 grid-cols-[30px_1fr] gap-2.5 items-start py-3.5 border-b border-dashed border-line last:border-none"
+            className="grid scroll-mb-40 grid-cols-[30px_1fr] gap-3 sm:gap-4 items-start py-4 sm:py-5 border-b border-dashed border-line last:border-none"
           >
-            <div className="text-muted text-[0.88rem] text-right pt-1">{questionNumberByWordId.get(w.id) ?? start + idx + 1}.</div>
+            <div className="text-muted text-sm text-right pt-2">{questionNumberByWordId.get(w.id) ?? start + idx + 1}.</div>
             <div>
               {isVerb ? (
                 <>
@@ -1245,7 +1245,7 @@ function submitJumpQuestion() {
                       const val = answers[w.id]?.[part] || "";
                       const ok = effectiveChecked ? checkMatch(val, w[part]) : null;
                       return (
-                        <div key={part} className="flex flex-col flex-1 min-w-[100px]">
+                        <div key={part} className="flex flex-col flex-1 min-w-[130px]">
                           <span className="text-[0.66rem] text-muted mb-0.5 tracking-wide">{part.toUpperCase()}</span>
                           <input
                             type="text"
@@ -1314,7 +1314,7 @@ function submitJumpQuestion() {
                       </span>
                     </div>
                   )}
-                  <div className="flex flex-col max-w-xs">
+                  <div className="flex flex-col w-full max-w-sm">
                     
                   {w.wtype && !effectiveChecked && (
                     <div className="mb-2 text-xs text-muted">
@@ -1464,7 +1464,7 @@ function ListFillInputs({ word, set, target, values, checked, onChange, onFinalE
   const languageGrade = chinese ? gradeLanguageAnswer({set,word,target,userAnswer:responses[0]}) : null;
   const grade = languageGrade ? { correct:languageGrade.correct, groupResults:[{matchedResponseIndex:languageGrade.correct?0:null}] } : gradeFillAnswerGroups(responses, parsed);
   const config = getLanguageConfig(set.languageCode);
-  return <div className="grid gap-2">{parsed.kind === "multi_group" && <div className="text-xs font-bold text-[#6550DB]">{parsed.groups.length} cấu trúc cần nhớ</div>}{parsed.groups.map((groupItem, index) => { const part = parsed.kind === "multi_group" ? `group-${index}` : "term"; const responseCorrect = grade.groupResults.some((result) => result.matchedResponseIndex === index); return <div key={groupItem.id}><label className="mb-0.5 block text-[0.66rem] font-bold tracking-wide text-muted" htmlFor={`list-fill-${word.id}-${index}`}>{parsed.kind === "multi_group" ? `CẤU TRÚC ${index + 1}` : `NHẬP ${target === "pronunciation" ? config.pronunciationLabel.toUpperCase() : config.termLabel.toUpperCase()}`}</label><input lang={set.languageCode} id={`list-fill-${word.id}-${index}`} ref={index === 0 ? registerPrimary : undefined} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={checked} placeholder={parsed.kind === "multi_group" ? `Nhập cấu trúc ${index + 1}` : undefined} value={responses[index]} onChange={(event) => onChange(part, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && index < parsed.groups.length - 1) { event.preventDefault(); document.getElementById(`list-fill-${word.id}-${index + 1}`)?.focus(); return; } onFinalEnter(event); }} enterKeyHint={index === parsed.groups.length - 1 && finalWord ? "done" : "next"} className={`${cx.input} !mb-0 ${checked ? responseCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} /></div>; })}</div>;
+  return <div className="grid gap-2">{parsed.kind === "multi_group" && <div className="text-xs font-bold text-[#6550DB]">{parsed.groups.length} cấu trúc cần nhớ</div>}{parsed.groups.map((groupItem, index) => { const part = parsed.kind === "multi_group" ? `group-${index}` : "term"; const responseCorrect = grade.groupResults.some((result) => result.matchedResponseIndex === index); return <div key={groupItem.id}><label className="mb-0.5 block text-[0.72rem] font-bold tracking-wide text-muted" htmlFor={`list-fill-${word.id}-${index}`}>{parsed.kind === "multi_group" ? `CẤU TRÚC ${index + 1}` : `NHẬP ${target === "pronunciation" ? config.pronunciationLabel.toUpperCase() : config.termLabel.toUpperCase()}`}</label><input lang={set.languageCode} id={`list-fill-${word.id}-${index}`} ref={index === 0 ? registerPrimary : undefined} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} disabled={checked} placeholder={parsed.kind === "multi_group" ? `Nhập cấu trúc ${index + 1}` : undefined} value={responses[index]} onChange={(event) => onChange(part, event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && index < parsed.groups.length - 1) { event.preventDefault(); document.getElementById(`list-fill-${word.id}-${index + 1}`)?.focus(); return; } onFinalEnter(event); }} enterKeyHint={index === parsed.groups.length - 1 && finalWord ? "done" : "next"} className={`${cx.input} !mb-0 ${checked ? responseCorrect ? "!border-ok !bg-okbg" : "!border-bad !bg-badbg" : ""}`} /></div>; })}</div>;
 }
 
 function ListFillFeedback({ word, set, target, values }: { word: Word; set: SetDetail; target: FillTarget; values: Record<string, string> }) {
