@@ -6,6 +6,8 @@ import { getSession } from "@/lib/auth";
 import { getAdminAccess, type AdminAccess, adminPermissionError } from "@/lib/adminAuthorization";
 import type { AdminPermission } from "@/lib/adminPermissions";
 import { folderAccessSatisfies, normalizeFolderName, resolveFolderAccessFromRows, type FolderAccessLevel, type PositiveFolderAccess } from "@/lib/folderAuthorizationCore";
+export type { PositiveFolderAccess };
+export type { FolderAccessLevel };
 
 async function loadRows(userId: number) {
   const [folders, rules] = await Promise.all([

@@ -345,7 +345,7 @@ export default function VocabularyDrillSession({ kind, title, intro, emptyTitle,
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted">
             <span className="font-semibold text-ink">{current.term}</span>
             <span className="text-golddark">{(words.find((word) => word.id === current.wordId)?.ipa) || ""}</span>
-            <SpeakButton text={current.term} lang="en-GB" />
+            <SpeakButton text={current.term} languageCode="en" />
           </div>
           {current.kind === "cloze" && current.capitalized && !checked && (
             <p className="mt-2 text-xs text-muted">Chỗ trống ở đầu câu — nhớ viết hoa nếu cần.</p>

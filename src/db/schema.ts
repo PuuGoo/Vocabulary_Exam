@@ -19,6 +19,26 @@ export const setTypeEnum = ["irregular_verb", "ielts_vocab", "language_vocab"] a
 export const modeEnum = ["fill", "mc", "match", "dictation", "pronunciation", "sentence", "tone", "cloze", "mixed", "daily", "writing"] as const;
 export const shareTargetTypeEnum = ["vocab_set", "question_collection"] as const;
 export const shareAccessModeEnum = ["restricted", "anyone_with_link"] as const;
+export const contentKindEnum = ["word", "phrase", "sentence", "idiom"] as const;
+export type ContentKind = (typeof contentKindEnum)[number];
+
+export const contentStatusEnum = ["draft", "reviewed", "approved"] as const;
+export type ContentStatus = (typeof contentStatusEnum)[number];
+
+export const registerEnum = ["formal", "neutral", "informal", "academic", "spoken"] as const;
+export type WordRegister = (typeof registerEnum)[number];
+
+export const cefrLevelEnum = ["A1", "A2", "B1", "B2", "C1", "C2"] as const;
+export type CefrLevel = (typeof cefrLevelEnum)[number];
+
+export const ieltsSkillEnum = ["listening", "reading", "speaking", "writing"] as const;
+export type IeltsSkill = (typeof ieltsSkillEnum)[number];
+
+export const usageContextEnum = ["academic", "general", "spoken", "written"] as const;
+export type UsageContext = (typeof usageContextEnum)[number];
+
+export type MistakeReason = "wrong_meaning" | "wrong_spelling" | "wrong_pronunciation" | "wrong_collocation" | "wrong_pattern" | "wrong_context";
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const users = pgTable(
@@ -249,6 +269,16 @@ export const words = pgTable("words", {
   ipa: varchar("ipa", { length: 128 }), // phonetic transcription, e.g. /wɜːrd/
   level: varchar("level", { length: 64 }),
   classifier: varchar("classifier", { length: 128 }),
+  contentKind: varchar("content_kind", { length: 24 }).notNull().default("word"),
+  contentStatus: varchar("content_status", { length: 16 }).notNull().default("approved"),
+  register: varchar("register", { length: 24 }),
+  cefrLevel: varchar("cefr_level", { length: 8 }),
+  frequency: varchar("frequency", { length: 24 }),
+  ieltsRelevant: boolean("ielts_relevant").notNull().default(false),
+  ieltsBandRelevance: varchar("ielts_band_relevance", { length: 16 }),
+  ieltsSkills: text("ielts_skills").notNull().default("[]"),
+  usageContext: text("usage_context").notNull().default("[]"),
+  notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   setPositionIdx: uniqueIndex("words_set_position_idx").on(table.setId, table.position),
@@ -390,6 +420,7 @@ export const mistakes = pgTable(
       .references(() => vocabSets.id, { onDelete: "cascade" }),
     timesWrong: integer("times_wrong").notNull().default(1),
     lastWrongAt: timestamp("last_wrong_at").notNull().defaultNow(),
+    lastReason: varchar("last_reason", { length: 32 }),
   },
   (table) => ({
     uniqPair: uniqueIndex("mistakes_user_word_idx").on(table.userId, table.wordId),
@@ -503,6 +534,8 @@ export const reviewSessions = pgTable(
     wordCount: integer("word_count").notNull(),
     correctCount: integer("correct_count").notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }).notNull().defaultNow(),
+    mode: varchar("mode", { length: 24 }),
+    skill: varchar("skill", { length: 32 }),
   },
   (table) => ({
     uniqRequest: uniqueIndex("review_sessions_user_key_idx").on(table.userId, table.idempotencyKey),
@@ -809,5 +842,145 @@ export const categoryQuestions = pgTable(
     folderIdx: index("category_questions_folder_idx").on(table.folderId),
   })
 );
+// ── Vocabulary depth tables ──────────────────────────────────────────
+export const wordCollocations = pgTable(
+  "word_collocations",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    phrase: text("phrase").notNull(),
+    meaning: text("meaning"),
+    example: text("example"),
+    register: varchar("register", { length: 24 }),
+    contentStatus: varchar("content_status", { length: 16 }).notNull().default("approved"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    wordIdx: index("word_collocations_word_idx").on(table.wordId),
+    uniqPair: uniqueIndex("word_collocations_word_phrase_idx").on(table.wordId, table.phrase),
+  }),
+);
+
+export const wordPatterns = pgTable(
+  "word_patterns",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    pattern: text("pattern").notNull(),
+    meaning: text("meaning"),
+    example: text("example"),
+    contentStatus: varchar("content_status", { length: 16 }).notNull().default("approved"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    wordIdx: index("word_patterns_word_idx").on(table.wordId),
+    uniqPair: uniqueIndex("word_patterns_word_pattern_idx").on(table.wordId, table.pattern),
+  }),
+);
+
+export const topics = pgTable(
+  "topics",
+  {
+    id: serial("id").primaryKey(),
+    name: varchar("name", { length: 128 }).notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    nameIdx: uniqueIndex("topics_name_idx").on(table.name),
+  }),
+);
+
+export const wordTopics = pgTable(
+  "word_topics",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    topicId: integer("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("word_topics_word_topic_idx").on(table.wordId, table.topicId),
+    topicIdx: index("word_topics_topic_idx").on(table.topicId),
+  }),
+);
+
+export const wordFamilies = pgTable(
+  "word_families",
+  {
+    id: serial("id").primaryKey(),
+    label: varchar("label", { length: 128 }).notNull(),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    labelIdx: uniqueIndex("word_families_label_idx").on(table.label),
+  }),
+);
+
+export const wordFamilyMembers = pgTable(
+  "word_family_members",
+  {
+    id: serial("id").primaryKey(),
+    familyId: integer("family_id").notNull().references(() => wordFamilies.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    relation: varchar("relation", { length: 32 }),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqPair: uniqueIndex("word_family_members_family_word_idx").on(table.familyId, table.wordId),
+    wordIdx: index("word_family_members_word_idx").on(table.wordId),
+  }),
+);
+
+export const wordPronunciations = pgTable(
+  "word_pronunciations",
+  {
+    id: serial("id").primaryKey(),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    ipa: varchar("ipa", { length: 128 }).notNull(),
+    partOfSpeech: varchar("part_of_speech", { length: 32 }),
+    sense: text("sense"),
+    locale: varchar("locale", { length: 16 }).notNull().default("en-GB"),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    wordIdx: index("word_pronunciations_word_idx").on(table.wordId),
+  }),
+);
+
+export const wordSkillProgress = pgTable(
+  "word_skill_progress",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").notNull().references(() => words.id, { onDelete: "cascade" }),
+    skill: varchar("skill", { length: 32 }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    correctCount: integer("correct_count").notNull().default(0),
+    assistedCount: integer("assisted_count").notNull().default(0),
+    streak: integer("streak").notNull().default(0),
+    mastery: integer("mastery"),
+    lastMode: varchar("last_mode", { length: 32 }),
+    lastResult: boolean("last_result"),
+    lastPracticedAt: timestamp("last_practiced_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqTriple: uniqueIndex("word_skill_progress_user_word_skill_idx").on(table.userId, table.wordId, table.skill),
+    userSkillIdx: index("word_skill_progress_user_skill_idx").on(table.userId, table.skill),
+    masteryIdx: index("word_skill_progress_user_mastery_idx").on(table.userId, table.mastery),
+  }),
+);
+
 export type DailyActivity = typeof dailyActivities.$inferSelect;
 export type QuestionImportBatch = typeof questionImportBatches.$inferSelect;
