@@ -69,6 +69,9 @@ test("accepted answers preserve token and whole-answer slash conventions", () =>
 
 test("phrase slash variants share a common prefix without duplicating tokens", () => {
   assert.deepEqual(getAcceptedAnswers("claim to be / to do sth"), ["claim to be", "claim to do sth"]);
+  assert.deepEqual(getAcceptedAnswers("claim to be/to do sth"), ["claim to be", "claim to do sth"]);
+  assert.deepEqual(getAcceptedAnswers("claim to be/ to do sth"), ["claim to be", "claim to do sth"]);
+  assert.deepEqual(getAcceptedAnswers("claim to be /to do sth"), ["claim to be", "claim to do sth"]);
   assert.deepEqual(getAcceptedAnswers("be used to / doing sth"), ["be used to", "be used to doing sth"]);
   assert.deepEqual(getAcceptedAnswers("look forward to / doing sth"), ["look forward to", "look forward to doing sth"]);
 });
@@ -76,6 +79,10 @@ test("phrase slash variants share a common prefix without duplicating tokens", (
 test("phrase slash parsing never invents duplicated or merged tokens", () => {
   const variants = getAcceptedAnswers("claim to be / to do sth");
   assert.ok(!variants.some((variant) => variant.includes("to to")));
+  const noSpace = getAcceptedAnswers("claim to be/to do sth");
+  assert.equal(noSpace.length, 2);
+  assert.ok(noSpace.every((v) => !v.includes("to to")));
+  assert.ok(noSpace.every((v) => !v.includes("be do")));
   assert.ok(!variants.some((variant) => variant.includes("be do")));
   assert.equal(variants.length, 2);
   const used = getAcceptedAnswers("be used to / doing sth");
