@@ -421,3 +421,10 @@ button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) 
 @media (min-width: 768px) {
   .fill-focus-card-inner { padding: 1rem 1.25rem; }
 }
+
+/* ==== fill wrong-answer auto-reveal ==== */
+.fill-focus-card-inner { scroll-padding-bottom: 5rem; }
+.fill-feedback-reveal { animation: fill-feedback-in 260ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes fill-feedback-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.fill-correction-box { scroll-margin-bottom: 5.5rem; }
+@media (prefers-reduced-motion: reduce) { .fill-feedback-reveal { animation: none; } }
