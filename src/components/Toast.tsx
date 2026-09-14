@@ -34,13 +34,13 @@ export default function ToastHost() {
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      className="lexora-toast fixed left-1/2 z-[70] flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-lg bg-ink px-4 py-2.5 text-sm text-white shadow-lg md:max-w-md"
+      className="lexora-toast fixed left-1/2 z-[70] flex max-w-[90vw] -translate-x-1/2 items-center gap-3 rounded-[14px] bg-ink px-4 py-3 text-sm text-white shadow-[0_8px_28px_rgba(36,35,55,0.18)] backdrop-blur-sm md:max-w-md"
     >
       <span className="text-left whitespace-pre-line">{message}</span>
       <button
         type="button"
         aria-label="Đóng thông báo"
-        className="shrink-0 rounded px-1 text-lg leading-none text-white/70 hover:text-white focus:outline focus:outline-2 focus:outline-gold"
+        className="shrink-0 ml-1 flex h-7 w-7 items-center justify-center rounded-full text-sm leading-none text-white/60 transition hover:bg-white/15 hover:text-white focus:outline focus:outline-2 focus:outline-gold"
         onClick={() => setMessage(null)}
       >
         ×
@@ -48,3 +48,4 @@ export default function ToastHost() {
     </div>
   );
 }
+

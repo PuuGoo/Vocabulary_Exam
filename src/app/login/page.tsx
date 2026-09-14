@@ -45,7 +45,7 @@ function LoginForm() {
   return (
     <main className="min-h-screen bg-paper p-4 sm:p-6 lg:p-10">
       <div className="mx-auto grid min-h-[calc(100vh-2rem)] max-w-[1180px] overflow-hidden rounded-[24px] border border-line bg-white shadow-[0_20px_70px_rgba(43,39,74,0.08)] lg:grid-cols-[1.05fr_0.95fr]">
-        <section className="relative hidden overflow-hidden bg-[#302A68] p-7 text-white lg:block lg:p-14">
+        <section className="relative hidden overflow-hidden lexora-glow-border bg-[#302A68] p-7 text-white lg:block lg:p-14 [background:linear-gradient(140deg,#2d2764_0%,#241e55_45%,#3b2f7a_75%,#2d2764_100%)]">
           <Link href="/" className="relative z-10 flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#7865EE] text-lg font-extrabold">
               L
@@ -57,7 +57,7 @@ function LoginForm() {
               </span>
             </span>
           </Link>
-          <div className="relative z-10 mt-20 max-w-md lg:mt-28">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true"><div className="absolute -right-32 -top-32 h-96 w-96 rounded-full bg-[#7865EE]/20 blur-3xl"></div><div className="absolute -left-20 bottom-10 h-64 w-64 rounded-full bg-[#C8C2FF]/10 blur-2xl"></div></div><div className="relative z-10 mt-20 max-w-md lg:mt-28">
             <p className="text-sm font-semibold text-[#C8C2FF]">
               Điểm số tiếp theo bắt đầu từ đây.
             </p>
@@ -99,7 +99,7 @@ function LoginForm() {
                   Tên đăng nhập
                 </span>
                 <input
-                  className="h-12 w-full rounded-[11px] border border-line bg-[#FBFAFE] px-3.5 text-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-[#7865EE]/10"
+                  className="h-12 w-full rounded-[12px] border border-line bg-[#FBFAFE] px-3.5 text-sm outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(120,101,238,0.08)]"
                   type="text"
                   autoComplete="username"
                   value={username}
@@ -111,7 +111,7 @@ function LoginForm() {
                   Mật khẩu
                 </span>
                 <input
-                  className="h-12 w-full rounded-[11px] border border-line bg-[#FBFAFE] px-3.5 text-sm outline-none transition focus:border-gold focus:ring-2 focus:ring-[#7865EE]/10"
+                  className="h-12 w-full rounded-[12px] border border-line bg-[#FBFAFE] px-3.5 text-sm outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(120,101,238,0.08)]"
                   type="password"
                   autoComplete="current-password"
                   value={password}
@@ -121,9 +121,9 @@ function LoginForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="h-12 w-full rounded-[11px] bg-gold text-sm font-bold text-white transition hover:-translate-y-0.5 hover:bg-golddark disabled:opacity-50"
+                className="h-12 w-full rounded-[12px] bg-gold text-sm font-bold text-white shadow-[0_8px_20px_rgba(120,101,238,0.25)] transition hover:-translate-y-0.5 hover:bg-golddark hover:shadow-[0_12px_28px_rgba(120,101,238,0.32)] disabled:opacity-50 disabled:hover:translate-y-0"
               >
-                {loading ? "Đang đăng nhập..." : "Đăng nhập"}
+                {loading ? <span className="inline-flex items-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>Đang đăng nhập…</span> : "Đăng nhập"}
               </button>
             </form>
             <div className="mt-5 text-center text-xs text-muted">

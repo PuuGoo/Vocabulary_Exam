@@ -1855,7 +1855,7 @@ export default function AdminSetsPage() {
       )}
 
       {detail && (
-        <Modal title={detail.name} onClose={closeDetail} wide fillViewport>
+        <Modal title={detail.name} onClose={closeDetail} wide fillViewport bodyClassName="overflow-y-auto px-5 sm:px-8 py-5">
           <div>
           <div className={cx.desc}>
             {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : detail.type === "language_vocab" ? getLanguageConfig(detail.languageCode).label : "Từ vựng IELTS"} · {detail.words.length} mục
@@ -2117,7 +2117,7 @@ export default function AdminSetsPage() {
               Không tìm thấy từ phù hợp trong bộ này.
             </div>
           ) : (
-          <div className="max-h-[68vh] overflow-auto rounded-lg border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white" onDragOver={(event) => { if (draggingWordId === null) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientY < bounds.top + 56) event.currentTarget.scrollTop -= 28; else if (event.clientY > bounds.bottom - 56) event.currentTarget.scrollTop += 28; }}>
+          <div className="max-h-[calc(100dvh-16rem)] overflow-auto rounded-xl border border-line [&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10 [&_thead]:bg-white" onDragOver={(event) => { if (draggingWordId === null) return; const bounds = event.currentTarget.getBoundingClientRect(); if (event.clientY < bounds.top + 56) event.currentTarget.scrollTop -= 28; else if (event.clientY > bounds.bottom - 56) event.currentTarget.scrollTop += 28; }}>
             <table className={cx.table}>
               <thead>
                 <tr>

@@ -192,7 +192,7 @@ export default function AccountMenu({
               setOpen(false);
               onLogout();
             }}
-            className="flex min-h-12 w-full items-center gap-3 rounded-[13px] px-3 text-left text-[0.76rem] font-bold text-[#C34F5F] transition hover:bg-[#FFF3F4] disabled:cursor-wait disabled:opacity-60"
+            className="flex min-h-12 w-full items-center gap-3 rounded-[14px] px-3 py-1 text-left text-[0.78rem] font-bold text-[#C34F5F] transition hover:bg-[#FFF3F4] hover:shadow-[0_2px_10px_rgba(212,76,91,0.12)] disabled:cursor-wait disabled:opacity-60 active:scale-[0.98]"
           >
             <span
               className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#FFF0F2]"
@@ -207,3 +207,4 @@ export default function AccountMenu({
     </div>
   );
 }
+
