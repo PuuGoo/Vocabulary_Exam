@@ -460,14 +460,14 @@ export default function FillFocusSession({
 
   return (
     <div className={`fill-focus-session lexora-page-enter ${expandOpen ? "fixed inset-0 z-[90] overflow-y-auto bg-[rgb(var(--color-paper))] p-3 sm:p-6" : ""} ${chrome === "compact" ? "space-y-2 pb-2" : "space-y-2 pb-2"}`}>
-      {chrome === "full" && <section className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">{getFillModeLabel(set,target)}{wordScope === "unknown" ? " · Từ chưa nhớ" : ""}</p><h1 className="mt-1 truncate text-xl font-extrabold sm:text-2xl">{set.name}</h1></div>
+      {chrome === "full" && <section className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+        <div className="flex min-w-0 items-baseline gap-2"><p className="shrink-0 text-xs font-bold uppercase tracking-[0.16em] text-gold">{getFillModeLabel(set,target)}{wordScope === "unknown" ? " · Từ chưa nhớ" : ""}</p><h1 className="mt-1 truncate text-base font-extrabold sm:text-lg">{set.name}</h1></div>
         <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setExpandOpen((o) => !o)} title={expandOpen ? "Thu nh\u00f3" : "M\u1edf r\u1ed9ng to\u00e0n m\u00e0n h\u00ecnh"}>{expandOpen ? "\u21BB Thu nh\u00f3" : "\u27F6 M\u1edf r\u1ed9ng"}</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
       </section>}
 
-      {!retest && !quickMode && <StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} />}
+      {!retest && !quickMode && <StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} slim />}
 
-      <section className={`rounded-xl border border-line bg-white ${chrome === "compact" ? "p-3" : "p-3 sm:p-4"}`}>
+      <section className={`rounded-xl border border-line bg-white ${chrome === "compact" ? "p-2.5" : "p-2.5 sm:p-3"}`}>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex rounded-lg bg-[#F4F2FA] p-1" aria-label="Mục tiêu phiên học">
             <button className={`min-h-12 rounded-lg px-4 text-[0.9rem] font-bold ${sessionKind === "practice" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateWith({ session: null, view: "focus" })}>Luyện tập</button>
@@ -479,12 +479,12 @@ export default function FillFocusSession({
           </div>
           <button className="min-h-12 rounded-lg px-3 text-sm font-bold text-golddark hover:bg-goldpale/40" onClick={() => setCustomOpen((open) => !open)} aria-expanded={customOpen}>⚙ Tùy chỉnh</button>
         </div>
-        <div className="mt-2 flex items-center justify-between gap-3 text-sm font-semibold text-muted">
+        <div className="mt-1.5 flex items-center justify-between gap-3 text-sm font-semibold text-muted">
           <label className="flex items-center gap-1">Nhóm <select className="rounded-md border border-line bg-white px-1.5 py-1 text-xs font-bold text-ink" value={group} onChange={(event) => changeGroup(Number(event.target.value))}>{groups.map((items, index) => <option key={index} value={index}>{index + 1}/{groups.length} · {items.length} câu{groupResults[index] ? " · đã chấm" : ""}</option>)}</select></label>
           <button type="button" aria-haspopup="dialog" aria-expanded={navigatorOpen} onClick={() => setNavigatorOpen(true)} className="min-h-11 rounded-lg border border-line bg-white px-3 font-bold text-ink hover:bg-[#F8F7FF]">{isRetry ? "↻ Ôn lại" : `Câu ${Math.min(cursor + 1, originalWords.length)}/${originalWords.length}`} · Xem câu</button>
           <span>{progressPercent}%</span>
         </div>
-        <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${progressPercent}%` }} /></div>
+        <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${progressPercent}%` }} /></div>
         {customOpen && <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-line pt-3"><label className="text-xs text-muted">Từ câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label><label className="text-xs text-muted">Đến câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => applyRangeSafely(Number(rangeStart) || 1, Number(rangeEnd) || totalWordCount)}>Áp dụng</button>{hasRange && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => applyRangeSafely(1, totalWordCount)}>Cả bộ</button>}</div>}
       </section>
 
@@ -497,11 +497,11 @@ export default function FillFocusSession({
         <GroupSummary summary={result} words={originalWords} onCorrect={beginWeakCorrection} onNext={nextGroup} lastGroup={group === groups.length - 1} />
       ) : currentWord ? (
         <>
-          <section className={`fill-focus-card mx-auto w-full ${expandOpen ? "max-w-[120rem]" : "max-w-4xl"} rounded-2xl border border-line bg-white shadow-md ${chrome === "compact" ? "p-4 sm:p-5" : "p-5 sm:p-6"}`} aria-live="polite">
+          <section className={`fill-focus-card mx-auto w-full ${expandOpen ? "max-w-[120rem]" : "max-w-4xl"} rounded-2xl border border-line bg-white shadow-md ${chrome === "compact" ? "p-3 sm:p-4" : "p-4 sm:p-5"}`} aria-live="polite">
             {isRetry && <div className="mb-3 inline-flex rounded-full border border-[#CFC7FF] bg-[#F7F5FF] px-3 py-1 text-xs font-bold text-[#6550DB]">↻ Từ yếu quay lại sau vài câu</div>}
-            <div className="text-center">{languageCode === "zh-CN" && target === "pronunciation" ? <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Chữ Hán</div><div className="mt-2 font-serif text-3xl font-bold sm:text-4xl">{getWordDisplayForms(currentWord,set).primary}</div><div className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-1 text-lg font-bold">{currentWord.meaning}</div></> : <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-2 font-serif text-2xl font-bold sm:text-3xl">{currentWord.meaning}</div></>}{currentWord.wtype && <div className="mt-1.5 text-sm text-muted"><span className="font-semibold">Loại từ:</span> {currentWord.wtype}</div>}</div>
+            <div className="text-center">{languageCode === "zh-CN" && target === "pronunciation" ? <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Chữ Hán</div><div className="mt-2 font-serif text-3xl font-bold sm:text-4xl">{getWordDisplayForms(currentWord,set).primary}</div><div className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-1 text-lg font-bold">{currentWord.meaning}</div></> : <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-1.5 font-serif text-xl font-bold sm:text-2xl">{currentWord.meaning}</div></>}{currentWord.wtype && <div className="mt-1.5 text-sm text-muted"><span className="font-semibold">Loại từ:</span> {currentWord.wtype}</div>}</div>
 
-            {!feedback && effectiveSessionKind === "practice" && <div className="mt-3 flex flex-wrap justify-center gap-2">
+            {!feedback && effectiveSessionKind === "practice" && <div className="mt-2 flex flex-wrap justify-center gap-2">
               {canPlayTargetAudioBeforeAnswer(effectiveSessionKind) && target === "term" && <span onClickCapture={markAudioBeforeAnswer}><SpeakButton text={getSpeakText(currentWord,set)} languageCode={languageCode} /></span>}
               <button className="min-h-11 rounded-lg border border-[#CFC7FF] bg-[#F7F5FF] px-3 text-sm font-bold text-[#6550DB]" onClick={advanceHint}>💡 Gợi ý {activeHintLevel ? `${activeHintLevel}/4` : ""}<span className="ml-1 hidden text-[0.65rem] sm:inline">(H)</span></button>
             </div>}
@@ -509,7 +509,7 @@ export default function FillFocusSession({
             {!feedback && currentHint && <div className="mx-auto mt-4 w-full max-w-3xl rounded-xl border border-dashed border-gold bg-goldpale/25 px-4 py-3 text-sm"><div className="text-xs font-bold uppercase tracking-wide text-golddark">{multiGroup ? `Gợi ý cấu trúc ${hintGroupIndex + 1} · ` : ""}{currentHint.label}</div><div className={`mt-1 ${currentHint.revealed ? "font-bold text-ink" : "font-mono text-muted"}`}>{currentHint.value}</div></div>}
 
             {multiGroup ? (
-              <div className="mx-auto mt-6 grid w-full max-w-3xl gap-4">
+              <div className="mx-auto mt-3 grid w-full max-w-3xl gap-2.5">
                 <div className="text-center text-base font-extrabold text-[#6550DB]">{currentParsed.groups.length} cấu trúc cần nhớ</div>
                 {currentParsed.groups.map((groupItem, groupIndex) => {
                   const responseCorrect = feedback?.corrected || feedback?.groupGrade?.groupResults.some((result) => result.matchedResponseIndex === groupIndex);
@@ -520,8 +520,8 @@ export default function FillFocusSession({
                 })}
               </div>
             ) : (
-              <div className="mx-auto mt-6 w-full max-w-3xl">
-                <label className="mb-1 block text-left text-sm font-bold uppercase tracking-[0.1em] text-golddark" htmlFor={`fill-answer-${currentWord.id}`}>NHẬP {target === "pronunciation" ? languageConfig.pronunciationLabel.toUpperCase() : languageConfig.termLabel.toUpperCase()}</label>
+              <div className="mx-auto mt-3 w-full max-w-3xl">
+                <label className="mb-1 block text-left text-xs font-bold uppercase tracking-[0.1em] text-golddark" htmlFor={`fill-answer-${currentWord.id}`}>NHẬP {target === "pronunciation" ? languageConfig.pronunciationLabel.toUpperCase() : languageConfig.termLabel.toUpperCase()}</label>
                 <input ref={inputRef} id={`fill-answer-${currentWord.id}`} lang={languageCode} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} className={`${cx.input} !mb-0 mt-1 min-h-14 text-lg text-center ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" />
               </div>
             )}
@@ -530,7 +530,7 @@ export default function FillFocusSession({
 
             {feedback && (needsCorrection || feedback.corrected) && <div className="mx-auto mt-3 w-full max-w-3xl rounded-xl border border-bad/25 bg-badbg/30 p-5"><div className={`text-sm font-bold ${feedback.corrected ? "text-ok" : "text-bad"}`}>{feedback.corrected ? "✓ Đã sửa đúng" : multiGroup ? `Gõ lại ${correction.length} cấu trúc còn thiếu hoặc sai` : `Gõ lại ${target === "pronunciation" ? "Pinyin" : languageConfig.termLabel.toLowerCase()}`}</div>{correction.map((value, correctionIndex) => <div key={correctionIndex} className="mt-2"><label className="text-xs font-semibold text-muted" htmlFor={`fill-correction-${currentWord.id}-${correctionIndex}`}>{multiGroup ? `Cấu trúc cần sửa ${correctionIndex + 1}` : target === "pronunciation" ? "Pinyin" : languageConfig.termLabel}</label><input ref={(element) => { correctionInputRefs.current[correctionIndex] = element; }} id={`fill-correction-${currentWord.id}-${correctionIndex}`} autoFocus={correctionIndex === 0} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} className={`${cx.input} !mb-0 mt-1 min-h-14 text-lg`} value={value} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === correctionIndex ? event.target.value : item)); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && correctionIndex < correction.length - 1) { event.preventDefault(); correctionInputRefs.current[correctionIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={correctionIndex === correction.length - 1 ? "done" : "next"} /></div>)}</div>}
 
-            <div className="mx-auto mt-5 w-full max-w-2xl">
+            <div className="mx-auto mt-2.5 w-full max-w-2xl">
               {effectiveSessionKind === "test" ? (cursor === originalWords.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!allTestAnswered || saving} onClick={() => void submitTestGroup()}>{saving ? "Đang lưu…" : allTestAnswered ? "Nộp nhóm" : `Còn ${originalWords.length - totalAnsweredInTest} câu chưa làm`}</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentResponseComplete} onClick={advanceTest}>Câu tiếp theo →</button>) : !feedback ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!currentResponseComplete} onClick={checkPracticeAnswer}>Kiểm tra</button> : needsCorrection ? <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} disabled={!correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-12 w-full`} onClick={advancePractice}>Câu tiếp theo →</button>}
             </div>
           </section>

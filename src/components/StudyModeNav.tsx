@@ -38,10 +38,11 @@ type Props = {
   languageCode?: string;
   fillTarget?: FillTarget;
   availableModes?: readonly string[];
+  slim?: boolean;
   onSelectMode?: (mode: string, target?: FillTarget) => void;
 };
 
-export default function StudyModeNav({ setId, active, isVerb = false, languageCode = "en", fillTarget = "term", availableModes, onSelectMode }: Props) {
+export default function StudyModeNav({ setId, active, isVerb = false, languageCode = "en", fillTarget = "term", availableModes, onSelectMode, slim = false }: Props) {
   const router = useRouter();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const chinese = normalizeLanguageCode(languageCode) === "zh-CN";
@@ -76,7 +77,7 @@ export default function StudyModeNav({ setId, active, isVerb = false, languageCo
     scrollerRef.current?.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [selectedKey]);
 
-  return <nav aria-label="Chuyển chế độ học" className="sticky top-[72px] z-20 -mx-1 mb-5 border-b border-line bg-paper/95 px-1 pt-2 backdrop-blur-md">
+  return <nav aria-label="Chuyển chế độ học" className={`sticky top-[72px] z-20 -mx-1 border-b border-line bg-paper/95 px-1 backdrop-blur-md ${slim ? "mb-2 pt-1" : "mb-5 pt-2"}`}>
     <label className="mb-2 flex min-h-12 items-center gap-3 rounded-xl border border-[#DCD8F3] bg-white px-3 shadow-[0_5px_18px_rgba(36,35,55,0.06)] sm:hidden">
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#F0EDFF] text-[#6550DB]" aria-hidden="true">↔</span>
       <span className="min-w-0 flex-1">
@@ -98,7 +99,7 @@ export default function StudyModeNav({ setId, active, isVerb = false, languageCo
     <div ref={scrollerRef} className="hidden snap-x gap-1 overflow-x-auto pb-2 [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden sm:flex">
       {visibleItems.map((item) => {
         const selected = item.key === selectedKey;
-        const className = `flex min-h-11 shrink-0 snap-start items-center rounded-lg border px-3 text-[0.82rem] font-medium transition-all duration-200 ${selected ? "border-gold bg-goldpale text-golddark shadow-[0_4px_14px_rgba(120,101,238,0.12)]" : "border-transparent text-muted hover:-translate-y-0.5 hover:border-line hover:bg-white hover:text-ink"}`;
+        const className = `flex ${slim ? "min-h-9" : "min-h-11"} shrink-0 snap-start items-center rounded-lg border ${slim ? "px-2.5 text-[0.76rem]" : "px-3 text-[0.82rem]"} font-medium transition-all duration-200 ${selected ? "border-gold bg-goldpale text-golddark shadow-[0_4px_14px_rgba(120,101,238,0.12)]" : "border-transparent text-muted hover:-translate-y-0.5 hover:border-line hover:bg-white hover:text-ink"}`;
         const content = <><span aria-hidden="true">{item.icon}</span> {labelFor(item)}</>;
         return onSelectMode
           ? <button type="button" key={item.key} onClick={() => choose(item)} aria-current={selected ? "page" : undefined} className={className}>{content}</button>
