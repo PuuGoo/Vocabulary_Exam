@@ -400,3 +400,24 @@ button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) 
 /* Empty state layout helper */
 .lexora-empty { display: flex; min-height: 14rem; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; text-align: center; }
 
+/* ==== fill session single-screen focus (scoped) ==== */
+.fill-session-head { line-height: 1.25; }
+.fill-session-modenav nav { position: static; margin-bottom: 0.25rem; border-bottom: 0; background: transparent; padding-top: 0; backdrop-filter: none; }
+.fill-session-modenav nav > div:last-child { padding-bottom: 0; }
+.fill-session-modenav nav a, .fill-session-modenav nav button { min-height: 2rem; padding-left: 0.55rem; padding-right: 0.55rem; font-size: 0.76rem; }
+.fill-session-toolbar { box-shadow: 0 2px 12px rgba(43,39,74,0.05); }
+.fill-session-toolbar select { max-width: 7.5rem; }
+.fill-focus-card-inner { position: relative; }
+.fill-question-meaning { color: rgb(var(--color-ink)); text-wrap: balance; }
+.fill-answer-input::placeholder { color: rgb(var(--color-muted)); opacity: 0.75; }
+.fill-session-cta { margin-left: -0.25rem; margin-right: -0.25rem; padding-left: 0.25rem; padding-right: 0.25rem; }
+.fill-hint-box { line-height: 1.55; }
+
+@media (max-width: 900px) {
+  .fill-session-group { margin-left: 0; }
+  .fill-session-qjump { flex: 1 1 auto; justify-content: center; }
+}
+
+@media (min-width: 768px) {
+  .fill-focus-card-inner { padding: 1rem 1.25rem; }
+}

@@ -4,7 +4,7 @@ export const cx = {
   desc: "text-muted text-[0.85rem] mb-4",
   label: "text-[0.75rem] text-muted block mb-1 tracking-wide",
   input:
-    "w-full px-3 py-2.5 border border-line rounded-[11px] text-[0.9rem] bg-white mb-3 transition focus:border-gold",
+    "w-full px-3.5 py-2.5 border-2 border-line rounded-[12px] text-[0.95rem] font-medium text-ink bg-white mb-3 transition focus:border-gold focus:shadow-[0_0_0_4px_rgba(120,101,238,0.14)] placeholder:text-muted/80",
   btn: "min-h-11 px-4 py-2.5 rounded-[11px] text-[0.85rem] cursor-pointer font-semibold transition duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-y-0",
   btnDark: "bg-ink text-white hover:bg-[#0f1b28]",
   btnGold: "bg-gold text-white font-semibold hover:bg-golddark",
