@@ -143,6 +143,7 @@ export default function AppShell({
     </nav>
   );
   const home = isAdminMode ? "/admin" : "/dashboard";
+  const isFillSessionPage = !isAdminMode && pathname.startsWith("/quiz/");
   return (
     <div className="min-h-screen bg-paper text-ink">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[88px] flex-col border-r border-line bg-white px-3 py-5 md:flex lg:w-[264px] lg:px-5">
@@ -250,7 +251,7 @@ export default function AppShell({
             />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-[1536px] p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 lg:p-8 lg:pb-8">
+        <main className={`mx-auto w-full max-w-[1536px] p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:p-6 sm:pb-24 lg:p-8 lg:pb-8 ${isFillSessionPage ? "fill-session-main flex-1 min-h-0" : ""}`}>
           {adminPageAllowed ? children : <section className="mx-auto max-w-xl rounded-[18px] border border-line bg-white p-8 text-center"><div className="text-4xl font-black text-[#6550DB]">403</div><h1 className="mt-3 text-xl font-extrabold">Bạn không có quyền truy cập khu vực này.</h1><Link href="/admin" className="mt-6 inline-flex min-h-11 items-center rounded-xl bg-[#6550DB] px-5 font-bold text-white">Quay lại Admin</Link></section>}
         </main>
       </div>
