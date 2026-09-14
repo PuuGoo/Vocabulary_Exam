@@ -203,7 +203,7 @@ export default function AppShell({
         </div>
       )}
       <div className="min-w-0 md:pl-[88px] lg:pl-[264px]">
-        <header className="sticky top-0 z-30 flex h-[72px] items-center justify-between border-b border-line bg-white/95 px-4 backdrop-blur-md sm:px-6 lg:px-8 print:hidden">
+        <header className="lexora-header-glass sticky top-0 z-30 flex h-[72px] items-center justify-between border-b px-4 sm:px-6 lg:px-8 print:hidden shadow-[0_2px_16px_rgba(43,39,74,0.04)]">
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => setDrawerOpen(true)}
@@ -226,7 +226,7 @@ export default function AppShell({
             <button
               type="button"
               onClick={() => setQuickOpen(true)}
-              className="hidden h-10 items-center gap-2 rounded-[12px] border border-line bg-[#FBFAFE] px-3 text-xs text-muted hover:text-ink sm:flex"
+              className="lexora-elevated hidden h-10 items-center gap-2 rounded-[13px] border border-line bg-[#FBFAFE] px-3 text-xs text-muted transition hover:border-gold/30 hover:text-ink sm:flex"
             >
               <span>⌕</span>
               <span>Tìm nhanh</span>
@@ -257,7 +257,7 @@ export default function AppShell({
       {!isAdminMode && (
         <nav
           aria-label="Điều hướng nhanh trên điện thoại"
-          className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-[18px] border border-line bg-white/95 p-1.5 shadow-[0_14px_40px_rgba(36,35,55,0.16)] backdrop-blur-md md:hidden"
+          className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 rounded-[20px] border border-line bg-white/[0.92] p-1.5 shadow-[0_8px_24px_rgba(36,35,55,0.08),0_18px_50px_rgba(36,35,55,0.16)] backdrop-blur-xl md:hidden"
         >
           {STUDENT_PRIMARY_NAV.slice(0, 4).map((item) => (
             <Link

@@ -27,13 +27,13 @@ export default function ConfirmDialog({
   const danger = options.tone !== "warning";
   return (
     <Modal title={options.title} onClose={() => !busy && onCancel()}>
-      <p className="mb-5 text-sm leading-6 text-muted">{options.description}</p>
+      <div className="mb-5 rounded-[12px] border border-line/60 bg-[#FBFAFE] px-4 py-3 text-sm leading-6 text-muted">{options.description}</div>
       <div className="flex flex-wrap justify-end gap-2">
         <button
           type="button"
           disabled={busy}
           onClick={onCancel}
-          className="min-h-11 rounded-[11px] border border-line px-4 py-2.5 text-[0.85rem] font-semibold text-ink hover:border-gold"
+          className="min-h-12 rounded-[12px] border border-line px-5 py-2.5 text-[0.85rem] font-semibold text-ink transition hover:border-gold hover:bg-goldpale/20"
         >
           Hủy
         </button>
@@ -41,7 +41,7 @@ export default function ConfirmDialog({
           type="button"
           disabled={busy}
           onClick={onConfirm}
-          className={`min-h-11 rounded-[11px] px-4 py-2.5 text-[0.85rem] font-semibold text-white transition hover:-translate-y-0.5 ${danger ? "bg-bad hover:bg-[#B23B4C]" : "bg-gold hover:bg-golddark"}`}
+          className={`min-h-12 rounded-[12px] px-5 py-2.5 text-[0.85rem] font-semibold text-white shadow-[0_6px_16px_rgba(120,101,238,0.18)] transition hover:-translate-y-0.5 ${danger ? "bg-bad hover:bg-[#B23B4C]" : "bg-gold hover:bg-golddark"}`}
         >
           {busy ? "Đang xử lý..." : options.confirmLabel}
         </button>

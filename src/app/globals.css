@@ -323,3 +323,57 @@ html.lexora-native-app :is(a, button, [role="button"]) {
     transition: none;
   }
 }
+/* ============================================================
+   Lexora UI/UX polish — 2026-09-14
+   ============================================================ */
+
+/* Smooth scrolling with reduced-motion fallback */
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+/* Refined text selection */
+::selection { background: rgb(var(--color-gold) / 0.22); color: rgb(var(--color-ink)); }
+html.theme-dark ::selection { background: rgb(var(--color-gold) / 0.28); }
+
+/* Scrollbar hover polish */
+::-webkit-scrollbar-thumb:hover { background: rgb(var(--color-muted) / .4); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Layered depth - elevated interactive surfaces */
+.lexora-elevated { background: rgb(var(--color-panel)); border: 1px solid rgb(var(--color-line)); box-shadow: 0 1px 2px rgb(43 39 74 / .04), 0 12px 32px rgb(43 39 74 / .07); }
+.lexora-elevated-hover { transition: transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease; }
+.lexora-elevated-hover:hover { transform: translateY(-3px); box-shadow: 0 2px 6px rgb(43 39 74 / .05), 0 20px 44px rgb(120 101 238 / .12); border-color: rgb(var(--color-gold) / .28); }
+html.theme-dark .lexora-elevated-hover:hover { box-shadow: 0 2px 6px rgb(0 0 0 / .4), 0 20px 44px rgb(120 101 238 / .16); }
+
+/* Gradient top accent for primary panels */
+.lexora-glow-border { position: relative; }
+.lexora-glow-border::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; border-radius: 999px 999px 0 0; background: linear-gradient(90deg, transparent, rgb(var(--color-gold) / .7), transparent); opacity: .65; pointer-events: none; }
+
+/* Gradient text accent */
+.lexora-gradient-text { background: linear-gradient(115deg, rgb(var(--color-golddark)), rgb(var(--color-gold))); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html.theme-dark .lexora-gradient-text { background: linear-gradient(115deg, rgb(var(--color-golddark)), rgb(var(--color-golddark))); }
+
+/* Header backdrop glass refinement */
+.lexora-header-glass { background: color-mix(in srgb, rgb(var(--color-panel)) 82%, transparent); backdrop-filter: blur(14px) saturate(1.25); -webkit-backdrop-filter: blur(14px) saturate(1.25); border-bottom-color: rgb(var(--color-line) / .85); }
+html.theme-dark .lexora-header-glass { background: color-mix(in srgb, rgb(var(--color-panel)) 78%, transparent); }
+
+/* Tactile active feedback */
+button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) scale(.985); }
+
+/* Better focus visibility for keyboard users */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid rgb(var(--color-gold)); outline-offset: 3px; border-radius: inherit; }
+
+/* Card will-change hint */
+.lexora-card { will-change: transform; }
+
+/* Skeleton shimmer radius */
+.lexora-skeleton { border-radius: 10px; }
+
+/* Progress shimmer respects reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .lexora-progress::after { animation: none; }
+}
+
+/* Empty state layout helper */
+.lexora-empty { display: flex; min-height: 14rem; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; text-align: center; }
+

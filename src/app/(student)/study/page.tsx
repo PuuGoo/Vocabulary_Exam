@@ -150,7 +150,7 @@ export default function StudyPage() {
           <p className="mb-2 text-sm font-semibold text-gold">
             Trung tâm học tập
           </p>
-          <h1 className="text-[clamp(1.8rem,4vw,2.5rem)] font-extrabold tracking-[-0.045em]">
+          <h1 className="text-[clamp(1.8rem,4vw,2.5rem)] font-extrabold tracking-[-0.045em] lexora-gradient-text">
             Học &amp; luyện
           </h1>
           <p className="mt-2 max-w-2xl text-[0.95rem] leading-6 text-muted">
@@ -164,7 +164,7 @@ export default function StudyPage() {
         )}
       </section>
 
-      <section className="lexora-stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="lexora-stagger grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <LaunchCard
           href="/review-today"
           icon="↻"
@@ -189,7 +189,7 @@ export default function StudyPage() {
           tone="green"
           action="Tạo lượt học"
         />
-        <article className="lexora-card flex min-h-[154px] flex-col justify-between p-5 transition hover:-translate-y-1 hover:shadow-[0_10px_25px_rgba(43,39,74,0.07)]">
+        <article className="lexora-card lexora-elevated-hover flex min-h-[154px] flex-col justify-between p-5 sm:p-6">
           <div className="flex items-start justify-between">
             <span className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#FFF8DF] font-bold text-[#A87C12]">
               ⚡
@@ -221,7 +221,7 @@ export default function StudyPage() {
       </section>
 
       {goal && (
-        <section className="lexora-card flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+        <section className="lexora-card lexora-elevated-hover flex flex-col gap-4 p-5 sm:p-6 sm:flex-row sm:items-center">
           <span
             className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] text-lg ${goal.completed ? "bg-[#E7F7F2] text-[#398B73]" : "bg-[#EFECFF] text-[#6550DB]"}`}
           >
