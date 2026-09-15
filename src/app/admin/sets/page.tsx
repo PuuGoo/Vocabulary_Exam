@@ -36,7 +36,7 @@ type Word = {
   example?: string | null;
   wtype?: string | null;
   ipa?: string | null;
-  alternateTerm?:string|null; pronunciation?:string|null; examplePronunciation?:string|null; exampleMeaning?:string|null; level?:string|null; classifier?:string|null;
+  alternateTerm?:string|null; pronunciation?:string|null; examplePronunciation?:string|null; exampleMeaning?:string|null; level?:string|null; classifier?:string|null; notes?:string|null;
 };
 type SetDetail = SetSummary & { words: Word[] };
 type WordMatch = {
@@ -952,16 +952,16 @@ export default function AdminSetsPage() {
       if (!res.ok || !data.set) throw new Error(data.error || "Không thể tải dữ liệu bộ từ.");
       const current = data.set as SetDetail;
       const safeName = current.name.replace(/[\\/:*?"<>|]/g, "-").trim() || `bo-tu-${current.id}`;
-      const rows = current.words.map((word) => current.type === "irregular_verb"
+      const rows = current.words.map((word, index) => current.type === "irregular_verb"
         ? { STT: word.position, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
-        : current.languageCode === "zh-CN" ? { STT:word.position,"Chữ Hán":word.term||"","Phồn thể":word.alternateTerm||"",Pinyin:word.pronunciation||"",Nghĩa:word.meaning,"Loại từ":word.wtype||"","Lượng từ":word.classifier||"",HSK:word.level||"","Ví dụ":word.example||"","Pinyin ví dụ":word.examplePronunciation||"","Nghĩa ví dụ":word.exampleMeaning||"" }
+        : current.languageCode === "zh-CN" ? { "序号": index + 1, "生词":word.term||"","拼音":word.pronunciation||"","词性":word.wtype||"","意思":word.meaning,"注释":word.notes||"","例如":word.example||"" }
         : { STT: word.position, Từ: word.term || "", Nghĩa: word.meaning, IPA: word.ipa || "", "Loại từ": word.wtype || "", "Ví dụ": word.example || "" });
       if (format === "xlsx") {
         const XLSX = await import("xlsx");
         const sheet = XLSX.utils.json_to_sheet(rows);
-        sheet["!cols"] = current.type === "irregular_verb" ? [{ wch: 6 }, { wch: 28 }, ...Array.from({ length: 6 }, () => ({ wch: 18 }))] : current.languageCode === "zh-CN" ? [{wch:6},{wch:18},{wch:18},{wch:20},{wch:28},{wch:14},{wch:12},{wch:10},{wch:38},{wch:38},{wch:38}] : [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 52 }];
+        sheet["!cols"] = current.type === "irregular_verb" ? [{ wch: 6 }, { wch: 28 }, ...Array.from({ length: 6 }, () => ({ wch: 18 }))] : current.languageCode === "zh-CN" ? [{wch:6},{wch:18},{wch:20},{wch:14},{wch:28},{wch:28},{wch:38}] : [{ wch: 6 }, { wch: 24 }, { wch: 30 }, { wch: 18 }, { wch: 16 }, { wch: 52 }];
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, sheet, "Từ vựng");
+        XLSX.utils.book_append_sheet(workbook, sheet, current.languageCode === "zh-CN" ? "中文词汇" : "Từ vựng");
         XLSX.writeFile(workbook, `${safeName}.xlsx`);
       } else {
         const [{ default: pdfMake }, { default: pdfFonts }] = await Promise.all([import("pdfmake/build/pdfmake"), import("pdfmake/build/vfs_fonts")]);
@@ -978,7 +978,7 @@ export default function AdminSetsPage() {
           { table: { headerRows: 1, widths: current.type === "irregular_verb" ? [28, "*", "*", "*", "*"] : [28, 115, 145, 65, "*"], body }, layout: { fillColor: (row: number) => row === 0 ? "#EFECFF" : row % 2 === 0 ? "#FAF9FD" : null, hLineColor: () => "#DCD9E8", vLineColor: () => "#DCD9E8" } },
         ], defaultStyle: { font: "Roboto", fontSize: 8, color: "#242337" }, footer: (page: number, pages: number) => ({ text: `${page}/${pages}`, alignment: "center", fontSize: 8, color: "#8B899F" }) }).download(`${safeName}.pdf`);
       }
-      toast(`Đã tạo file ${format.toUpperCase()} cho “${current.name}”.`);
+      toast(current.languageCode === "zh-CN" ? `已导出 ${format.toUpperCase()} 文件：“${current.name}”。` : `Đã tạo file ${format.toUpperCase()} cho “${current.name}”.`);
     } catch (error) { toast(error instanceof Error ? error.message : "Không thể xuất bộ từ."); }
     finally { setExportingSetId(null); }
   }
@@ -1841,7 +1841,7 @@ export default function AdminSetsPage() {
                   )}
                 </div>}
               </div>
-              <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3`} disabled={exportingSetId !== null} onClick={() => void exportSet(s.id, "xlsx")}>{exportingSetId === s.id ? "…" : "↓ XLSX"}</button>
+              <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3`} disabled={exportingSetId !== null} onClick={() => void exportSet(s.id, "xlsx")}>{exportingSetId === s.id ? "…" : s.languageCode === "zh-CN" ? "导出 Excel" : "↓ XLSX"}</button>
               <button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3`} disabled={exportingSetId !== null} onClick={() => void exportSet(s.id, "pdf")}>{exportingSetId === s.id ? "…" : "↓ PDF"}</button>
               <button
                 className="px-2 py-2 text-[0.8rem] text-bad hover:underline"
