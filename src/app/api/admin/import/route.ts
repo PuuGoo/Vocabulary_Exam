@@ -17,19 +17,20 @@ export const runtime = "nodejs";
 type Row = Record<string, string>;
 
 const CHINESE_HEADERS = {
-  term: ["term", "hanzi", "chữ hán", "chinese", "simplified", "简体"],
+  term: ["term", "hanzi", "chữ hán", "chinese", "simplified", "简体", "生词"],
   alternateTerm: ["alternateterm", "alternate term", "traditional", "phồn thể", "繁體", "繁体"],
   pronunciation: ["pronunciation", "pinyin", "拼音"],
-  meaning: ["meaning", "nghĩa"],
-  wtype: ["wtype", "type", "word type", "loại từ"],
+  meaning: ["meaning", "nghĩa", "意思", "词义"],
+  wtype: ["wtype", "type", "word type", "loại từ", "词性"],
   classifier: ["classifier", "lượng từ"],
   level: ["level", "hsk"],
-  example: ["example", "ví dụ"],
+  example: ["example", "ví dụ", "例如"],
   examplePronunciation: ["examplepronunciation", "example pronunciation", "pinyin ví dụ"],
   exampleMeaning: ["examplemeaning", "example meaning", "nghĩa ví dụ"],
+  notes: ["notes", "note", "ghi chú", "注释"],
 } as const;
 function alias(row: Row, keys: readonly string[]) { for (const key of keys) if (row[key]) return row[key]; return ""; }
-function canonicalChineseRow(row: Row): Row { return { ...row, term:alias(row,CHINESE_HEADERS.term), alternateTerm:alias(row,CHINESE_HEADERS.alternateTerm), pronunciation:alias(row,CHINESE_HEADERS.pronunciation), meaning:alias(row,CHINESE_HEADERS.meaning), wtype:alias(row,CHINESE_HEADERS.wtype), classifier:alias(row,CHINESE_HEADERS.classifier), level:alias(row,CHINESE_HEADERS.level), example:alias(row,CHINESE_HEADERS.example), examplePronunciation:alias(row,CHINESE_HEADERS.examplePronunciation), exampleMeaning:alias(row,CHINESE_HEADERS.exampleMeaning) }; }
+function canonicalChineseRow(row: Row): Row { return { ...row, term:alias(row,CHINESE_HEADERS.term), alternateTerm:alias(row,CHINESE_HEADERS.alternateTerm), pronunciation:alias(row,CHINESE_HEADERS.pronunciation), meaning:alias(row,CHINESE_HEADERS.meaning), wtype:alias(row,CHINESE_HEADERS.wtype), classifier:alias(row,CHINESE_HEADERS.classifier), level:alias(row,CHINESE_HEADERS.level), example:alias(row,CHINESE_HEADERS.example), examplePronunciation:alias(row,CHINESE_HEADERS.examplePronunciation), exampleMeaning:alias(row,CHINESE_HEADERS.exampleMeaning), notes:alias(row,CHINESE_HEADERS.notes) }; }
 
 function normalizeRow(raw: Record<string, unknown>): Row {
   const out: Row = {};
@@ -168,6 +169,7 @@ export async function POST(req: NextRequest) {
         level: r.level || null,
         examplePronunciation: languageCode === "zh-CN" && r.examplePronunciation ? canonicalizePinyinDisplay(r.examplePronunciation) : r.examplePronunciation || null,
         exampleMeaning: r.exampleMeaning || null,
+        notes: r.notes || null,
       });
     }
   }
@@ -182,6 +184,6 @@ export async function POST(req: NextRequest) {
     total: rows.length,
     skippedDuplicates: deduped.duplicateCount,
     skippedInvalid: invalidCount,
-    warnings: pinyinWarningRows.length ? [{ code:"PINYIN_TONE_MISSING", message:"Pinyin chưa có dấu thanh.", rows:pinyinWarningRows }] : [],
+    warnings: pinyinWarningRows.length ? [{ code:"PINYIN_TONE_MISSING", message: languageCode === "zh-CN" ? "拼音缺少声调，请检查相关行。" : "Pinyin chưa có dấu thanh.", rows:pinyinWarningRows }] : [],
   });
 }
