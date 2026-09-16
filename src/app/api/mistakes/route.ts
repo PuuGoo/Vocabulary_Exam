@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { mistakes, wordProgress, words, vocabSets } from "@/db/schema";
+import { classMembers, mistakes, vocabSets, wordProgress, words } from "@/db/schema";
 import { getSession } from "@/lib/auth";
+import { getAdminAccess, isAuthorizationError } from "@/lib/adminAuthorization";
+import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { recordDailyActivity } from "@/lib/activity";
 import { recordWordOutcomes } from "@/lib/spacedProgress";
 import { recordSkillOutcomes } from "@/lib/skillProgress";
@@ -63,7 +65,26 @@ export async function POST(req: NextRequest) {
   const parsed = markSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
 
-  const [accessibleWord] = await db.select({ id: words.id }).from(words).innerJoin(vocabSets, eq(vocabSets.id, words.setId)).where(and(eq(words.id, parsed.data.wordId), eq(words.setId, parsed.data.setId), eq(vocabSets.publicationStatus, "published"))).limit(1);
+  // --- Access check: must mirror GET /api/sets/[id] ---
+  const [targetSet] = await db.select().from(vocabSets).where(eq(vocabSets.id, parsed.data.setId)).limit(1);
+  if (!targetSet) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (session.role === "admin") {
+    const admin = await getAdminAccess(session);
+    if (!admin?.can("vocab.view")) {
+      return NextResponse.json({ error: "Forbidden", code: "ADMIN_PERMISSION_REQUIRED", permission: "vocab.view" }, { status: 403 });
+    }
+    const scoped = await requireAdminResourceAccess({ permission: "vocab.view", folderId: targetSet.folderId, level: "viewer", access: admin });
+    if (isAuthorizationError(scoped)) return scoped;
+  } else {
+    if (targetSet.publicationStatus !== "published") return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (targetSet.classId !== null) {
+      const memberships = await db.select({ classId: classMembers.classId }).from(classMembers).where(eq(classMembers.userId, session.userId));
+      if (!memberships.some((item) => item.classId === targetSet.classId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+  }
+
+  const [accessibleWord] = await db.select({ id: words.id }).from(words).where(and(eq(words.id, parsed.data.wordId), eq(words.setId, parsed.data.setId))).limit(1);
   if (!accessibleWord) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [previousMistake] = await db.select().from(mistakes).where(and(
