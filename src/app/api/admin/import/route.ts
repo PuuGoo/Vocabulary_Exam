@@ -30,6 +30,37 @@ const CHINESE_HEADERS = {
   notes: ["notes", "note", "ghi chú", "注释"],
 } as const;
 function alias(row: Row, keys: readonly string[]) { for (const key of keys) if (row[key]) return row[key]; return ""; }
+// Round-trip: Excel export produces friendly Vietnamese headers ("Tu","Nghia","Loai tu","Vi du","IPA","V1"/"IPA V1"...). Map them back to canonical English keys on import, matching the Chinese header handling above.
+const GENERAL_HEADERS = {
+  term: ["term", "từ", "tu", "word", "từ vựng"],
+  meaning: ["meaning", "nghĩa", "nghia", "nghĩa từ"],
+  ipa: ["ipa", "phiên âm", "phien am"],
+  wtype: ["wtype", "type", "word type", "loại từ", "loai tu", "từ loại", "tu loai"],
+  example: ["example", "ví dụ", "vi du", "câu ví dụ", "cau vi du"],
+  v1: ["v1"],
+  v2: ["v2"],
+  v3: ["v3"],
+  ipa_v1: ["ipa_v1", "ipav1", "ipa v1"],
+  ipa_v2: ["ipa_v2", "ipav2", "ipa v2"],
+  ipa_v3: ["ipa_v3", "ipav3", "ipa v3"],
+} as const;
+function canonicalGeneralRow(row: Row): Row {
+  return {
+    ...row,
+    term: alias(row, GENERAL_HEADERS.term) || row.term || "",
+    meaning: alias(row, GENERAL_HEADERS.meaning) || row.meaning || "",
+    ipa: alias(row, GENERAL_HEADERS.ipa) || row.ipa || "",
+    wtype: alias(row, GENERAL_HEADERS.wtype) || row.wtype || "",
+    example: alias(row, GENERAL_HEADERS.example) || row.example || "",
+    v1: alias(row, GENERAL_HEADERS.v1) || row.v1 || "",
+    v2: alias(row, GENERAL_HEADERS.v2) || row.v2 || "",
+    v3: alias(row, GENERAL_HEADERS.v3) || row.v3 || "",
+    ipa_v1: alias(row, GENERAL_HEADERS.ipa_v1) || row.ipa_v1 || row.ipav1 || "",
+    ipa_v2: alias(row, GENERAL_HEADERS.ipa_v2) || row.ipa_v2 || row.ipav2 || "",
+    ipa_v3: alias(row, GENERAL_HEADERS.ipa_v3) || row.ipa_v3 || row.ipav3 || "",
+  };
+}
+
 function canonicalChineseRow(row: Row): Row { return { ...row, term:alias(row,CHINESE_HEADERS.term), alternateTerm:alias(row,CHINESE_HEADERS.alternateTerm), pronunciation:alias(row,CHINESE_HEADERS.pronunciation), meaning:alias(row,CHINESE_HEADERS.meaning), wtype:alias(row,CHINESE_HEADERS.wtype), classifier:alias(row,CHINESE_HEADERS.classifier), level:alias(row,CHINESE_HEADERS.level), example:alias(row,CHINESE_HEADERS.example), examplePronunciation:alias(row,CHINESE_HEADERS.examplePronunciation), exampleMeaning:alias(row,CHINESE_HEADERS.exampleMeaning), notes:alias(row,CHINESE_HEADERS.notes) }; }
 
 function normalizeRow(raw: Record<string, unknown>): Row {
@@ -65,13 +96,13 @@ export async function POST(req: NextRequest) {
     if (filename.endsWith(".csv")) {
       const text = await file.text();
       const parsed = Papa.parse<Record<string, unknown>>(text, { header: true, skipEmptyLines: true });
-      rows = parsed.data.map(normalizeRow);
+      rows = parsed.data.map(normalizeRow).map(canonicalGeneralRow);
     } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
-      rows = raw.map(normalizeRow);
+      rows = raw.map(normalizeRow).map(canonicalGeneralRow);
     } else {
       return NextResponse.json({ error: "Chỉ hỗ trợ file .csv, .xlsx, .xls" }, { status: 400 });
     }
