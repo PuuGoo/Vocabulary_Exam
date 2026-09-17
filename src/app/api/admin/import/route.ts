@@ -13,6 +13,10 @@ import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderLegacyPath, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_ROWS = 50_000;
 
 type Row = Record<string, string>;
 
@@ -88,6 +92,8 @@ export async function POST(req: NextRequest) {
   const classId = classIdRaw && String(classIdRaw).trim() !== "" ? Number(classIdRaw) : null;
 
   if (!file) return NextResponse.json({ error: "Vui lòng chọn file để nhập." }, { status: 400 });
+  if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "File quá lớn (tối đa 10 MB)." }, { status: 400 });
+  if (file.size < 1) return NextResponse.json({ error: "File trống." }, { status: 400 });
 
   const filename = file.name.toLowerCase();
   let rows: Row[] = [];
@@ -97,12 +103,14 @@ export async function POST(req: NextRequest) {
       const text = await file.text();
       const parsed = Papa.parse<Record<string, unknown>>(text, { header: true, skipEmptyLines: true });
       rows = parsed.data.map(normalizeRow).map(canonicalGeneralRow);
+      if (rows.length > MAX_ROWS) return NextResponse.json({ error: "File quá nhiều dòng (tối đa 50.000)." }, { status: 400 });
     } else if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
       rows = raw.map(normalizeRow).map(canonicalGeneralRow);
+      if (rows.length > MAX_ROWS) return NextResponse.json({ error: "File quá nhiều dòng (tối đa 50.000)." }, { status: 400 });
     } else {
       return NextResponse.json({ error: "Chỉ hỗ trợ file .csv, .xlsx, .xls" }, { status: 400 });
     }

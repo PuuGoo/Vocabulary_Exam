@@ -5,10 +5,21 @@ import { db } from "@/db";
 import { users, passwordResets } from "@/db/schema";
 import { generateToken } from "@/lib/tokens";
 import { sendPasswordResetEmail, isEmailConfigured } from "@/lib/mailer";
+import { checkRateLimit, recordRateLimitHit, FORGOT_PASSWORD_RATE_LIMIT } from "@/lib/rateLimit";
 
 const schema = z.object({ username: z.string().trim().min(1) });
 
+function getClientIp(req: NextRequest) {
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+}
+
 export async function POST(req: NextRequest) {
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`forgot:${ip}`, FORGOT_PASSWORD_RATE_LIMIT);
+  if (rl.limited) {
+    return NextResponse.json({ error: "Bạn đã yêu cầu quá nhiều lần. Vui lòng đợi một lúc." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds || 60) } });
+  }
+
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Vui lòng nhập tên đăng nhập." }, { status: 400 });
@@ -22,6 +33,8 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ ok: true, message: genericMessage });
   }
+
+  recordRateLimitHit(`forgot:${ip}`, FORGOT_PASSWORD_RATE_LIMIT);
 
   const token = generateToken();
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour

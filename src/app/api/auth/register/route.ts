@@ -6,6 +6,7 @@ import { users } from "@/db/schema";
 import { hashPassword, signSession, SESSION_COOKIE, sessionCookieOptions } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { isPublicRegistrationOpen } from "@/lib/registration";
+import { checkRateLimit, recordRateLimitHit, REGISTER_RATE_LIMIT } from "@/lib/rateLimit";
 
 const schema = z.object({
   username: z.string().trim().min(3, "Tên đăng nhập tối thiểu 3 ký tự").max(64),
@@ -13,8 +14,19 @@ const schema = z.object({
   displayName: z.string().trim().min(1).max(128).optional(),
 });
 
+function getClientIp(req: NextRequest) {
+  return req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+}
+
 export async function POST(req: NextRequest) {
   if (!(await isPublicRegistrationOpen())) return NextResponse.json({ error: "Đăng ký tài khoản mới đang tạm khóa. Vui lòng liên hệ quản trị viên." }, { status: 403 });
+
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`register:${ip}`, REGISTER_RATE_LIMIT);
+  if (rl.limited) {
+    return NextResponse.json({ error: "Bạn đã đăng ký quá nhiều lần. Vui lòng đợi một lúc." }, { status: 429, headers: { "Retry-After": String(rl.retryAfterSeconds || 60) } });
+  }
+
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
@@ -24,6 +36,7 @@ export async function POST(req: NextRequest) {
 
   const existing = await db.query.users.findFirst({ where: eq(users.username, username) });
   if (existing) {
+    recordRateLimitHit(`register:${ip}`, REGISTER_RATE_LIMIT);
     return NextResponse.json({ error: "Tên đăng nhập đã tồn tại." }, { status: 409 });
   }
 

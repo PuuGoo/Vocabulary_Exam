@@ -1,9 +1,14 @@
 import type { BackupEmailResult } from "@/lib/backupEmail";
 import type { BackupEmailSchedule } from "@/lib/backupSchedule";
 import { isStaleBackupAttempt, zonedScheduleParts } from "@/lib/backupScheduleTime";
+import { timingSafeEqual } from "node:crypto";
 
 export function isValidCronAuthorization(authorization: string | null, secret: string | undefined) {
-  return Boolean(secret) && authorization === `Bearer ${secret}`;
+  if (!secret || !authorization) return false;
+  const expected = `Bearer ${secret}`;
+  // Constant-time comparison to prevent timing attacks
+  if (authorization.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(authorization, "utf8"), Buffer.from(expected, "utf8"));
 }
 
 export type ScheduledBackupDependencies = {
