@@ -972,9 +972,9 @@ export default function AdminSetsPage() {
       const current = data.set as SetDetail;
       const safeName = current.name.replace(/[\\/:*?"<>|]/g, "-").trim() || `bo-tu-${current.id}`;
       const rows = current.words.map((word, index) => current.type === "irregular_verb"
-        ? { STT: word.position, Nghĩa: word.meaning, V1: word.v1 || "", "IPA V1": word.ipaV1 || "", V2: word.v2 || "", "IPA V2": word.ipaV2 || "", V3: word.v3 || "", "IPA V3": word.ipaV3 || "" }
-        : current.languageCode === "zh-CN" ? { "序号": index + 1, "生词":word.term||"","拼音":word.pronunciation||"","词性":word.wtype||"","意思":word.meaning,"注释":word.notes||"","例如":word.example||"" }
-        : { STT: word.position, Từ: word.term || "", Nghĩa: word.meaning, IPA: word.ipa || "", "Loại từ": word.wtype || "", "Ví dụ": word.example || "" });
+        ? { STT: word.position, Nghĩa: safeSpreadsheetCell(word.meaning), V1: safeSpreadsheetCell(word.v1 || ""), "IPA V1": safeSpreadsheetCell(word.ipaV1 || ""), V2: safeSpreadsheetCell(word.v2 || ""), "IPA V2": safeSpreadsheetCell(word.ipaV2 || ""), V3: safeSpreadsheetCell(word.v3 || ""), "IPA V3": safeSpreadsheetCell(word.ipaV3 || "") }
+        : current.languageCode === "zh-CN" ? { "序号": index + 1, "生词":safeSpreadsheetCell(word.term||""),"拼音":safeSpreadsheetCell(word.pronunciation||""),"词性":safeSpreadsheetCell(word.wtype||""),"意思":safeSpreadsheetCell(word.meaning),"注释":safeSpreadsheetCell(word.notes||""),"例如":safeSpreadsheetCell(word.example||"") }
+        : { STT: word.position, Từ: safeSpreadsheetCell(word.term || ""), Nghĩa: safeSpreadsheetCell(word.meaning), IPA: safeSpreadsheetCell(word.ipa || ""), "Loại từ": safeSpreadsheetCell(word.wtype || ""), "Ví dụ": safeSpreadsheetCell(word.example || "") });
       if (format === "xlsx") {
         const XLSX = await import("xlsx");
         const sheet = XLSX.utils.json_to_sheet(rows);
