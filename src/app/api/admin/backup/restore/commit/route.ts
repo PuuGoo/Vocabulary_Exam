@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, report: result.report });
   } catch (error) {
     await deleteSession(sessionId).catch(() => undefined);
-    console.error("Chunked restore failed", error);
-    return Response.json({ error: error instanceof Error ? error.message : "Không thể khôi phục dữ liệu." }, { status: 400 });
+    console.error("[backup-restore] commit failed", error);
+    return Response.json({ error: "Không thể khôi phục dữ liệu." }, { status: 400 });
   }
 }

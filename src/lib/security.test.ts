@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "fs";
 
 // 1. Rate limiter utility
 describe("rateLimit", () => {
@@ -22,7 +23,6 @@ describe("rateLimit", () => {
 // 2. Open redirect validation
 describe("open redirect", () => {
   it("isInternalPath rejects external URLs", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/login/page.tsx", "utf8");
     assert.ok(content.includes("isInternalPath"), "login page should have isInternalPath validator");
     assert.ok(content.includes('router.push(isInternalPath'), "should validate before push");
@@ -33,7 +33,6 @@ describe("open redirect", () => {
 // 3. Security headers present in next.config
 describe("security headers", () => {
   it("next.config.js has security headers", () => {
-    const { readFileSync } = require("fs");
     const config = readFileSync("next.config.js", "utf8");
     assert.ok(config.includes("Strict-Transport-Security"), "should have HSTS");
     assert.ok(config.includes("X-Content-Type-Options"), "should have X-Content-Type-Options");
@@ -47,7 +46,6 @@ describe("security headers", () => {
 // 4. Logout has security flags
 describe("logout cookie security", () => {
   it("logout clears cookie with security options", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/api/auth/logout/route.ts", "utf8");
     assert.ok(content.includes("sessionCookieOptions"), "should use sessionCookieOptions for clearing");
     assert.ok(content.includes("maxAge: 0"), "should set maxAge 0");
@@ -57,7 +55,6 @@ describe("logout cookie security", () => {
 // 5. Cron auth uses constant-time comparison
 describe("cron auth", () => {
   it("uses timingSafeEqual", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/lib/backupEmailCron.ts", "utf8");
     assert.ok(content.includes("timingSafeEqual"), "should use timingSafeEqual for cron auth");
   });
@@ -66,7 +63,6 @@ describe("cron auth", () => {
 // 6. Import has size and row limits
 describe("import hardening", () => {
   it("has MAX_FILE_SIZE and MAX_ROWS limits", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/api/admin/import/route.ts", "utf8");
     assert.ok(content.includes("MAX_FILE_SIZE"), "should have file size limit");
     assert.ok(content.includes("MAX_ROWS"), "should have row limit");
@@ -76,7 +72,6 @@ describe("import hardening", () => {
 // 7. Login has rate limiting
 describe("login rate limiting", () => {
   it("login route imports rate limiter", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/api/auth/login/route.ts", "utf8");
     assert.ok(content.includes("checkRateLimit"), "should check rate limit");
     assert.ok(content.includes("recordRateLimitHit"), "should record failures");
@@ -87,7 +82,6 @@ describe("login rate limiting", () => {
 // 8. Reset password invalidates all tokens
 describe("reset password", () => {
   it("invalidates all user tokens on reset", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/api/auth/reset-password/route.ts", "utf8");
     assert.ok(content.includes("passwordResets.userId"), "should invalidate by userId, not just single token");
   });
@@ -96,7 +90,6 @@ describe("reset password", () => {
 // 9. JWT secret must be required (session.ts)
 describe("JWT configuration", () => {
   it("requires JWT_SECRET", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/lib/session.ts", "utf8");
     assert.ok(content.includes("if (!JWT_SECRET)"), "should throw if no JWT_SECRET");
     assert.ok(!content.includes('JWT_SECRET || "default"'), "should not have fallback secret");
@@ -107,7 +100,6 @@ describe("JWT configuration", () => {
 // 10. Cookie options are secure
 describe("cookie security", () => {
   it("session cookie has secure flags", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/lib/session.ts", "utf8");
     assert.ok(content.includes("httpOnly: true"), "cookie should be HttpOnly");
     assert.ok(content.includes('secure: process.env.NODE_ENV === "production"'), "cookie should be Secure in production");
@@ -119,7 +111,6 @@ describe("cookie security", () => {
 // 11. Admin API authorization
 describe("admin authorization", () => {
   it("middleware blocks student from admin API", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/middleware.ts", "utf8");
     assert.ok(content.includes("api/admin"), "should check /api/admin paths");
     assert.ok(content.includes("403"), "should return 403 for unauthorized");
@@ -129,12 +120,10 @@ describe("admin authorization", () => {
 // 12. XSS: no dangerouslySetInnerHTML in critical components
 describe("XSS safety", () => {
   it("no dangerouslySetInnerHTML in FillFocusSession", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/components/FillFocusSession.tsx", "utf8");
     assert.ok(!content.includes("dangerouslySetInnerHTML"), "FillFocusSession should not use dangerouslySetInnerHTML");
   });
   it("no dangerouslySetInnerHTML in LearnExperience", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/components/learning/LearnExperience.tsx", "utf8");
     assert.ok(!content.includes("dangerouslySetInnerHTML"), "LearnExperience should not use dangerouslySetInnerHTML");
   });
@@ -143,7 +132,6 @@ describe("XSS safety", () => {
 // 13. Password never exposed in responses
 describe("no password leakage", () => {
   it("login response does not include passwordHash field", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/api/auth/login/route.ts", "utf8");
     // The response JSON should only contain username, displayName, role - not passwordHash
     const responseBody = content.match(/NextResponse\.json\(\{([^}]+)\}/);
@@ -156,9 +144,37 @@ describe("no password leakage", () => {
 // 14. File upload validation
 describe("upload safety", () => {
   it("import rejects oversized files", () => {
-    const { readFileSync } = require("fs");
     const content = readFileSync("src/app/api/admin/import/route.ts", "utf8");
     assert.ok(content.includes("file.size > MAX_FILE_SIZE"), "should check file size");
     assert.ok(content.includes("rows.length > MAX_ROWS"), "should check row count");
   });
 });
+
+
+// 15. Error message leak prevention
+describe("error message leak prevention", () => {
+  it("backup chunk route does not leak error.message to client", () => {
+    const content = readFileSync("src/app/api/admin/backup/restore/chunk/route.ts", "utf8");
+    assert.ok(content.includes("console.error(\"[backup-restore] chunk append failed\""), "should log error server-side");
+    assert.ok(!content.includes("error instanceof Error ? error.message :"), "should not leak error.message");
+  });
+
+  it("backup commit route does not leak error.message to client", () => {
+    const content = readFileSync("src/app/api/admin/backup/restore/commit/route.ts", "utf8");
+    assert.ok(content.includes("console.error(\"[backup-restore] commit failed\""), "should log error server-side");
+    assert.ok(!content.includes("error instanceof Error ? error.message :"), "should not leak error.message");
+  });
+
+  it("IPA batch route does not leak error.message to client", () => {
+    const content = readFileSync("src/app/api/admin/sets/[id]/fetch-ipa/route.ts", "utf8");
+    assert.ok(content.includes("console.error(\"[fetch-ipa-batch]"), "should log error server-side");
+    assert.ok(!content.includes("err instanceof Error ? err.message"), "should not leak err.message");
+  });
+
+  it("IPA single route does not leak error.message to client", () => {
+    const content = readFileSync("src/app/api/admin/words/[id]/fetch-ipa/route.ts", "utf8");
+    assert.ok(content.includes("console.error(\"[fetch-ipa] error\""), "should log error server-side");
+    assert.ok(!content.includes("err instanceof Error ? err.message"), "should not leak err.message");
+  });
+});
+

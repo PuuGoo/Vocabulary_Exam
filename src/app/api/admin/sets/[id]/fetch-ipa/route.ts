@@ -65,7 +65,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         }
       }
     } catch (err) {
-      errors.push(err instanceof Error ? err.message : "Lỗi không xác định.");
+      console.error("[fetch-ipa-batch] error", err);
+      errors.push("Lỗi khi truy vạn phiên âm từ Gemini.");
       break; // stop early on rate-limit / repeated errors instead of hammering further chunks
     }
 

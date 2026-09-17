@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     const meta = await appendChunk(sessionId, index, buf);
     return Response.json({ ok: true, receivedChunks: meta.receivedChunks, expectedChunks: meta.expectedChunks });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Không thể nhận phân đoạn." }, { status: 400 });
+    console.error("[backup-restore] chunk append failed", error);
+    return Response.json({ error: "Không thể nhận phân đoạn." }, { status: 400 });
   }
 }

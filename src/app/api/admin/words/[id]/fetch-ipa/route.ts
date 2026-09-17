@@ -39,6 +39,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     await db.update(words).set({ ipa }).where(eq(words.id, word.id));
     return NextResponse.json({ ipa });
   } catch (err) {
-    return NextResponse.json({ error: err instanceof Error ? err.message : "Lỗi không xác định." }, { status: 500 });
+    console.error("[fetch-ipa] error", err);
+    return NextResponse.json({ error: "Không thể lấy phiên âm từ Gemini." }, { status: 500 });
   }
 }
