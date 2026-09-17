@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { cx } from "@/components/ui";
 import { toast } from "@/components/Toast";
@@ -86,6 +87,15 @@ function toShuffleQuestion(question: any): AdminShuffleQuestion {
 export default function AdminSetsPage() {
   const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
   const adminAccess = useAdminPermissions();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const navigateCategory = useCallback((cat: string) => {
+    if (cat === ALL_CATEGORIES) {
+      router.push("/admin/sets");
+    } else {
+      router.push(`/admin/sets?category=${encodeURIComponent(cat)}`);
+    }
+  }, [router]);
   const [sets, setSets] = useState<SetSummary[] | null>(null);
   const [classesOpt, setClassesOpt] = useState<ClassOpt[]>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategorySummary[]>([]);
@@ -652,12 +662,21 @@ export default function AdminSetsPage() {
     const returnParams = new URLSearchParams(window.location.search);
     const requestedCategory = returnParams.get("category")?.trim();
     const requestedSetId = Number(returnParams.get("openSet"));
-    if (requestedCategory) setSelectedCategory(requestedCategory);
+    if (requestedCategory) navigateCategory(requestedCategory);
     if (Number.isInteger(requestedSetId) && requestedSetId > 0) {
-      window.history.replaceState(null, "", "/admin/sets");
       void openDetail(requestedSetId);
     }
   }, []);
+
+  // Sync selectedCategory from URL so Back/Forward/Refresh work
+  useEffect(() => {
+    const urlCat = searchParams.get("category") || ALL_CATEGORIES;
+    if (urlCat !== selectedCategory) {
+      setSelectedCategory(urlCat);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
 
   useEffect(() => {
     setDocumentFiles([]);
@@ -776,7 +795,7 @@ export default function AdminSetsPage() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể đổi tên danh mục.");
-      if (selectedCategory === data.category.oldName) setSelectedCategory(data.category.name);
+      if (selectedCategory === data.category.oldName) navigateCategory(data.category.name);
       if (newCategory === data.category.oldName) setNewCategory(data.category.name);
       if (editCategory === data.category.oldName) setEditCategory(data.category.name);
       setEditingCategoryId(null);
@@ -799,7 +818,7 @@ export default function AdminSetsPage() {
       const res = await fetch(`/api/admin/categories?id=${category.id}`, { method: "DELETE" });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) return toast(data.error || "Không thể xóa danh mục.");
-      if (selectedCategory === category.name) setSelectedCategory(ALL_CATEGORIES);
+      if (selectedCategory === category.name) navigateCategory(ALL_CATEGORIES);
       if (newCategory === category.name) setNewCategory("");
       if (editCategory === category.name) setEditCategory("");
       await Promise.all([loadCategories(), loadSets()]);
@@ -1349,15 +1368,15 @@ export default function AdminSetsPage() {
         <section className="mb-5 rounded-[14px] border border-line bg-[#FBFAFE] p-3 sm:p-4" aria-label="Trình duyệt thư mục bộ từ">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm" aria-label="Đường dẫn thư mục">
-              <button type="button" className={`rounded-lg px-2 py-1 font-bold ${selectedCategory === ALL_CATEGORIES ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => setSelectedCategory(ALL_CATEGORIES)}>Tất cả bộ từ</button>
+              <button type="button" className={`rounded-lg px-2 py-1 font-bold ${selectedCategory === ALL_CATEGORIES ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => navigateCategory(ALL_CATEGORIES)}>Tất cả bộ từ</button>
               {selectedCategory === UNCATEGORIZED && <><span className="text-muted">/</span><span className="rounded-lg bg-[#7865EE] px-2 py-1 font-bold text-white">Chưa phân loại</span></>}
-              {categoryBreadcrumbs.map((item, index) => <span key={item.path} className="flex items-center gap-1.5"><span className="text-muted">/</span><button type="button" className={`max-w-[190px] truncate rounded-lg px-2 py-1 font-bold ${index === categoryBreadcrumbs.length - 1 ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => setSelectedCategory(item.path)}>{item.label}</button></span>)}
+              {categoryBreadcrumbs.map((item, index) => <span key={item.path} className="flex items-center gap-1.5"><span className="text-muted">/</span><button type="button" className={`max-w-[190px] truncate rounded-lg px-2 py-1 font-bold ${index === categoryBreadcrumbs.length - 1 ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => navigateCategory(item.path)}>{item.label}</button></span>)}
             </nav>
             {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3 !py-1.5 text-xs`} onClick={() => { setManagerParentPath(selectedCategory); setManagerNewName(""); setShowCategoryManager(true); }}>+ Tạo thư mục con</button>}
           </div>
           {(childCategories.length > 0 || selectedCategory === ALL_CATEGORIES) && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {childCategories.map(([path, count]) => <FolderCard key={path} name={path.split(" / ").pop() || path} count={count} dragging={draggingSetId !== null} onClick={() => setSelectedCategory(path)} onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, path) : undefined} />)}
-            {selectedCategory === ALL_CATEGORIES && categories.some(([path]) => path === UNCATEGORIZED) && <FolderCard name="Chưa phân loại" count={categories.find(([path]) => path === UNCATEGORIZED)?.[1] || 0} dragging={draggingSetId !== null} onClick={() => setSelectedCategory(UNCATEGORIZED)} onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, UNCATEGORIZED) : undefined} muted />}
+            {childCategories.map(([path, count]) => <FolderCard key={path} name={path.split(" / ").pop() || path} count={count} dragging={draggingSetId !== null} onClick={() => navigateCategory(path)} onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, path) : undefined} />)}
+            {selectedCategory === ALL_CATEGORIES && categories.some(([path]) => path === UNCATEGORIZED) && <FolderCard name="Chưa phân loại" count={categories.find(([path]) => path === UNCATEGORIZED)?.[1] || 0} dragging={draggingSetId !== null} onClick={() => navigateCategory(UNCATEGORIZED)} onDrop={draggingSetId !== null ? () => void moveSetToCategory(draggingSetId, UNCATEGORIZED) : undefined} muted />}
           </div>}
           {selectedCategory !== ALL_CATEGORIES && selectedCategory !== UNCATEGORIZED && childCategories.length === 0 && <p className="text-xs text-muted">Thư mục này chưa có thư mục con. Bạn có thể tạo mới hoặc xem các bộ từ bên dưới.</p>}
           {draggingSetId !== null && <p className="mt-2 text-xs font-semibold text-[#6550DB]">Thả bộ từ vào thư mục đích để di chuyển.</p>}
@@ -1763,7 +1782,7 @@ export default function AdminSetsPage() {
       ) : filteredSets.length === 0 ? (
         <div className={cx.empty}>
           {childCategories.length > 0 && !searchQuery.trim() ? "Thư mục này chưa chứa bộ từ trực tiếp. Hãy mở một thư mục con ở phía trên." : "Không tìm thấy bộ từ phù hợp với bộ lọc hiện tại."}
-          {!(childCategories.length > 0 && !searchQuery.trim()) && <div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setSearchQuery(""); setSelectedCategory(ALL_CATEGORIES); }}>Xoá bộ lọc</button></div>}
+          {!(childCategories.length > 0 && !searchQuery.trim()) && <div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => { setSearchQuery(""); navigateCategory(ALL_CATEGORIES); }}>Xoá bộ lọc</button></div>}
         </div>
       ) : (
         filteredSets.map((s) => (
@@ -1911,7 +1930,7 @@ export default function AdminSetsPage() {
           {(detailTab === "questions" || detailTab === "documents") && <section className="rounded-xl border border-line bg-[#FBFAFE] p-5">
             <h3 className="font-serif text-lg font-bold">{detailTab === "questions" ? "Câu hỏi trong thư mục" : "Tài liệu trong thư mục"}</h3>
             <p className="mt-2 text-sm text-muted">Nội dung này được dùng chung theo hierarchy danh mục hiện có để các bộ cùng chủ đề không bị nhân bản dữ liệu.</p>
-            {detail.category ? <button type="button" className={`${cx.btn} ${cx.btnGold} mt-4`} onClick={() => { setSelectedCategory(detail.category || ALL_CATEGORIES); setDetail(null); }}>{detailTab === "questions" ? "Mở quản lý câu hỏi" : "Mở quản lý tài liệu"}</button> : <p className="mt-3 text-sm font-semibold text-bad">Hãy gán bộ vào một danh mục trong tab Cài đặt trước.</p>}
+            {detail.category ? <button type="button" className={`${cx.btn} ${cx.btnGold} mt-4`} onClick={() => { navigateCategory(detail.category || ALL_CATEGORIES); setDetail(null); }}>{detailTab === "questions" ? "Mở quản lý câu hỏi" : "Mở quản lý tài liệu"}</button> : <p className="mt-3 text-sm font-semibold text-bad">Hãy gán bộ vào một danh mục trong tab Cài đặt trước.</p>}
           </section>}
 
           {detailTab === "settings" && <>
