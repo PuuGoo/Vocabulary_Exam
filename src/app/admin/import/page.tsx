@@ -257,35 +257,52 @@ export default function AdminImportPage() {
         />
       </div>
 
-      <div className="text-[0.74rem] text-muted bg-goldpale px-3 py-2.5 rounded-lg mb-3.5 leading-relaxed">
+            <div className="text-[0.74rem] text-muted bg-goldpale px-3 py-2.5 rounded-lg mb-3.5 leading-relaxed">
         {target === "__new_language" ? (
           <>
-            <b>导入格式 — 中文词汇：</b> <code className="bg-white/60 px-1 rounded">生词</code> (必填){" "}
-            <code className="bg-white/60 px-1 rounded">意思</code> / <code className="bg-white/60 px-1 rounded">词义</code> (必填){" "}
-            <code className="bg-white/60 px-1 rounded">拼音</code> (可选){" "}
-            <code className="bg-white/60 px-1 rounded">词性</code> (可选){" "}
-            <code className="bg-white/60 px-1 rounded">注释</code> (可选){" "}
-            <code className="bg-white/60 px-1 rounded">例如</code> (可选)
-            <br />
-            <span>也支持：</span> <code className="bg-white/60 px-1 rounded">Chữ Hán</code> / <code className="bg-white/60 px-1 rounded">Nghĩa</code> / <code className="bg-white/60 px-1 rounded">Pinyin</code> 等越南语表头
-            <br />
-            第一行必须为表头；<code className="bg-white/60 px-1 rounded">序号</code> / <code className="bg-white/60 px-1 rounded">STT</code> 仅用于预览，不会作为词汇导入。
+            <b>导入格式 — 中文词汇：</b>
+            <div className="mt-1.5 grid gap-1.5">
+              <div>必填：<code className="bg-white/70 px-1 rounded">生词</code> + <code className="bg-white/70 px-1 rounded">意思</code> / <code className="bg-white/70 px-1 rounded">词义</code></div>
+              <div>可选：<code className="bg-white/70 px-1 rounded">拼音</code> · <code className="bg-white/70 px-1 rounded">词性</code> · <code className="bg-white/70 px-1 rounded">注释</code> · <code className="bg-white/70 px-1 rounded">例如</code> · <code className="bg-white/70 px-1 rounded">繁体</code> · <code className="bg-white/70 px-1 rounded">量词</code> · <code className="bg-white/70 px-1 rounded">HSK</code> · <code className="bg-white/70 px-1 rounded">pinyin 例句</code></div>
+              <div>也支持越南语表头：<code className="bg-white/70 px-1 rounded">Chữ Hán</code> / <code className="bg-white/70 px-1 rounded">Nghĩa</code> / <code className="bg-white/70 px-1 rounded">Pinyin</code> / <code className="bg-white/70 px-1 rounded">Loại từ</code></div>
+              <div>第一行必须为表头；<code className="bg-white/70 px-1 rounded">序号</code> / <code className="bg-white/70 px-1 rounded">STT</code> 仅用于预览，不会作为词汇导入。</div>
+            </div>
+            <div className="mt-2 rounded-lg bg-white/70 px-2.5 py-2 font-mono text-[0.7rem] leading-5">
+              序号 | 生词 | 拼音 | 词性 | 意思 | 注释 | 例如<br />
+              1 | 你好 | nǐ hǎo | 问候语 | xin chào | 常用 | 你好，很高兴认识你<br />
+              2 | 学习 | xuéxí | 动词 | học tập | | 我每天学习中文
+            </div>
+            <div className="mt-1.5 text-[0.7rem]">提示：拼音会自动标准化；若缺少声调会在导入后提醒（如 ni hao → 请补 nǐ hǎo）。</div>
+          </>
+        ) : target === "__new_verb" ? (
+          <>
+            <b>Định dạng cột — Động từ bất quy tắc:</b>
+            <div className="mt-1.5 grid gap-1.5">
+              <div>Bắt buộc: <code className="bg-white/70 px-1 rounded">Nghĩa</code> + <code className="bg-white/70 px-1 rounded">V1</code> + <code className="bg-white/70 px-1 rounded">V2</code> + <code className="bg-white/70 px-1 rounded">V3</code></div>
+              <div>Tùy chọn: <code className="bg-white/70 px-1 rounded">IPA V1</code> · <code className="bg-white/70 px-1 rounded">IPA V2</code> · <code className="bg-white/70 px-1 rounded">IPA V3</code> (hoặc <code className="bg-white/70 px-1 rounded">ipa_v1</code>, <code className="bg-white/70 px-1 rounded">ipav1</code>…)</div>
+              <div>Nhận cả header tiếng Việt lẫn tiếng Anh: <code className="bg-white/70 px-1 rounded">Nghĩa</code>/<code className="bg-white/70 px-1 rounded">meaning</code> · <code className="bg-white/70 px-1 rounded">V1</code>/<code className="bg-white/70 px-1 rounded">v1</code> …</div>
+            </div>
+            <div className="mt-2 rounded-lg bg-white/70 px-2.5 py-2 font-mono text-[0.7rem] leading-5">
+              Nghĩa | V1 | IPA V1 | V2 | IPA V2 | V3 | IPA V3<br />
+              đi | go | /ɡəʊ/ | went | /went/ | gone | /ɡɒn/<br />
+              bắt đầu | begin | /bɪˈɡɪn/ | began | /bɪˈɡæn/ | begun | /bɪˈɡʌn/
+            </div>
+            <div className="mt-1.5 text-[0.7rem]">Thiếu Nghĩa hoặc một trong V1/V2/V3 thì dòng đó bị bỏ qua (tính vào "thiếu dữ liệu").</div>
           </>
         ) : (
           <>
-            <b>Định dạng cột — Từ vựng IELTS:</b> <code className="bg-white/60 px-1 rounded">term</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">meaning</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">example</code> (tùy chọn),{" "}
-            <code className="bg-white/60 px-1 rounded">wtype</code> (tùy chọn)
-            <br />
-            <b>Định dạng cột — Động từ bất quy tắc:</b> <code className="bg-white/60 px-1 rounded">meaning</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">v1</code>, <code className="bg-white/60 px-1 rounded">v2</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">v3</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">ipa_v1</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">ipa_v2</code>,{" "}
-            <code className="bg-white/60 px-1 rounded">ipa_v3</code> (IPA không bắt buộc)
-            <br />
-            Dòng đầu tiên của file phải là tên cột (header), viết thường, không dấu.
+            <b>Định dạng cột — Từ vựng IELTS:</b>
+            <div className="mt-1.5 grid gap-1.5">
+              <div>Bắt buộc: <code className="bg-white/70 px-1 rounded">Từ</code> + <code className="bg-white/70 px-1 rounded">Nghĩa</code></div>
+              <div>Tùy chọn: <code className="bg-white/70 px-1 rounded">IPA</code> · <code className="bg-white/70 px-1 rounded">Loại từ</code> · <code className="bg-white/70 px-1 rounded">Ví dụ</code> · <code className="bg-white/70 px-1 rounded">Ghi chú</code> · <code className="bg-white/70 px-1 rounded">Lượng từ</code> · <code className="bg-white/70 px-1 rounded">Cấp độ</code></div>
+              <div>Header nhận cả tiếng Anh lẫn tiếng Việt (không phân biệt hoa thường): <code className="bg-white/70 px-1 rounded">term</code>/<code className="bg-white/70 px-1 rounded">Từ</code> · <code className="bg-white/70 px-1 rounded">meaning</code>/<code className="bg-white/70 px-1 rounded">Nghĩa</code> · <code className="bg-white/70 px-1 rounded">example</code>/<code className="bg-white/70 px-1 rounded">Ví dụ</code> · <code className="bg-white/70 px-1 rounded">wtype</code>/<code className="bg-white/70 px-1 rounded">Loại từ</code> · <code className="bg-white/70 px-1 rounded">ipa</code>/<code className="bg-white/70 px-1 rounded">phiên âm</code></div>
+            </div>
+            <div className="mt-2 rounded-lg bg-white/70 px-2.5 py-2 font-mono text-[0.7rem] leading-5">
+              Từ | Nghĩa | IPA | Loại từ | Ví dụ<br />
+              accomplish | hoàn thành | /əˈkʌm.plɪʃ/ | verb | accomplish a goal<br />
+              benevolent | nhân hậu | /bəˈnev.əl.ənt/ | adj | a benevolent leader
+            </div>
+            <div className="mt-1.5 text-[0.7rem]">STT trong file xuất chỉ để xem. File XLSX tải từ "↓ XLSX" kéo vào đây là nhập lại được ngay (từ trùng sẽ bỏ qua).</div>
           </>
         )}
       </div>
