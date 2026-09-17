@@ -3,6 +3,10 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+/** Only allow internal paths (starts with /) to prevent open redirect attacks. */
+function isInternalPath(path: string): boolean {
+  return path.startsWith("/") && !path.startsWith("//") && !path.match(/https?:\/\//);
+}
 
 export default function LoginPage() {
   return (
@@ -34,7 +38,7 @@ function LoginForm() {
         setError(data.error || "Đăng nhập thất bại.");
         return;
       }
-      router.push(search.get("next") || "/");
+      router.push(isInternalPath(search.get("next") || "") ? search.get("next")! : "/");
       router.refresh();
     } catch {
       setError("Không thể kết nối. Vui lòng thử lại.");

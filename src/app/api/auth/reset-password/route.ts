@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   const passwordHash = await hashPassword(parsed.data.password);
   await db.update(users).set({ passwordHash }).where(eq(users.id, reset.userId));
-  await db.update(passwordResets).set({ used: true }).where(eq(passwordResets.id, reset.id));
+  await db.update(passwordResets).set({ used: true }).where(eq(passwordResets.userId, reset.userId));
 
   return NextResponse.json({ ok: true });
 }
