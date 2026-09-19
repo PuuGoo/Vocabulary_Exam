@@ -130,8 +130,19 @@ function expandPhraseSlashAlternatives(alternatives: string[]): string[] {
       for (const form of altForms) {
         results.push(`${first} ${form}`.trim());
       }
+    } else if (altTokens.length >= 2) {
+      for (const form of altForms) {
+        results.push(form);
+      }
     } else {
-      results.push(...altForms);
+      const prefixEnd = prefixTail ? prefix : firstTokens.slice(0, -1).join(" ");
+      if (prefixEnd) {
+        for (const form of altForms) {
+          results.push(`${prefixEnd} ${form}`.trim());
+        }
+      } else {
+        results.push(...altForms);
+      }
     }
   }
   return results;

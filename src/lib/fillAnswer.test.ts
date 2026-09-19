@@ -230,3 +230,19 @@ test("Focus toolbar owns group, question and progress controls", () => {
   assert.match(source, /fill-focus-session/);
   assert.match(source, /fill-focus-card/);
 });
+
+
+test("fragment slash alternatives reuse shared prefix", () => {
+  assert.deepEqual(getAcceptedAnswers("the craft of furniture making/sewing/glassblowing"), [
+    "the craft of furniture making",
+    "the craft of furniture sewing",
+    "the craft of furniture glassblowing",
+  ]);
+});
+
+test("fragment slash alternatives do not duplicate the base", () => {
+  const variants = getAcceptedAnswers("furniture making/sewing");
+  assert.ok(variants.includes("furniture making"), "base form kept");
+  assert.ok(variants.includes("furniture sewing"), "fragment gets shared prefix");
+  assert.ok(!variants.some((v) => v.includes("furniture furniture")), "no duplicated base word");
+});
