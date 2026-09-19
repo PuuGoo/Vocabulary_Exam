@@ -568,7 +568,7 @@ export default function FillFocusSession({
   </div>
 )}
 
-            <div className="fill-session-cta sticky bottom-0 z-10 mx-auto mt-2.5 flex w-full max-w-2xl flex-col items-center bg-gradient-to-t from-white via-white to-transparent pb-1.5 pt-2.5">
+            <div className="mx-auto mt-4 w-full max-w-2xl flex flex-col items-center">
               {effectiveSessionKind === "test" ? (cursor === originalWords.length - 1 ? <button className={`${cx.btn} ${cx.btnGold} min-h-[3.25rem] w-full !rounded-[14px] !text-[1rem] max-w-md self-center shadow-[0_10px_24px_rgba(120,101,238,0.28)] transition hover:!-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(120,101,238,0.34)]`} disabled={!allTestAnswered || saving} onClick={() => void submitTestGroup()}>{saving ? "Đang lưu…" : allTestAnswered ? "Nộp nhóm" : `Còn ${originalWords.length - totalAnsweredInTest} câu chưa làm`}</button> : <button className={`${cx.btn} ${cx.btnGold} min-h-[3.25rem] w-full !rounded-[14px] !text-[1rem] max-w-md self-center shadow-[0_10px_24px_rgba(120,101,238,0.28)] transition hover:!-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(120,101,238,0.34)]`} disabled={!currentResponseComplete} onClick={advanceTest}>Câu tiếp theo →</button>) : !feedback ? null : needsCorrection ? null : <button className={`${cx.btn} ${cx.btnGold} min-h-[3.25rem] w-full !rounded-[14px] !text-[1rem] max-w-md self-center shadow-[0_10px_24px_rgba(120,101,238,0.28)] transition hover:!-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(120,101,238,0.34)]`} onClick={advancePractice}>Câu tiếp theo →</button>}
             </div>
           </section>
