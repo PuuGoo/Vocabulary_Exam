@@ -287,7 +287,7 @@ export default function AdminImportPage() {
               đi | go | /ɡəʊ/ | went | /went/ | gone | /ɡɒn/<br />
               bắt đầu | begin | /bɪˈɡɪn/ | began | /bɪˈɡæn/ | begun | /bɪˈɡʌn/
             </div>
-            <div className="mt-1.5 text-[0.7rem]">Thiếu Nghĩa hoặc một trong V1/V2/V3 thì dòng đó bị bỏ qua (tính vào "thiếu dữ liệu").</div>
+            <div className="mt-1.5 text-[0.7rem]">Thiếu Nghĩa hoặc một trong V1/V2/V3 thì dòng đó bị bỏ qua (tính vào &quot;thiếu dữ liệu&quot;).</div>
           </>
         ) : (
           <>
@@ -302,7 +302,7 @@ export default function AdminImportPage() {
               accomplish | hoàn thành | /əˈkʌm.plɪʃ/ | verb | accomplish a goal<br />
               benevolent | nhân hậu | /bəˈnev.əl.ənt/ | adj | a benevolent leader
             </div>
-            <div className="mt-1.5 text-[0.7rem]">STT trong file xuất chỉ để xem. File XLSX tải từ "↓ XLSX" kéo vào đây là nhập lại được ngay (từ trùng sẽ bỏ qua).</div>
+            <div className="mt-1.5 text-[0.7rem]">STT trong file xuất chỉ để xem. File XLSX tải từ &quot;↓ XLSX&quot; kéo vào đây là nhập lại được ngay (từ trùng sẽ bỏ qua).</div>
           </>
         )}
       </div>
