@@ -984,3 +984,143 @@ export const wordSkillProgress = pgTable(
 
 export type DailyActivity = typeof dailyActivities.$inferSelect;
 export type QuestionImportBatch = typeof questionImportBatches.$inferSelect;
+
+// --- Google Sheets Sync (additive, see drizzle/0033_google_sheets_sync.sql) ---
+export const googleSheetConnectionStatusEnum = ["connected", "syncing", "paused", "error", "disconnected"] as const;
+export type GoogleSheetConnectionStatus = (typeof googleSheetConnectionStatusEnum)[number];
+
+export const googleSheetDeleteBehaviorEnum = ["archive", "delete", "ignore"] as const;
+export type GoogleSheetDeleteBehavior = (typeof googleSheetDeleteBehaviorEnum)[number];
+
+export const googleSheetSyncDirectionEnum = ["google_to_lexora", "bidirectional"] as const;
+export type GoogleSheetSyncDirection = (typeof googleSheetSyncDirectionEnum)[number];
+
+export const googleSheetConnections = pgTable(
+  "google_sheet_connections",
+  {
+    id: serial("id").primaryKey(),
+    setId: integer("set_id").notNull().references(() => vocabSets.id, { onDelete: "cascade" }),
+    createdBy: integer("created_by").references(() => users.id, { onDelete: "set null" }),
+    spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+    spreadsheetUrl: text("spreadsheet_url").notNull(),
+    spreadsheetName: varchar("spreadsheet_name", { length: 512 }).notNull(),
+    sheetId: integer("sheet_id").notNull(),
+    sheetTitle: varchar("sheet_title", { length: 255 }).notNull(),
+    rangeA1: varchar("range_a1", { length: 255 }).notNull(),
+    templateType: varchar("template_type", { length: 64 }).notNull(),
+    templateVersion: integer("template_version").notNull().default(1),
+    syncDirection: varchar("sync_direction", { length: 32 }).notNull().default("google_to_lexora"),
+    deleteBehavior: varchar("delete_behavior", { length: 16 }).notNull().default("archive"),
+    enabled: boolean("enabled").notNull().default(true),
+    status: varchar("status", { length: 16 }).notNull().default("connected"),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastSuccessfulSyncAt: timestamp("last_successful_sync_at", { withTimezone: true }),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    setIdx: index("google_sheet_connections_set_idx").on(table.setId),
+    spreadsheetIdx: uniqueIndex("google_sheet_connections_spreadsheet_idx").on(table.spreadsheetId),
+  }),
+);
+
+export const googleSheetSyncChannels = pgTable(
+  "google_sheet_sync_channels",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => googleSheetConnections.id, { onDelete: "cascade" }),
+    channelId: varchar("channel_id", { length: 255 }).notNull(),
+    resourceId: varchar("resource_id", { length: 255 }).notNull(),
+    resourceUri: text("resource_uri").notNull(),
+    expirationAt: timestamp("expiration_at", { withTimezone: true }),
+    lastMessageNumber: integer("last_message_number"),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    connectionIdx: index("google_sheet_sync_channels_connection_idx").on(table.connectionId),
+    channelIdx: uniqueIndex("google_sheet_sync_channels_channel_idx").on(table.channelId),
+  }),
+);
+
+export const googleSheetRowMappings = pgTable(
+  "google_sheet_row_mappings",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => googleSheetConnections.id, { onDelete: "cascade" }),
+    wordId: integer("word_id").references(() => words.id, { onDelete: "cascade" }),
+    sourceId: varchar("source_id", { length: 64 }).notNull(),
+    sheetRowNumber: integer("sheet_row_number").notNull(),
+    sourceFingerprint: varchar("source_fingerprint", { length: 128 }),
+    lastSyncedFingerprint: varchar("last_synced_fingerprint", { length: 128 }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    sourceIdx: uniqueIndex("google_sheet_row_mappings_source_idx").on(table.connectionId, table.sourceId),
+    connectionRowIdx: index("google_sheet_row_mappings_connection_row_idx").on(table.connectionId, table.sheetRowNumber),
+    wordIdx: index("google_sheet_row_mappings_word_idx").on(table.wordId),
+  }),
+);
+
+export const googleSheetSyncRuns = pgTable(
+  "google_sheet_sync_runs",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => googleSheetConnections.id, { onDelete: "cascade" }),
+    triggerType: varchar("trigger_type", { length: 32 }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    rowsRead: integer("rows_read").notNull().default(0),
+    rowsCreated: integer("rows_created").notNull().default(0),
+    rowsUpdated: integer("rows_updated").notNull().default(0),
+    rowsDeleted: integer("rows_deleted").notNull().default(0),
+    rowsUnchanged: integer("rows_unchanged").notNull().default(0),
+    rowsSkipped: integer("rows_skipped").notNull().default(0),
+    duplicateCount: integer("duplicate_count").notNull().default(0),
+    validationErrorCount: integer("validation_error_count").notNull().default(0),
+    errorMessage: text("error_message"),
+    metadata: text("metadata").notNull().default("{}"),
+  },
+  (table) => ({
+    connectionIdx: index("google_sheet_sync_runs_connection_idx").on(table.connectionId, table.startedAt),
+  }),
+);
+
+export const googleSheetSyncLocks = pgTable("google_sheet_sync_locks", {
+  connectionId: integer("connection_id").primaryKey().references(() => googleSheetConnections.id, { onDelete: "cascade" }),
+  lockedAt: timestamp("locked_at", { withTimezone: true }).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
+  lockedBy: varchar("locked_by", { length: 64 }).notNull(),
+});
+
+export const googleSheetSyncPending = pgTable("google_sheet_sync_pending", {
+  connectionId: integer("connection_id").primaryKey().references(() => googleSheetConnections.id, { onDelete: "cascade" }),
+  pending: boolean("pending").notNull().default(false),
+  pendingReason: varchar("pending_reason", { length: 64 }),
+  pendingAt: timestamp("pending_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const googleSheetOauthTokens = pgTable(
+  "google_sheet_oauth_tokens",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    scope: varchar("scope", { length: 512 }).notNull(),
+    tokenType: varchar("token_type", { length: 32 }).notNull().default("Bearer"),
+    accessTokenEncrypted: text("access_token_encrypted").notNull(),
+    refreshTokenEncrypted: text("refresh_token_encrypted"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdx: uniqueIndex("google_sheet_oauth_tokens_user_idx").on(table.userId),
+  }),
+);

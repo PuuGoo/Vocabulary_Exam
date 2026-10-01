@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { ChangeEvent, useEffect, useState } from "react";
 import { toast } from "@/components/Toast";
@@ -39,6 +39,10 @@ const LABELS: Record<BackupCollection, string> = {
   adminAuditLogs: "Nhật ký quản trị",
   contentFolders: "Không gian và thư mục nội dung",
   folderAccess: "Quyền truy cập thư mục",
+  googleSheetConnections: "Google Sheet — kết nối",
+  googleSheetSyncChannels: "Google Sheet — watch channel",
+  googleSheetRowMappings: "Google Sheet — nguồn → từ",
+  googleSheetSyncRuns: "Google Sheet — lịch sử đồng bộ",
 };
 
 async function uploadFileInChunks(

@@ -1,10 +1,11 @@
-﻿import { randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
   adminAuditLogs, adminPermissionOverrides, appSettings, assignmentExtensions, assignments, assignmentSubmissions, attempts, categoryDocuments, classes, classMembers, contentFolders, folderAccess,
   dailyActivities, learningGoals, mistakes, studySessions, teachBackNotes, users, vocabCategories, vocabSets,
   wordBookmarks, wordProgress, words, setReviewProgress, reviewSessions, userWordSkillProgress, userWordSkillEvents, wordSenses,
+  googleSheetConnections, googleSheetSyncChannels, googleSheetRowMappings, googleSheetSyncRuns,
 } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { BACKUP_COLLECTIONS, BackupCollection, BackupRow, getBackupCounts, parseBackupDocument } from "@/lib/backup";
@@ -296,6 +297,80 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       senseKeys.add(key); report.added.wordSenses++;
     }
 
+
+    // Google Sheets Sync state. Connections/mappings are restored after words so
+    // wordId references stay valid. Runs are history only and are skipped when a
+    // connection already exists for the same spreadsheet.
+    const googleConnections = backup.data.googleSheetConnections ?? [];
+    const connectionMap = new Map<number, number>();
+    const existingGoogleConnections = await tx.select().from(googleSheetConnections);
+    const googleConnectionKeys = new Set(existingGoogleConnections.map((item) => `${item.setId}\u0000${item.spreadsheetId}`));
+    for (const row of googleConnections) {
+      const setId = setMap.get(number(row, "setId", -1));
+      const spreadsheetId = text(row, "spreadsheetId");
+      if (setId == null || !spreadsheetId) { report.skipped.googleSheetConnections++; continue; }
+      const key = `${setId}\u0000${spreadsheetId}`;
+      let mapped = googleConnectionKeys.has(key) ? existingGoogleConnections.find((item) => item.setId === setId && item.spreadsheetId === spreadsheetId)?.id : undefined;
+      if (mapped == null) {
+        const [created] = await tx.insert(googleSheetConnections).values({
+          setId,
+          createdBy: userMap.get(nullableNumber(row, "createdBy") ?? -1) ?? null,
+          spreadsheetId,
+          spreadsheetUrl: text(row, "spreadsheetUrl"),
+          spreadsheetName: text(row, "spreadsheetName", "Google Sheet"),
+          sheetId: number(row, "sheetId"),
+          sheetTitle: text(row, "sheetTitle", "Sheet1"),
+          rangeA1: text(row, "rangeA1", "'Sheet1'!A:Z"),
+          templateType: text(row, "templateType", "ielts_vocab"),
+          templateVersion: Math.max(1, number(row, "templateVersion", 1)),
+          syncDirection: text(row, "syncDirection", "google_to_lexora"),
+          deleteBehavior: ["archive", "delete", "ignore"].includes(text(row, "deleteBehavior")) ? text(row, "deleteBehavior") : "archive",
+          enabled: bool(row, "enabled"),
+          status: text(row, "status", "connected"),
+          lastSyncedAt: nullableDate(row, "lastSyncedAt"),
+          lastSuccessfulSyncAt: nullableDate(row, "lastSuccessfulSyncAt"),
+          lastErrorAt: nullableDate(row, "lastErrorAt"),
+          lastError: nullableText(row, "lastError"),
+          createdAt: date(row, "createdAt"),
+          updatedAt: date(row, "updatedAt"),
+        }).returning({ id: googleSheetConnections.id });
+        mapped = created.id;
+        googleConnectionKeys.add(key);
+        report.added.googleSheetConnections++;
+      } else report.skipped.googleSheetConnections++;
+      connectionMap.set(oldId(row) ?? -1, mapped);
+    }
+
+    const existingChannels = await tx.select().from(googleSheetSyncChannels);
+    const channelKeys = new Set(existingChannels.map((item) => `${item.connectionId}\u0000${item.channelId}`));
+    for (const row of backup.data.googleSheetSyncChannels ?? []) {
+      const connectionId = connectionMap.get(number(row, "connectionId", -1));
+      const channelId = text(row, "channelId");
+      const key = `${connectionId}\u0000${channelId}`;
+      if (connectionId == null || !channelId || channelKeys.has(key)) { report.skipped.googleSheetSyncChannels++; continue; }
+      await tx.insert(googleSheetSyncChannels).values({ connectionId, channelId, resourceId: text(row, "resourceId"), resourceUri: text(row, "resourceUri"), expirationAt: nullableDate(row, "expirationAt"), lastMessageNumber: nullableNumber(row, "lastMessageNumber"), status: text(row, "status", "active"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      channelKeys.add(key);
+      report.added.googleSheetSyncChannels++;
+    }
+
+    const existingMappings = await tx.select().from(googleSheetRowMappings);
+    const mappingKeys = new Set(existingMappings.map((item) => `${item.connectionId}\u0000${item.sourceId}`));
+    for (const row of backup.data.googleSheetRowMappings ?? []) {
+      const connectionId = connectionMap.get(number(row, "connectionId", -1));
+      const sourceId = text(row, "sourceId");
+      const wordId = wordMap.get(number(row, "wordId", -1));
+      const key = `${connectionId}\u0000${sourceId}`;
+      if (connectionId == null || !sourceId || mappingKeys.has(key)) { report.skipped.googleSheetRowMappings++; continue; }
+      await tx.insert(googleSheetRowMappings).values({ connectionId, wordId: wordId ?? null, sourceId, sheetRowNumber: number(row, "sheetRowNumber"), sourceFingerprint: nullableText(row, "sourceFingerprint"), lastSyncedFingerprint: nullableText(row, "lastSyncedFingerprint"), deletedAt: nullableDate(row, "deletedAt"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      mappingKeys.add(key);
+      report.added.googleSheetRowMappings++;
+    }
+
+    for (const _row of backup.data.googleSheetSyncRuns ?? []) {
+      // Sync history belongs to a live connection; restoring it into another
+      // database would only confuse the UI, so it is intentionally skipped.
+      report.skipped.googleSheetSyncRuns++;
+    }
     const members = await tx.select().from(classMembers); const memberKeys = new Set(members.map((item) => pair(item.classId, item.userId)));
     for (const row of backup.data.classMembers) {
       const classId = classMap.get(number(row, "classId", -1)); const userId = userMap.get(number(row, "userId", -1));
@@ -428,3 +503,4 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
 
   return { kind: "report", report };
 }
+

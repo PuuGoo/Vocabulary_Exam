@@ -15,6 +15,7 @@ export const ADMIN_PERMISSIONS = [
   "folders.create", "folders.rename", "folders.delete", "folders.move", "folders.share", "folders.view_all",
   "registration.view", "registration.manage",
   "backup.create", "backup.restore", "audit.view",
+  "google_sheets.view", "google_sheets.manage", "google_sheets.sync",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -47,6 +48,7 @@ const CONTENT_EDITOR: AdminPermission[] = [
   "documents.view", "documents.upload", "documents.edit", "documents.download",
   "sharing.view", "sharing.manage",
   "folders.create", "folders.rename", "folders.move",
+  "google_sheets.view", "google_sheets.manage", "google_sheets.sync",
 ];
 const MANAGER: AdminPermission[] = [
   "admin.dashboard.view",
@@ -58,6 +60,7 @@ const MANAGER: AdminPermission[] = [
   "results.view", "results.export", "users.view", "users.create", "users.edit", "users.reset_password",
   "sharing.view", "sharing.manage", "registration.view", "registration.manage",
   "folders.create", "folders.rename", "folders.delete", "folders.move", "folders.share",
+  "google_sheets.view", "google_sheets.manage", "google_sheets.sync",
 ];
 
 export const ADMIN_PROFILE_PERMISSIONS: Record<AdminProfile, readonly AdminPermission[]> = {
@@ -120,9 +123,11 @@ export const ADMIN_PERMISSION_GROUPS = [
   { label: "Bảo mật quản trị", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("permissions.")) },
   { label: "Chia sẻ", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("sharing.")) },
   { label: "Không gian nội dung", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("folders.")) },
-  { label: "Hệ thống", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("registration.") || p.startsWith("backup.") || p === "audit.view") },
+  { label: "Hệ thống", permissions: ADMIN_PERMISSIONS.filter((p) => p.startsWith("registration.") || p.startsWith("backup.") || p.startsWith("google_sheets.") || p === "audit.view") },
 ] as const;
 
 export const ADMIN_PERMISSION_LABELS: Record<AdminPermission, string> = Object.fromEntries(
-  ADMIN_PERMISSIONS.map((permission) => [permission, ({ view: "Xem", create: "Tạo", edit: "Sửa", delete: "Xóa", import: "Nhập", export: "Xuất", reorder: "Sắp xếp", move: "Di chuyển", upload: "Tải lên", download: "Tải xuống", members: "Thành viên", reset_password: "Đặt lại mật khẩu", manage: "Quản lý", restore: "Khôi phục" } as Record<string, string>)[permission.split(".").at(-1)!] || permission]),
+  ADMIN_PERMISSIONS.map((permission) => [permission, ({ view: "Xem", create: "Tạo", edit: "Sửa", delete: "Xóa", import: "Nhập", export: "Xuất", reorder: "Sắp xếp", move: "Di chuyển", upload: "Tải lên", download: "Tải xuống", members: "Thành viên", reset_password: "Đặt lại mật khẩu", manage: "Quản lý", restore: "Khôi phục", sync: "Đồng bộ" } as Record<string, string>)[permission.split(".").at(-1)!] || permission]),
 ) as Record<AdminPermission, string>;
+
+

@@ -9,6 +9,8 @@ export const BACKUP_COLLECTIONS = [
   "dailyActivities",
   "appSettings", "adminPermissionOverrides", "adminAuditLogs",
   "contentFolders", "folderAccess",
+
+  "googleSheetConnections", "googleSheetSyncChannels", "googleSheetRowMappings", "googleSheetSyncRuns",
 ] as const;
 
 export type BackupCollection = (typeof BACKUP_COLLECTIONS)[number];
@@ -41,7 +43,7 @@ export function parseBackupDocument(value: unknown): BackupDocument {
   for (const collection of BACKUP_COLLECTIONS) {
     const rows = rawData[collection];
     // These collections were added after v1, so older backups remain restorable.
-    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings" || collection === "setReviewProgress" || collection === "reviewSessions" || collection === "adminPermissionOverrides" || collection === "adminAuditLogs" || collection === "contentFolders" || collection === "folderAccess" || collection === "userWordSkillProgress" || collection === "userWordSkillEvents" || collection === "wordSenses") && rows === undefined) {
+    if ((collection === "vocabCategories" || collection === "categoryDocuments" || collection === "appSettings" || collection === "setReviewProgress" || collection === "reviewSessions" || collection === "adminPermissionOverrides" || collection === "adminAuditLogs" || collection === "contentFolders" || collection === "folderAccess" || collection === "userWordSkillProgress" || collection === "userWordSkillEvents" || collection === "wordSenses" || collection === "googleSheetConnections" || collection === "googleSheetSyncChannels" || collection === "googleSheetRowMappings" || collection === "googleSheetSyncRuns") && rows === undefined) {
       data[collection] = [];
       continue;
     }
@@ -91,3 +93,5 @@ export const serializeCategoryDocuments = serializeSubmissionFiles;
 export function backupFilename(now = new Date()) {
   return `lexora-backup-${now.toISOString().replace(/[:.]/g, "-")}.json`;
 }
+
+

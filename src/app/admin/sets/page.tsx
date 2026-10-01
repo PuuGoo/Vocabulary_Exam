@@ -21,6 +21,7 @@ import { getFillModeLabel, getLanguageConfig } from "@/lib/languages";
 import { getChineseSettings } from "@/lib/languageSettings";
 import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 import WordDepthEditor from "@/components/WordDepthEditor";
+import GoogleSheetsPanel from "@/components/GoogleSheetsPanel";
 
 type SetSummary = { id: number; name: string; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -1934,6 +1935,7 @@ export default function AdminSetsPage() {
           </section>}
 
           {detailTab === "settings" && <>
+          <GoogleSheetsPanel setId={detail.id} isAdmin canManage={adminAccess.can("google_sheets.manage")} canSync={adminAccess.can("google_sheets.sync")} />
           {detail.languageCode === "zh-CN" && (() => { const chinese = getChineseSettings(detail); return <div className="mb-4 grid gap-3 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] p-4 sm:grid-cols-2">
             <div className="sm:col-span-2"><b className="text-sm text-ink">中文 · Cài đặt tiếng Trung</b><p className="mt-1 text-xs text-muted">Thay đổi được lưu ngay và áp dụng cho flashcard, bài điền và chia sẻ.</p></div>
             <label><span className={cx.label}>Hệ chữ</span><select className={`${cx.input} !mb-0`} value={chinese.scriptVariant} onChange={(event) => void saveChineseSettings({ scriptVariant: event.target.value as typeof chinese.scriptVariant })}><option value="simplified">Giản thể</option><option value="traditional">Phồn thể</option><option value="both">Cả hai</option></select></label>

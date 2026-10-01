@@ -1,15 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/session";
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 export const BACKUP_CRON_PATH = "/api/cron/backup-email/daily";
+export const GOOGLE_SHEETS_CRON_PATHS = ["/api/cron/google-sheets/reconcile", "/api/cron/google-sheets/renew-channels"] as const;
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Vercel Cron has no browser session. The route itself remains protected by
   // Authorization: Bearer <CRON_SECRET> and must be allowed to reach it.
-  if (pathname === BACKUP_CRON_PATH) {
+  if (pathname === BACKUP_CRON_PATH || GOOGLE_SHEETS_CRON_PATHS.some((path) => pathname === path)) {
+
     return NextResponse.next();
   }
 
@@ -30,8 +32,12 @@ export async function middleware(req: NextRequest) {
 
   const isPublic = PUBLIC_PATHS.includes(pathname);
   const isSharePath = pathname === "/s" || pathname.startsWith("/s/") || pathname === "/api/share" || pathname.startsWith("/api/share/");
+  // Drive push notifications arrive without a browser session; the route validates
+  // the channel id/resource id/token itself. The OAuth callback redirects back in the
+  // same authenticated browser tab, so it needs no session on the way in.
+  const isGoogleSheetsPublic = pathname === "/api/webhooks/google-drive" || pathname === "/api/admin/google-sheets/oauth/callback";
 
-  if (!session && !isPublic && !isSharePath) {
+  if (!session && !isPublic && !isSharePath && !isGoogleSheetsPublic) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);
