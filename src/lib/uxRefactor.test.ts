@@ -49,3 +49,11 @@ test("unknown fill uses flashcard progress and never rewrites self-rating", () =
   assert.doesNotMatch(source, /wordProgress/);
   assert.doesNotMatch(source, /\/api\/progress/);
 });
+test("flashcard supports both recall directions", () => {
+  const source = readFileSync("src/components/learning/LearnExperience.tsx", "utf8");
+  assert.ok(source.includes('const [direction, setDirection] = useState<"vi-en" | "en-vi">'), "direction state");
+  assert.ok(source.includes("setDirection(\"en-vi\")"), "toggle to en-vi");
+  assert.ok(source.includes("setDirection(\"vi-en\")"), "toggle back to vi-en");
+  const count = (source.match(/direction==="vi-en"/g) || []).length;
+  assert.equal(count, 2, "both card faces branch on direction");
+});
