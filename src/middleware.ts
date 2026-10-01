@@ -1,9 +1,11 @@
-﻿import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/session";
 
 const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
 export const BACKUP_CRON_PATH = "/api/cron/backup-email/daily";
-export const GOOGLE_SHEETS_CRON_PATHS = ["/api/cron/google-sheets/reconcile", "/api/cron/google-sheets/renew-channels"] as const;
+// One daily entry point does both reconciliation and watch-channel renewal because
+// Vercel Hobby rejects cron schedules that run more than once per day.
+export const GOOGLE_SHEETS_CRON_PATHS = ["/api/cron/google-sheets/reconcile"] as const;
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

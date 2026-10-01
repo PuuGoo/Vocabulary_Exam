@@ -29,12 +29,14 @@ test("delete behavior defaults to archive and never hard-deletes learning data",
   assert.ok(!lifecycle.includes('deleteBehavior: "delete"'), "creating a connection must never default to hard delete");
 });
 
-test("webhook validates channel state before scheduling a sync", () => {
+test("webhook validates channel state, then syncs the notified connection", () => {
   const source = readFileSync("src/app/api/webhooks/google-drive/route.ts", "utf8");
   assert.match(source, /recordNotificationState/, "duplicate/out-of-order notifications must be filtered");
   assert.match(source, /isValidWebhookToken/, "channel token must be verified");
-  assert.match(source, /202/, "webhook must acknowledge quickly instead of syncing inline");
-  assert.ok(!source.includes("syncConnection"), "the webhook must not run a long sync inside the request");
+  assert.match(source, /202/, "webhook must answer 202 whether or not the sync succeeded");
+  assert.match(source, /markSyncPending\(connection\.id, "webhook"\)/, "pending state must be persisted before syncing, so a crash is recoverable");
+  assert.match(source, /runPendingConnection/, "the webhook runs the sync itself, which is what keeps sync near-real-time without a high-frequency cron");
+  assert.ok(!source.includes("syncConnection"), "the webhook must go through the shared lock-guarded helper, not sync a connection directly");
 });
 
 test("connection-level lock guards concurrent syncs", () => {
@@ -66,11 +68,32 @@ test("admin routes require explicit Google Sheets permissions", () => {
   for (const source of [create, sync, connect]) assert.match(source, /requireAdminResourceAccess/, "folder authorization is required");
 });
 
-test("cron routes reuse the existing constant-time cron authorization", () => {
-  for (const path of ["src/app/api/cron/google-sheets/reconcile/route.ts", "src/app/api/cron/google-sheets/renew-channels/route.ts"]) {
-    const source = readFileSync(path, "utf8");
-    assert.match(source, /isValidCronAuthorization/, path);
-    assert.match(source, /CRON_SECRET/, path);
+test("the single cron route reuses the existing constant-time cron authorization", () => {
+  const source = readFileSync("src/app/api/cron/google-sheets/reconcile/route.ts", "utf8");
+  assert.match(source, /isValidCronAuthorization/, "cron auth must be constant-time");
+  assert.match(source, /CRON_SECRET/);
+  assert.match(source, /reconcilePendingGoogleSheets/, "the cron drains the DB-backed pending queue");
+  assert.match(source, /renewGoogleWatchChannels/, "the cron also renews expiring watch channels, since Hobby allows only one daily cron");
+});
+
+test("vercel cron schedules stay within the Hobby once-per-day limit", () => {
+  const config = JSON.parse(readFileSync("vercel.json", "utf8")) as { crons: Array<{ path: string; schedule: string }> };
+  for (const cron of config.crons) {
+    const fields = cron.schedule.trim().split(/\s+/);
+    assert.equal(fields.length, 5, `${cron.path} must use a 5-field cron expression`);
+    const [minute, hour] = fields;
+    if (minute === "*" || hour === "*") throw new Error(`${cron.path} runs more than once per day, which Vercel Hobby rejects: ${cron.schedule}`);
+    assert.doesNotMatch(cron.schedule, /^\*\/\d+/, `${cron.path} uses a step schedule, which Vercel Hobby rejects: ${cron.schedule}`);
+  }
+  const googleSheetCrons = config.crons.filter((cron) => cron.path.startsWith("/api/cron/google-sheets"));
+  assert.equal(googleSheetCrons.length, 1, "Google Sheets sync must have exactly one cron entry (reconcile + renewal combined)");
+});
+
+test("middleware whitelists the Google Sheets cron path for Vercel Cron", () => {
+  const source = readFileSync("src/middleware.ts", "utf8");
+  assert.match(source, /GOOGLE_SHEETS_CRON_PATHS/);
+  for (const path of ["/api/cron/google-sheets/reconcile"]) {
+    assert.ok(source.includes(path), `middleware must whitelist ${path}`);
   }
 });
 

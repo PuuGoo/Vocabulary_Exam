@@ -7,11 +7,7 @@
     },
     {
       "path": "/api/cron/google-sheets/reconcile",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/cron/google-sheets/renew-channels",
-      "schedule": "0 * * * *"
+      "schedule": "0 18 * * *"
     }
   ]
 }

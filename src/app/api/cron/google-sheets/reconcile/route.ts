@@ -1,31 +1,22 @@
-import { NextRequest, NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { googleSheetConnections } from "@/db/schema";
 import { isValidCronAuthorization } from "@/lib/backupEmailCron";
-import { acquireConnectionLock, releaseConnectionLock, takePendingConnections } from "@/lib/googleSheets/store";
-import { syncConnection } from "@/lib/googleSheets/sheetLifecycle";
+import { renewGoogleWatchChannels } from "@/lib/googleSheets/watch";
+import { reconcilePendingGoogleSheets } from "@/lib/googleSheets/reconcile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
+/**
+ * Single daily cron entry point for Google Sheets Sync.
+ *
+ * Vercel Hobby only allows cron jobs that run at most once per day, so this
+ * route does both jobs: safety-net reconciliation (catches webhooks that never
+ * arrived) and watch-channel renewal (Drive channels expire after ~24h).
+ * Near-real-time sync itself is driven by the webhook, not by this cron.
+ */
 export async function GET(request: Request) {
   if (!isValidCronAuthorization(request.headers.get("authorization"), process.env.CRON_SECRET)) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  const pending = await takePendingConnections(25);
-  const results: Array<{ connectionId: number; status: string; error?: string }> = [];
-  for (const { connectionId } of pending) {
-    const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);
-    if (!connection?.enabled || connection.status === "disconnected") continue;
-    try {
-      await acquireConnectionLock(connectionId, "cron");
-      await releaseConnectionLock(connectionId);
-      await syncConnection(connectionId, "cron");
-      results.push({ connectionId, status: "synced" });
-    } catch (error) {
-      if (error instanceof Error && error.name === "SyncInProgressError") { results.push({ connectionId, status: "locked" }); continue; }
-      results.push({ connectionId, status: "error", error: error instanceof Error ? error.message : "unknown" });
-    }
-  }
-  return Response.json({ processed: results.length, results });
+  const results = await reconcilePendingGoogleSheets({ trigger: "cron", limit: 50 });
+  const renewal = await renewGoogleWatchChannels(undefined, { thresholdHours: 26 });
+  return Response.json({ processed: results.length, results, renewal });
 }

@@ -17,7 +17,7 @@ Bật watch channel (Google Drive push)
         ↓
 Admin chỉ cần chỉnh Google Sheet
         ↓
-Webhook / reconcile cron
+Webhook (sync inline) + daily reconcile cron
         ↓
 Sync engine: parse → normalize → identity → fingerprint → diff
         ↓
@@ -45,10 +45,10 @@ PostgreSQL (không reset learning data)
                               │ POST /api/webhooks/google-drive
                               ▼
                  ┌─────────────────────────┐
-                 │      Lexora Webhook     │  → validate + mark pending (202)
+                 │      Lexora Webhook     │  → validate + mark pending + sync (202)
                  └────────────┬────────────┘
                               ▼
-              Reconcile cron (/api/cron/google-sheets/reconcile)
+              Daily reconcile cron (safety net, 18:00 UTC)
                               ▼
                  ┌─────────────────────────┐
                  │      Sync Engine        │
@@ -129,7 +129,7 @@ PostgreSQL (không reset learning data)
 | `GOOGLE_WEBHOOK_BASE_URL` | Base HTTPS public của deployment |
 | `GOOGLE_WEBHOOK_TOKEN_SECRET` | HMAC secret cho header `x-goog-channel-token` (`openssl rand -hex 32`) |
 | `GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY` | Khóa AES-256-GCM mã hóa OAuth token tại rest (`openssl rand -hex 32`) |
-| `CRON_SECRET` | Đã có sẵn, dùng cho cron reconcile/renew |
+| `CRON_SECRET` | Đã có sẵn, dùng cho cron daily (reconcile + renew) |
 
 Không commit secret. Xem `.env.example`.
 
@@ -200,14 +200,17 @@ Nếu `lastSyncedFingerprint ≠ current DB fingerprint` và Sheet cũng đổi 
 
 ## 12. Reconciliation & channel renewal
 
-- `/api/cron/google-sheets/reconcile` (mỗi 5 phút, Vercel cron, auth `Bearer CRON_SECRET`):
-  xử lý connections pending (missed webhook, retry transient).
-- `/api/cron/google-sheets/renew-channels` (mỗi giờ): renew channel khi
-  `expirationAt < now + 6h`.
+- Vercel **Hobby** chỉ cho cron chạy tối đa 1 lần/ngày (nó reject cả `*/5 * * * *` và `0 * * * *`),
+  nên toàn bộ Google Sheets dùng **đúng 1 cron entry**: `0 18 * * *` → `/api/cron/google-sheets/reconcile`.
+  Cron này làm 2 việc trong 1 route:
+  1. **Reconcile** — xử lý các connection còn `pending` (bắt webhook bị miss, retry lỗi transient).
+  2. **Renew watch channel** — khi `expirationAt < now + 26h` (Drive channel sống ~24h).
+  Auth: `Authorization: Bearer CRON_SECRET`.
+- **Near-real-time đến từ webhook, không phải từ cron.** Webhook Drive nhận sheet, mark pending
+  rồi chạy sync ngay trong request (`maxDuration = 60`). Nếu invocation chết giữa chừng,
+  timeout, hoặc OAuth bị thu hồi — cờ `pending` đã ghi trước đó nên cron daily tự dọn.
 - Webhook **idempotent**: kiểm tra `channelId`, `resourceId`, `x-goog-message-number`
-  (lọc duplicate/out-of-order), chỉ **mark pending** rồi trả 202 → sync chạy ở
-  cron/request worker, không sync dài trong webhook.
-
+  (lọc duplicate/out-of-order) → mọi trigger đều qua `runPendingConnection()` (shared connection lock).
 ## 13. Concurrency & retry
 
 - Lock theo connection (`google_sheet_sync_locks`, TTL 5 phút):
@@ -230,8 +233,7 @@ POST   /api/admin/google-sheets/connections/[id]/preview
 POST   /api/admin/google-sheets/connections/[id]/sync
 GET    /api/admin/google-sheets/connections/[id]/runs
 POST   /api/webhooks/google-drive
-GET    /api/cron/google-sheets/reconcile
-GET    /api/cron/google-sheets/renew-channels
+GET    /api/cron/google-sheets/reconcile   (daily: reconcile + renewal)
 ```
 
 RBAC: quyền mới `google_sheets.view` / `google_sheets.manage` / `google_sheets.sync`
@@ -248,7 +250,7 @@ RBAC: quyền mới `google_sheets.view` / `google_sheets.manage` / `google_shee
 | `SHEET_NOT_FOUND` | Sheet bị xóa/chia sẻ bị thu hồi |
 | Webhook 403 | `GOOGLE_WEBHOOK_TOKEN_SECRET` sai/không khớp |
 | Webhook không tới | URL không public HTTPS; kiểm tra `GOOGLE_WEBHOOK_BASE_URL` |
-| Channel hết hạn | Cron renew chưa chạy → kiểm tra `CRON_SECRET`, Vercel cron schedule |
+| Channel hết hạn | Renew chạy 1 lần/ngày → kiểm tra `CRON_SECRET`, cron `0 18 * * *` đã đăng ký, webhook còn tới được |
 | `409` | Sync khác đang chạy cho connection này |
 
 ## 16. Migration

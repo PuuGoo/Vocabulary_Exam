@@ -4,9 +4,14 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels } from "@/db/schema";
 import { markSyncPending, recordNotificationState } from "@/lib/googleSheets/store";
+import { runPendingConnection } from "@/lib/googleSheets/reconcile";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// The sync runs inside this request so Vercel cannot discard the function as
+// soon as the response is sent (fire-and-forget after returning is not reliable
+// on serverless, and this project is on Next 14 which has no waitUntil()).
+export const maxDuration = 60;
 
 function isValidWebhookToken(request: NextRequest, body: string): boolean {
   const secret = process.env.GOOGLE_WEBHOOK_TOKEN_SECRET;
@@ -19,9 +24,18 @@ function isValidWebhookToken(request: NextRequest, body: string): boolean {
 }
 
 /**
- * Google Drive push notifications are only an event signal. We validate the
- * channel, mark the connection as pending and return immediately; the actual
- * sync runs in the request below or via the reconcile cron.
+ * Google Drive push notification.
+ *
+ * The notification is only an event signal — it carries no row/cell delta, so we
+ * validate the channel and read the spreadsheet again. The sync runs here, which
+ * makes the feature near-real-time without a high-frequency cron (Vercel Hobby
+ * rejects cron schedules that run more than once per day); the daily reconcile
+ * cron stays as a safety net for webhooks that never arrived or failed.
+ *
+ * Duplicate and out-of-order notifications are filtered by
+ * recordNotificationState (channel id + resource id + monotonic message number),
+ * so a Google retry can never produce a second effective sync. Every run also
+ * fingerprints against the database, so re-syncing unchanged rows is a no-op.
  */
 export async function POST(req: NextRequest) {
   const body = await req.text().catch(() => "");
@@ -35,8 +49,16 @@ export async function POST(req: NextRequest) {
   if (!channel) return NextResponse.json({ ok: true, ignored: "unknown_channel" }, { status: 202 });
   const state = await recordNotificationState(channelId, resourceId, messageNumber);
   if (!state) return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
+
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, channel.connectionId)).limit(1);
-  if (!connection || !connection.enabled || connection.status === "disconnected") return NextResponse.json({ ok: true, ignored: "connection_inactive" }, { status: 202 });
+  if (!connection || !connection.enabled || connection.status === "disconnected") {
+    return NextResponse.json({ ok: true, ignored: "connection_inactive" }, { status: 202 });
+  }
+
+  // Persist first: if this invocation dies mid-sync (timeout, cold start, revoked
+  // OAuth) the connection is still pending and the daily cron picks it up.
   await markSyncPending(connection.id, "webhook");
-  return NextResponse.json({ ok: true, connectionId: connection.id, pending: true }, { status: 202 });
+  const result = await runPendingConnection(connection.id, "webhook");
+  if (result.status === "error") console.error(`[google-drive-webhook] connection ${connection.id} sync failed: ${result.error ?? "unknown"}`);
+  return NextResponse.json({ ok: true, connectionId: connection.id, sync: result.status, ...(result.error ? { error: result.error } : {}) }, { status: 202 });
 }
