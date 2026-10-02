@@ -19,6 +19,9 @@ try {
   const uniqueSetSql = await readFile(new URL("../drizzle/0035_google_sheet_connections_unique_set.sql", import.meta.url), "utf8");
   await client.begin((transaction) => transaction.unsafe(uniqueSetSql));
   console.log("Applied 0035_google_sheet_connections_unique_set.sql");
+  const createLocksSql = await readFile(new URL("../drizzle/0036_google_sheet_create_locks.sql", import.meta.url), "utf8");
+  await client.begin((transaction) => transaction.unsafe(createLocksSql));
+  console.log("Applied 0036_google_sheet_create_locks.sql");
 
   const [integrity] = await client.unsafe(`
     SELECT
@@ -33,11 +36,13 @@ try {
       (SELECT COUNT(*) FROM google_sheet_sync_channels WHERE channel_token_hash IS NOT NULL)::integer AS channels_with_token_hash,
       (SELECT COUNT(*) FROM google_sheet_sync_channels WHERE channel_token_hash IS NULL)::integer AS legacy_channels,
       (SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'google_sheet_connections_set_unique')::integer AS set_unique_indexes,
-      (SELECT COUNT(*) FROM (SELECT set_id FROM google_sheet_connections GROUP BY set_id HAVING COUNT(*) > 1) d)::integer AS duplicate_set_connections
+      (SELECT COUNT(*) FROM (SELECT set_id FROM google_sheet_connections GROUP BY set_id HAVING COUNT(*) > 1) d)::integer AS duplicate_set_connections,
+      (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'google_sheet_create_locks')::integer AS create_lock_table
   `);
   if (integrity.table_count !== 7) throw new Error(`Google Sheets tables missing (${integrity.table_count}/7).`);
   if (integrity.channel_token_hash_columns !== 1) throw new Error("google_sheet_sync_channels.channel_token_hash missing.");  if (integrity.set_unique_indexes !== 1) throw new Error("google_sheet_connections unique(set_id) index missing.");
   if (integrity.duplicate_set_connections) throw new Error("Duplicate google_sheet_connections rows still present.");
+  if (integrity.create_lock_table !== 1) throw new Error("google_sheet_create_locks table missing.");
   if (integrity.invalid_mappings || integrity.invalid_delete_behavior) throw new Error("Google Sheets integrity check failed.");
   console.log(JSON.stringify(integrity));
 } finally {

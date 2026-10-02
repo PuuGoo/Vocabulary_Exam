@@ -98,6 +98,76 @@ test("recovery repairs an existing connection in place on real Postgres", { skip
   }
 });
 
+/**
+ * Regression for the HTTP 502 seen when creating a Google Sheet.
+ *
+ * The create advisory lock was originally written into
+ * google_sheet_sync_locks, whose connection_id column references
+ * google_sheet_connections(id). A first-time create has no connection row
+ * yet (the spreadsheet is created before the row is inserted), so the lock
+ * insert violated the foreign key and every create returned 502.
+ *
+ * This runs the real createGoogleSheetForSet against the in-memory Google
+ * fake and proves the lock table accepts a setId that has no connection.
+ */
+test("create acquires its lock before any connection row exists", { skip: !enabled, timeout: 90000 }, async () => {
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  let setId = 0;
+  let connectionId = 0;
+  const base = Date.now();
+  try {
+    const [admin] = await sql`select id from users where role='admin' order by id limit 1`;
+    const [set] = await sql`insert into vocab_sets (name, type, language_code, translation_language_code, language_settings, created_by)
+      values (${`__gs_create__${base}`},'ielts_vocab','en','vi','{}',${admin.id}) returning id`;
+    setId = set.id;
+
+    // No google_sheet_connections row exists for this set yet - exactly the
+    // state that used to make the lock insert violate the FK.
+    const [preExisting] = await sql`select id from google_sheet_connections where set_id=${setId}`;
+    assert.equal(preExisting, undefined, "the set must start with no connection row");
+
+    const { createGoogleSheetForSet } = await import("@/lib/googleSheets/sheetLifecycle");
+    const { createFakeGoogleWorkspaceApi } = await import("@/lib/googleSheets/api");
+    const api = createFakeGoogleWorkspaceApi();
+    const result = await createGoogleSheetForSet(setId, { userId: admin.id }, api);
+    connectionId = result.connectionId;
+
+    assert.equal(result.status, "connected");
+    assert.ok(result.spreadsheetId, "a spreadsheet id is returned");
+
+    // The create lock must be released, not left behind for the next attempt.
+    const locks = await sql`select set_id from google_sheet_create_locks where set_id=${setId}`;
+    assert.equal(locks.length, 0, "the create lock must be released in finally");
+
+    // Header row is written even for an empty vocabulary set.
+    const sheet = api.__inspect(result.spreadsheetId);
+    assert.ok(sheet && sheet.values.length >= 1, "the template header is written");
+
+    // Exactly one connection for the set (the unique backstop holds).
+    const rows = await sql`select id from google_sheet_connections where set_id=${setId}`;
+    assert.equal(rows.length, 1, "create must produce exactly one connection row");
+  } finally {
+    try {
+      await sql.begin(async (tx) => {
+        await tx`delete from google_sheet_create_locks where set_id=${setId}`;
+        if (connectionId) {
+          await tx`delete from google_sheet_sync_channels where connection_id=${connectionId}`;
+          await tx`delete from google_sheet_row_mappings where connection_id=${connectionId}`;
+          await tx`delete from google_sheet_sync_locks where connection_id=${connectionId}`;
+          await tx`delete from google_sheet_sync_pending where connection_id=${connectionId}`;
+          await tx`delete from google_sheet_sync_runs where connection_id=${connectionId}`;
+          await tx`delete from google_sheet_connections where id=${connectionId}`;
+        }
+        await tx`delete from google_sheet_connections where set_id=${setId}`;
+        await tx`delete from words where set_id=${setId}`;
+        await tx`delete from vocab_sets where id=${setId}`;
+      });
+    } finally {
+      await sql.end();
+    }
+  }
+});
+
 test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplicate", { skip: !enabled, timeout: 90000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;

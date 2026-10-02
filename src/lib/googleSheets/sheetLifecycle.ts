@@ -1,6 +1,6 @@
 import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { googleSheetConnections, googleSheetRowMappings, googleSheetSyncLocks, vocabSets, words } from "@/db/schema";
+import { googleSheetConnections, googleSheetCreateLocks, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
@@ -30,11 +30,18 @@ export async function apiForUser(userId: number): Promise<GoogleWorkspaceApi> {
   return createGoogleWorkspaceApi(token);
 }
 
+/** Actionable, non-technical messages shared with the create route and the UI. */
+export const CONNECTED_MESSAGE = "Google Sheet đã được kết nối cho bộ từ này.";
+export const RECOVER_MESSAGE = "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Hãy khôi phục kết nối hiện có.";
+export const CREATE_BUSY_MESSAGE = "Google Sheet đang được tạo bởi một yêu cầu khác. Vui lòng chờ lại.";
+
 /**
- * Advisory lock for the create-sheet workflow.
+ * Advisory lock for the create-sheet workflow, keyed by setId.
  *
- * Stored in the existing lock table with a create-scoped owner, so no second
- * table is needed and a crashed process releases it after the TTL.
+ * Deliberately NOT stored in google_sheet_sync_locks: that table's
+ * connection_id references google_sheet_connections(id), which does not exist
+ * yet at this point - the spreadsheet is created before the connection row.
+ * A stale row expires via locked_until, so a crashed create cannot block others.
  */
 const CREATE_LOCK_TTL_MS = 2 * 60 * 1000;
 
@@ -42,26 +49,22 @@ async function acquireCreateLock(setId: number): Promise<void> {
   const now = new Date();
   const until = new Date(now.getTime() + CREATE_LOCK_TTL_MS);
   const owner = `create:${setId}`;
-  const updated = await db.update(googleSheetSyncLocks)
+  const updated = await db.update(googleSheetCreateLocks)
     .set({ lockedAt: now, lockedUntil: until, lockedBy: owner })
-    .where(and(eq(googleSheetSyncLocks.connectionId, setId), lt(googleSheetSyncLocks.lockedUntil, now)))
-    .returning({ connectionId: googleSheetSyncLocks.connectionId });
+    .where(and(eq(googleSheetCreateLocks.setId, setId), lt(googleSheetCreateLocks.lockedUntil, now)))
+    .returning({ setId: googleSheetCreateLocks.setId });
   if (updated.length) return;
-  const inserted = await db.insert(googleSheetSyncLocks)
-    .values({ connectionId: setId, lockedAt: now, lockedUntil: until, lockedBy: owner })
-    .onConflictDoNothing({ target: googleSheetSyncLocks.connectionId })
-    .returning({ connectionId: googleSheetSyncLocks.connectionId });
+  const inserted = await db.insert(googleSheetCreateLocks)
+    .values({ setId, lockedAt: now, lockedUntil: until, lockedBy: owner })
+    .onConflictDoNothing({ target: googleSheetCreateLocks.setId })
+    .returning({ setId: googleSheetCreateLocks.setId });
   if (!inserted.length) throw new GoogleSheetsError(CREATE_BUSY_MESSAGE, "RATE_LIMITED", { retryable: true, status: 409 });
 }
 
 async function releaseCreateLock(setId: number): Promise<void> {
-  await db.delete(googleSheetSyncLocks).where(and(eq(googleSheetSyncLocks.connectionId, setId), eq(googleSheetSyncLocks.lockedBy, `create:${setId}`)));
+  await db.delete(googleSheetCreateLocks).where(and(eq(googleSheetCreateLocks.setId, setId), eq(googleSheetCreateLocks.lockedBy, `create:${setId}`)));
 }
 
-/** Actionable, non-technical messages shared with the create route and the UI. */
-export const CONNECTED_MESSAGE = "Google Sheet đã được kết nối cho bộ từ này.";
-export const RECOVER_MESSAGE = "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Hãy khôi phục kết nối hiện có.";
-export const CREATE_BUSY_MESSAGE = "Google Sheet đang được tạo bởi một yêu cầu khác. Vui lòng chờ lại.";
 export type CreateSheetResult = {
   connectionId: number;
   spreadsheetId: string;

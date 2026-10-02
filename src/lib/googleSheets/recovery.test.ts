@@ -108,9 +108,24 @@ test("G. concurrent create requests are serialized by an advisory create lock", 
   assert.match(lifecycle, /acquireCreateLock\(setId\)/, "the lock is acquired before creating");
   assert.match(lifecycle, /releaseCreateLock\(setId\)/, "the lock is released on success and failure");
   assert.match(lifecycle, /finally\s*\{\s*await releaseCreateLock/, "release happens in finally");
-  // The lock lives in the existing lock table, keyed by setId with a create owner.
+  // The lock lives in its own setId-keyed table. It must NOT be stored in
+  // google_sheet_sync_locks: that table references google_sheet_connections(id),
+  // which does not exist yet while the spreadsheet is being created - reusing it
+  // made every first-time create fail with an FK violation (HTTP 502).
   assert.match(lifecycle, /create:\$\{setId\}/);
   assert.match(lifecycle, /CREATE_LOCK_TTL_MS/, "a crashed process must not hold the lock forever");
+  assert.match(lifecycle, /googleSheetCreateLocks/, "the create lock uses the dedicated table");
+  assert.ok(!lifecycle.includes("googleSheetSyncLocks"), "the create lock must not touch the FK-constrained sync lock table");
+
+  const schema = readFileSync("src/db/schema.ts", "utf8");
+  assert.match(schema, /googleSheetCreateLocks = pgTable\("google_sheet_create_locks"/, "the dedicated lock table exists");
+  assert.ok(!/google_sheet_create_locks[\s\S]{0,400}references\(\(\) => googleSheetConnections\.id\)/.test(schema), "the create lock table must have no FK to google_sheet_connections");
+
+  const migration = readFileSync("drizzle/0036_google_sheet_create_locks.sql", "utf8");
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS google_sheet_create_locks/);
+  assert.ok(!migration.includes("REFERENCES google_sheet_connections"), "migration 0036 must be FK-free");
+  assert.match(migration, /set_id integer PRIMARY KEY/, "keyed by setId, not connectionId");
+  assert.match(migration, /locked_until/, "stale locks expire");
 });
 
 test("G. the database backstop enforces one connection row per set", () => {

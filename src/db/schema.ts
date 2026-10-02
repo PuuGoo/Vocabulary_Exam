@@ -1113,6 +1113,19 @@ export const googleSheetSyncPending = pgTable("google_sheet_sync_pending", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Advisory locks for the *create-sheet* workflow, keyed by setId. Kept out of
+ * google_sheet_sync_locks on purpose: that table references
+ * google_sheet_connections(id), which does not exist yet while a spreadsheet is
+ * being created. A lock row here survives until the create finishes.
+ */
+export const googleSheetCreateLocks = pgTable("google_sheet_create_locks", {
+  setId: integer("set_id").primaryKey(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
+  lockedBy: varchar("locked_by", { length: 64 }).notNull(),
+});
+
 export const googleSheetOauthTokens = pgTable(
   "google_sheet_oauth_tokens",
   {
