@@ -200,11 +200,17 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
 async function writeSttFormula(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number): Promise<void> {
   if (rowCount < 1) return;
   const letter = columnLetter(sttColumnIndex(template));
-  const lastRow = rowCount + 1; // + header row
+  // Extend well beyond the current data: rows added in the Sheet later get an
+  // STT without any further write from the server.
+  const STT_BUFFER_ROWS = 200;
+  const lastRow = Math.max(rowCount + 1, STT_BUFFER_ROWS);
   const values: (string | number)[][] = [];
   for (let row = 2; row <= lastRow; row += 1) values.push([buildSttFormulaForRow(template, row)]);
   const range = `'${template.sheetTitle.replace(/'/g, "''")}'!${letter}2:${letter}${lastRow}`;
-  await api.writeValues(spreadsheetId, range, values as never);
+  // parseFormulas: the STT column must be stored as a real Sheets formula. With
+  // the default RAW input option the "=" prefix is stored verbatim, so the sheet
+  // displays the formula text instead of renumbering itself.
+  await api.writeValues(spreadsheetId, range, values as never, { parseFormulas: true });
 }
 
 export function exportValuesForWord(template: GoogleSheetTemplate, word: typeof words.$inferSelect): Record<string, string> {

@@ -61,7 +61,7 @@ test("B. initial vocabulary: export blanks STT and the formula numbers rows", ()
   // The formula counts filled __lexora_id cells above, so row 2 -> 1, row 3 -> 2...
   const lastRow = rows.length + 1;
   for (let row = 2; row <= lastRow; row += 1) {
-    assert.equal(buildSttFormula(template, row), `=IF(B${row}="","",COUNTIF($B$2:B${row},"<>"))`);
+    assert.equal(buildSttFormula(template, row), `=IF(B${row}="";"";COUNTIF($B$2:B${row};"<>"))`);
   }
   // __lexora_id lives at index 1 for every template.
   for (const set of SETS) {

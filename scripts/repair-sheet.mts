@@ -34,8 +34,8 @@ async function main() {
   const { db } = await import("@/db");
   const { googleSheetConnections, googleSheetRowMappings, vocabSets, words } = await import("@/db/schema");
   const { asc, eq } = await import("drizzle-orm");
-  const { getGoogleSheetTemplate } = await import("@/lib/googleSheets/template");
-  const { buildRangeA1, valuesForExport } = await import("@/lib/googleSheets/spreadsheet");
+  const { SOURCE_ID_HEADER, getGoogleSheetTemplate, sttColumnIndex, buildSttFormulaForRow } = await import("@/lib/googleSheets/template");
+  const { buildRangeA1, columnLetter } = await import("@/lib/googleSheets/spreadsheet");
   const { configureSheetLayout } = await import("@/lib/googleSheets/formatting");
   const { computeWordFingerprint } = await import("@/lib/googleSheets/fingerprint");
   const { exportValuesForWord } = await import("@/lib/googleSheets/sheetLifecycle");
@@ -84,35 +84,49 @@ async function main() {
   const reusedCount = exportRows.filter((row) => row.reused).length;
   console.log(`\nsource ids: ${reusedCount} reused, ${exportRows.length - reusedCount} newly generated`);
 
-  // --- 3. write header + vocabulary ----------------------------------------
-  const values = valuesForExport(template, exportRows.map((row) => ({ sourceId: row.sourceId, values: exportValuesForWord(template, row.word) })));
-  const rangeA1 = buildRangeA1(template.sheetTitle, template.fields.length, values.length);
-  console.log(`writing ${values.length} row(s) x ${template.fields.length} col(s) -> ${rangeA1}`);
-  await api.writeValues(connection.spreadsheetId, rangeA1, values);
+  // --- 3. write header first (so column B exists before the formula) ------
+  const headerRow = template.fields.map((f) => f.header);
+  await api.writeValues(connection.spreadsheetId, `'${template.sheetTitle.replace(/'/g, "''")}'!A1:${columnLetter(template.fields.length - 1)}1`, [headerRow] as never);
 
-  // --- 4. STT formula -------------------------------------------------------
-  const { columnLetter } = await import("@/lib/googleSheets/spreadsheet");
-  const { sttColumnIndex, buildSttFormulaForRow } = await import("@/lib/googleSheets/template");
+  // --- 4. STT formula BEFORE the data (column B must exist for COUNTIF) ---
   const sttLetter = columnLetter(sttColumnIndex(template));
-  const lastRow = exportRows.length + 1;
+  const STT_BUFFER_ROWS = 200;
+  const sttLastRow = Math.max(exportRows.length + 1, STT_BUFFER_ROWS);
   if (exportRows.length > 0) {
     const sttValues: string[][] = [];
-    for (let row = 2; row <= lastRow; row += 1) sttValues.push([buildSttFormulaForRow(template, row)]);
-    const sttRange = `'${template.sheetTitle.replace(/'/g, "''")}'!${sttLetter}2:${sttLetter}${lastRow}`;
-    await api.writeValues(connection.spreadsheetId, sttRange, sttValues as never);
-    console.log(`STT formula written to ${sttRange}`);
+    for (let row = 2; row <= sttLastRow; row += 1) sttValues.push([buildSttFormulaForRow(template, row)]);
+    const sttRange = `'${template.sheetTitle.replace(/'/g, "''")}'!${sttLetter}2:${sttLetter}${sttLastRow}`;
+    // parseFormulas: STT must be a real formula, otherwise the sheet shows the formula text.
+    await api.writeValues(connection.spreadsheetId, sttRange, sttValues as never, { parseFormulas: true });
+    console.log(`STT formula extended to row ${sttLastRow}`);
   }
 
-  // --- 5. layout ------------------------------------------------------------
+  // --- 5. layout (freeze, widths, wrap, filter) ---------------------------
   await configureSheetLayout(api as never, {
     spreadsheetId: connection.spreadsheetId,
     sheetId: connection.sheetId,
     template,
     rowCount: exportRows.length,
   });
-  console.log("layout applied (frozen header, widths, wrap, filter)");
+  console.log("layout applied");
 
-  // --- 6. repair mappings ---------------------------------------------------
+  // --- 6. write vocabulary data AFTER header+STT+layout -------------------
+  // The data write must skip column A: valuesForExport emits an empty string
+  // there, which would wipe the renumbering formula written in step 4.
+  if (exportRows.length > 0) {
+    const columnsFromB = template.fields.filter((field) => !field.displayOnly);
+    const dataRows = exportRows.map((row) => {
+      const values = exportValuesForWord(template, row.word);
+      return columnsFromB.map((field) => (field.key === SOURCE_ID_HEADER ? row.sourceId : values[field.key] ?? ""));
+    });
+    const firstCol = columnLetter(template.fields.findIndex((field) => field.displayOnly) + 1);
+    const lastCol = columnLetter(template.fields.length - 1);
+    const dataRangeA1 = `'${template.sheetTitle.replace(/'/g, "''")}'!${firstCol}2:${lastCol}${exportRows.length + 1}`;
+    await api.writeValues(connection.spreadsheetId, dataRangeA1, dataRows as never);
+    console.log(`vocabulary written to ${dataRangeA1}`);
+  }
+
+  // --- 7. repair mappings ---------------------------------------------------
   const missing = exportRows.filter((row) => !existingByWordId.has(row.word.id));
   for (const row of missing) {
     const fingerprint = computeWordFingerprint(set.type, exportValuesForWord(template, row.word));
@@ -136,8 +150,9 @@ async function main() {
   }
 
   // --- 7. refresh the stored range -----------------------------------------
+  const finalRangeA1 = buildRangeA1(template.sheetTitle, template.fields.length, exportRows.length + 1);
   await db.update(googleSheetConnections)
-    .set({ rangeA1, sheetTitle: template.sheetTitle, templateType: template.templateType, templateVersion: template.templateVersion, lastError: null, lastErrorAt: null, updatedAt: new Date() })
+    .set({ rangeA1: finalRangeA1, sheetTitle: template.sheetTitle, templateType: template.templateType, templateVersion: template.templateVersion, lastError: null, lastErrorAt: null, updatedAt: new Date() })
     .where(eq(googleSheetConnections.id, connectionId));
 
   // --- 8. verify ------------------------------------------------------------
@@ -146,9 +161,10 @@ async function main() {
   after.slice(0, Math.min(4, after.length)).forEach((row, i) => console.log(`  row${i}: ${JSON.stringify(row)}`));
 
   const headerOk = JSON.stringify(after[0] ?? []) === JSON.stringify(template.fields.map((f) => f.header));
-  const dataOk = after.length === values.length;
+  const expectedRows = exportRows.length + 1; // + header
+  const dataOk = after.length >= expectedRows && after[0]?.length === template.fields.length;
   console.log(`\nheader matches template: ${headerOk}`);
-  console.log(`row count matches vocabulary: ${dataOk} (sheet ${after.length} vs words ${values.length})`);
+  console.log(`rows/cols OK: ${dataOk} (sheet ${after.length}x${after[0]?.length ?? 0}, expected >= ${expectedRows}x${template.fields.length})`);
   console.log(`mappings now: ${mappings.length + missing.length}`);
   console.log(`\n${headerOk && dataOk ? "REPAIR OK" : "REPAIR INCOMPLETE - inspect the output above"}`);
 

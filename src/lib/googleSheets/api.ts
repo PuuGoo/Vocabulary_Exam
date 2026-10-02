@@ -41,7 +41,7 @@ export const WATCH_CHANNEL_RENEW_THRESHOLD_MS = 1000 * 60 * 60 * 6;
 export type GoogleWorkspaceApi = {
   createSpreadsheet(options: { title: string; sheetTitle: string }): Promise<CreatedSpreadsheet>;
   readValues(spreadsheetId: string, rangeA1: string): Promise<SheetsValue>;
-  writeValues(spreadsheetId: string, rangeA1: string, values: SheetsValue): Promise<void>;
+  writeValues(spreadsheetId: string, rangeA1: string, values: SheetsValue, options?: { parseFormulas?: boolean }): Promise<void>;
   batchUpdate(spreadsheetId: string, requests: Record<string, unknown>[]): Promise<void>;
   getSpreadsheetMetadata(spreadsheetId: string): Promise<SpreadsheetMetadata>;
   createWatchChannel(options: { spreadsheetId: string; resourceId: string }): Promise<WatchChannel>;
@@ -70,7 +70,7 @@ export function createFakeGoogleWorkspaceApi(overrides: Partial<GoogleWorkspaceA
       return { spreadsheetId, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, spreadsheetName: title, sheetId: 0, sheetTitle };
     },
     readValues: async (spreadsheetId) => ensure(spreadsheetId).values.map((row) => [...row]),
-    writeValues: async (spreadsheetId, rangeA1, values) => {
+    writeValues: async (spreadsheetId, rangeA1, values, _options) => {
       const entry = ensure(spreadsheetId);
       entry.writes += 1;
       // Parse an A1 range such as Sheet1!A1:P4 into an absolute start cell.

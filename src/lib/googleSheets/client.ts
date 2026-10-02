@@ -57,15 +57,20 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
       } catch (error) { throw classifyGoogleApiError(error); }
     },
 
-    async writeValues(spreadsheetId, rangeA1, values) {
+    async writeValues(spreadsheetId, rangeA1, values, options) {
       if (!values.length) return;
       try {
+        // RAW by default so user text is never re-interpreted (a term beginning
+        // with "=" would otherwise become a formula). The STT renumbering column
+        // opts in via parseFormulas, because it is the only cell that must be
+        // stored as a real Sheets formula rather than its text.
+        const valueInputOption = options?.parseFormulas ? "USER_ENTERED" : "RAW";
         // One request per chunk keeps 10k+ rows within quota instead of N calls.
         for (let offset = 0; offset < values.length; offset += WRITE_CHUNK_ROWS) {
           await sheets.spreadsheets.values.update({
             spreadsheetId,
             range: rangeA1,
-            valueInputOption: "RAW",
+            valueInputOption,
             requestBody: { values: values.slice(offset, offset + WRITE_CHUNK_ROWS) },
           });
         }

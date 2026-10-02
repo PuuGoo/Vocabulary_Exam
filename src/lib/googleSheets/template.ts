@@ -134,7 +134,10 @@ function columnLetterOf(index: number): string {
  */
 export function buildSttFormula(template: GoogleSheetTemplate, row: number = 2): string {
   const idColumn = columnLetterOf(sourceIdColumnIndex(template));
-  return `=IF(${idColumn}${row}="","",COUNTIF($${idColumn}$2:${idColumn}${row},"<>"))`;
+  // The argument separator MUST be ";": Lexora spreadsheets are created with
+  // locale vi_VN, where "," is not a valid separator and Google answers
+  // "#ERROR! (Formula parse error.)". Verified against the Sheets API.
+  return `=IF(${idColumn}${row}="";"";COUNTIF($${idColumn}$2:${idColumn}${row};"<>"))`;
 }
 
 /** Same formula with the row reference advanced, for writing a filled column. */
