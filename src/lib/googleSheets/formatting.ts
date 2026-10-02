@@ -25,7 +25,11 @@ export async function configureSheetLayout(api: SheetsApiPort, options: { spread
     if (field.displayOnly) {
       // STT is a narrow, centered, non-wrapping display column: readable at a
       // glance without ever becoming vocabulary data.
-      requests.push({ repeatCell: { range: { sheetId, startColumnIndex: index, endColumnIndex: index + 1 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", wrapStrategy: "OVERFLOW", numberFormat: { type: "NUMBER", pattern: "0" } } }, fields: "userEnteredFormat(horizontalAlignment,wrapStrategy,numberFormat)" } });
+      // wrapStrategy accepts only WRAP or CLIP on the Sheets API. "OVERFLOW" is
+      // rejected with HTTP 400 invalid_value, which used to abort the whole
+      // create flow after the data had already been written - leaving the sheet
+      // without vocabulary and the connection stuck in status=error.
+      requests.push({ repeatCell: { range: { sheetId, startColumnIndex: index, endColumnIndex: index + 1 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", wrapStrategy: "CLIP", numberFormat: { type: "NUMBER", pattern: "0" } } }, fields: "userEnteredFormat(horizontalAlignment,wrapStrategy,numberFormat)" } });
     }
   });
   requests.push({ setBasicFilter: { filter: { range: { sheetId, startRowIndex: 0, endRowIndex: lastRow, startColumnIndex: 0, endColumnIndex: template.fields.length } } } });

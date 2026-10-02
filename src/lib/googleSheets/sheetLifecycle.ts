@@ -122,8 +122,19 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     // STT is a spreadsheet-side display number: a single relative formula filled
     // down the column renumbers itself whenever rows are added, deleted or
     // sorted. Nothing is ever written back to the database for it.
-    await writeSttFormula(api, created.spreadsheetId, template, values.length);
-    await configureSheetLayout(api as never, { spreadsheetId: created.spreadsheetId, sheetId: created.sheetId, template, rowCount: exportRows.length });
+    try {
+      await writeSttFormula(api, created.spreadsheetId, template, values.length);
+    } catch (error) {
+      console.warn("[google-sheets] STT formula skipped:", error instanceof Error ? error.message : "unknown");
+    }
+    // Formatting is cosmetic. A bad request there (wrong field name, new API
+    // value, quota) must never abandon the connection now that the vocabulary
+    // has already been written - log and continue instead.
+    try {
+      await configureSheetLayout(api as never, { spreadsheetId: created.spreadsheetId, sheetId: created.sheetId, template, rowCount: exportRows.length });
+    } catch (error) {
+      console.warn("[google-sheets] sheet layout skipped:", error instanceof Error ? error.message : "unknown");
+    }
 
     const [connection] = await db.insert(googleSheetConnections).values({
       setId,

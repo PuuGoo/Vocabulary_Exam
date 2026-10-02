@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   buildSttFormula,
@@ -152,6 +153,65 @@ test("the STT column is centered, narrow and covered by the header filter", asyn
   assert.ok(sttWidth, "STT column width request must exist");
   assert.ok(JSON.stringify(requests).includes("horizontalAlignment"), "STT must be centered");
   assert.ok(JSON.stringify(requests).includes("setBasicFilter"), "the header row must stay filterable");
+});
+
+/**
+ * Regression: the Sheets API rejects wrapStrategy values other than WRAP/CLIP.
+ *
+ * Production bug: the STT column was formatted with OVERFLOW, Google answered
+ * HTTP 400 invalid_value at `requests[4].repeat_cell...wrap_strategy`,
+ * configureSheetLayout threw, and createGoogleSheetForSet aborted AFTER the
+ * vocabulary had been written. The sheet ended up with headers only and the
+ * connection was stuck in status=error (what the admin saw as "Chưa kết
+ * nối" while POST /create answered 409).
+ *
+ * Verified against the real API: CLIP and WRAP are accepted; OVERFLOW, NONE
+ * and "" are all rejected.
+ */
+test("STT formatting only uses wrapStrategy values Google accepts", async () => {
+  const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
+  const requests: Record<string, unknown>[] = [];
+  const api = createFakeGoogleWorkspaceApi({
+    batchUpdate: async (_spreadsheetId, batch) => { requests.push(...batch); },
+  });
+  await configureSheetLayout(api as never, { spreadsheetId: "sheet-1", sheetId: 7, template, rowCount: 3 });
+
+  const ALLOWED = new Set(["WRAP", "CLIP"]);
+  const raw = JSON.stringify(requests);
+  assert.ok(!raw.includes("OVERFLOW"), "OVERFLOW is rejected by the Sheets API and aborted the create flow");
+  assert.ok(!raw.includes("NONE"), "NONE is also rejected by the Sheets API");
+
+  for (const request of requests) {
+    const repeat = (request as { repeatCell?: { cell?: { userEnteredFormat?: { wrapStrategy?: string } } } }).repeatCell;
+    const strategy = repeat?.cell?.userEnteredFormat?.wrapStrategy;
+    if (strategy !== undefined) assert.ok(ALLOWED.has(strategy), `unexpected wrapStrategy: ${strategy}`);
+  }
+
+  // The STT column must still be centered and narrow.
+  assert.ok(raw.includes("horizontalAlignment"), "STT stays centered");
+  assert.ok(raw.includes('"pattern":"0"'), "STT stays a plain integer display");
+
+  // And the layout must still freeze + filter the header.
+  assert.ok(raw.includes("frozenRowCount"));
+  assert.ok(raw.includes("setBasicFilter"));
+});
+
+/**
+ * Regression: a cosmetic failure must never orphan a sheet that already holds
+ * the exported vocabulary. Formatting and the STT formula are best-effort.
+ */
+test("create survives a formatting failure after the vocabulary is written", () => {
+  const lifecycle = readFileSync("src/lib/googleSheets/sheetLifecycle.ts", "utf8");
+  const layoutIdx = lifecycle.indexOf("configureSheetLayout(");
+  const writeIdx = lifecycle.indexOf("api.writeValues(created.spreadsheetId");
+  const insertIdx = lifecycle.indexOf("db.insert(googleSheetConnections)");
+  assert.ok(writeIdx > 0 && layoutIdx > writeIdx, "data must be written before layout");
+  const afterLayout = lifecycle.slice(layoutIdx, insertIdx);
+  assert.match(afterLayout, /catch \(error\)/, "configureSheetLayout must be wrapped in try/catch");
+  assert.ok(!/await api\.batchUpdate\(created/.test(afterLayout) || /try/.test(afterLayout), "batchUpdate must be best-effort");
+  const sttIdx = lifecycle.indexOf("writeSttFormula(");
+  const sttRegion = lifecycle.slice(sttIdx - 400, sttIdx + 400);
+  assert.match(sttRegion, /catch \(error\)/, "writeSttFormula must be best-effort too");
 });
 
 test("legacy sheets without an STT column still parse (STT is optional)", () => {

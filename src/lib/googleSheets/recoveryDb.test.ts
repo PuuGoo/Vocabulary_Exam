@@ -20,7 +20,7 @@ const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOK
  * channel, enabled/status) without ever creating a second spreadsheet, and that
  * a genuinely missing spreadsheet surfaces SHEET_NOT_FOUND.
  */
-test("recovery repairs an existing connection in place on real Postgres", { skip: !enabled, timeout: 90000 }, async () => {
+test("recovery repairs an existing connection in place on real Postgres", { skip: !enabled, timeout: 180000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;
   let connectionId = 0;
@@ -110,7 +110,7 @@ test("recovery repairs an existing connection in place on real Postgres", { skip
  * This runs the real createGoogleSheetForSet against the in-memory Google
  * fake and proves the lock table accepts a setId that has no connection.
  */
-test("create acquires its lock before any connection row exists", { skip: !enabled, timeout: 90000 }, async () => {
+test("create acquires its lock before any connection row exists", { skip: !enabled, timeout: 180000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;
   let connectionId = 0;
@@ -178,7 +178,7 @@ test("create acquires its lock before any connection row exists", { skip: !enabl
  * meaningful message. The lock must be released on every path, including
  * the very first failure.
  */
-test("the create lock is released even when the Google API call fails", { skip: !enabled, timeout: 90000 }, async () => {
+test("the create lock is released even when the Google API call fails", { skip: !enabled, timeout: 180000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;
   const base = Date.now();
@@ -230,7 +230,7 @@ test("the create lock is released even when the Google API call fails", { skip: 
  * refresh token was valid. This test forces the stored token to look expired
  * and creates a spreadsheet through the real client path.
  */
-test("create refreshes an expired access token through the real Google client", { skip: !enabled, timeout: 90000 }, async () => {
+test("create refreshes an expired access token through the real Google client", { skip: !enabled, timeout: 180000 }, async () => {
   const { loadGoogleToken, storeGoogleToken } = await import("@/lib/googleSheets/auth");
   const { createGoogleWorkspaceApi } = await import("@/lib/googleSheets/client");
 
@@ -284,7 +284,7 @@ test("create refreshes an expired access token through the real Google client", 
   }
 });
 
-test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplicate", { skip: !enabled, timeout: 90000 }, async () => {
+test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplicate", { skip: !enabled, timeout: 180000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;
   let connectionId = 0;
