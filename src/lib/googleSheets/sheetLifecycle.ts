@@ -248,7 +248,17 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
       rowsRead: result.stats.rowsRead, rowsCreated: result.stats.rowsCreated, rowsUpdated: result.stats.rowsUpdated,
       rowsDeleted: result.stats.rowsDeleted, rowsUnchanged: result.stats.rowsUnchanged, rowsSkipped: result.stats.rowsSkipped,
       duplicateCount: result.stats.duplicateCount, validationErrorCount: result.stats.validationErrorCount,
-      metadata: { conflicts: result.stats.conflicts.length, trigger },
+      // Persist WHY rows were skipped. Without this a run can be "success" with
+      // rowsSkipped=5 and the admin has no way to learn that, for example, every
+      // row was missing a Meaning.
+      errorMessage: result.stats.invalidRows.length
+        ? `Bỏ qua ${result.stats.invalidRows.length} dòng: ` + result.stats.invalidRows.slice(0, 10).map((row) => `dòng ${row.rowNumber} ${row.message}`).join("; ")
+        : undefined,
+      metadata: {
+        conflicts: result.stats.conflicts.length, trigger,
+        ...(result.stats.invalidRows.length ? { invalidRows: result.stats.invalidRows.slice(0, 25) } : {}),
+        ...(result.stats.conflicts.length ? { conflictRows: result.stats.conflicts.slice(0, 25) } : {}),
+      },
     });
     await markConnectionSyncState(connectionId, { ok: true });
     await clearSyncPending(connectionId);

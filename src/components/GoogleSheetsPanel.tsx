@@ -53,7 +53,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
   const [connectUrl, setConnectUrl] = useState("");
   const [connectSheet, setConnectSheet] = useState("");
   const [showRuns, setShowRuns] = useState(false);
-  const [runs, setRuns] = useState<Array<{ id: number; triggerType: string; startedAt: string; finishedAt: string | null; status: string; rowsCreated: number; rowsUpdated: number; rowsUnchanged: number; rowsDeleted: number; errorMessage: string | null }>>([]);
+  const [runs, setRuns] = useState<Array<{ id: number; triggerType: string; startedAt: string; finishedAt: string | null; status: string; rowsCreated: number; rowsUpdated: number; rowsUnchanged: number; rowsDeleted: number; rowsSkipped?: number | null; validationErrorCount?: number | null; errorMessage: string | null }>>([]);
 
   const connection = connections.find((item) => item.setId === setId) ?? null;
 
@@ -185,7 +185,9 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { toast(data.error || "Không thể đồng bộ."); return; }
       const stats = data.stats || {};
-      toast(`Đồng bộ xong: +${stats.rowsCreated || 0} tạo mới, ~${stats.rowsUpdated || 0} cập nhật, =${stats.rowsUnchanged || 0} giữ nguyên.`);
+      const invalid: Array<{ rowNumber: number; message: string }> = Array.isArray(stats.invalidRows) ? stats.invalidRows : [];
+      const summary = `Đồng bộ xong: +${stats.rowsCreated || 0} tạo mới, ~${stats.rowsUpdated || 0} cập nhật, =${stats.rowsUnchanged || 0} giữ nguyên.`;
+      toast(invalid.length ? `${summary} Bỏ qua ${invalid.length} dòng: ${invalid.slice(0, 2).map((row) => `dòng ${row.rowNumber} ${row.message}`).join("; ")}${invalid.length > 2 ? "…" : ""}` : summary);
       await load();
     } catch { toast("Không thể kết nối để đồng bộ."); } finally { setBusy(null); }
   }
@@ -372,7 +374,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
               {runs.map((run) => (
                 <li key={run.id} className="rounded-lg border border-line p-2">
                   <div className="flex justify-between"><b>{run.triggerType}</b><span>{run.status}</span></div>
-                  <div className="mt-1 text-muted">{formatDate(run.finishedAt || run.startedAt)} · +{run.rowsCreated} tạo mới · ~{run.rowsUpdated} cập nhật · ={run.rowsUnchanged} giữ nguyên · −{run.rowsDeleted} lưu trữ</div>
+                  <div className="mt-1 text-muted">{formatDate(run.finishedAt || run.startedAt)} · +{run.rowsCreated} tạo mới · ~{run.rowsUpdated} cập nhật · ={run.rowsUnchanged} giữ nguyên · −{run.rowsDeleted} lưu trữ{(run.validationErrorCount ?? run.rowsSkipped ?? 0) > 0 ? ` · !${run.validationErrorCount ?? run.rowsSkipped} bị bỏ loại` : ''}</div>
                   {run.errorMessage && <div className="mt-1 text-red-600">{run.errorMessage}</div>}
                 </li>
               ))}
