@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, SESSION_COOKIE } from "@/lib/session";
 
-const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password"];
+// Pages that must be reachable without a session: the auth pages plus the
+// public marketing/legal pages Google reads for the OAuth consent screen.
+const PUBLIC_PATHS = ["/login", "/register", "/forgot-password", "/reset-password", "/", "/privacy", "/terms"];
+// Exact public paths that never redirect an authenticated visitor away from
+// the page itself. They are still exempt from the login redirect above.
+const PUBLIC_PAGE_PATHS: readonly string[] = ["/", "/privacy", "/terms"];
 export const BACKUP_CRON_PATH = "/api/cron/backup-email/daily";
 // One daily entry point does both reconciliation and watch-channel renewal because
 // Vercel Hobby rejects cron schedules that run more than once per day.
@@ -46,7 +51,8 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (session && isPublic) {
+  const isAuthPage = PUBLIC_PAGE_PATHS.includes(pathname) ? false : PUBLIC_PATHS.includes(pathname);
+  if (session && isAuthPage) {
     const url = req.nextUrl.clone();
     url.pathname = session.role === "admin" ? "/admin" : "/dashboard";
     url.search = "";
@@ -64,12 +70,9 @@ export async function middleware(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  if (pathname === "/") {
-    const url = req.nextUrl.clone();
-    url.pathname = session ? (session.role === "admin" ? "/admin" : "/dashboard") : "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
+  // Note: "/" is intentionally left to the landing page. It renders the public
+  // homepage for anonymous visitors and redirects signed-in users to their own
+  // workspace, so no middleware redirect is applied here.
 
   return NextResponse.next();
 }

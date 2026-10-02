@@ -38,6 +38,43 @@ test("only the exact backup cron path receives the session exemption", async () 
   assert.equal(new URL(response.headers.get("location")!).pathname, "/login");
 });
 
+test("public homepage, privacy policy and terms are reachable without a session", async () => {
+  const { middleware } = await middlewareModule;
+  for (const pathname of ["/", "/privacy", "/terms"]) {
+    const response = await middleware(anonymous(pathname));
+    assert.equal(response.status, 200, pathname);
+    assert.equal(response.headers.get("x-middleware-next"), "1", pathname);
+    assert.equal(response.headers.has("location"), false, pathname);
+  }
+});
+
+test("admin and admin APIs remain protected for anonymous visitors", async () => {
+  const { middleware } = await middlewareModule;
+  for (const pathname of ["/admin", "/admin/sets", "/api/admin/google-sheets/connections", "/api/admin/sets"]) {
+    const response = await middleware(anonymous(pathname));
+    assert.equal(response.status, 307, pathname);
+    assert.equal(new URL(response.headers.get("location")!).pathname, "/login", pathname);
+  }
+});
+
+test("student routes stay protected for anonymous visitors", async () => {
+  const { middleware } = await middlewareModule;
+  for (const pathname of ["/dashboard", "/study", "/learn/123"]) {
+    const response = await middleware(anonymous(pathname));
+    assert.equal(response.status, 307, pathname);
+    assert.equal(new URL(response.headers.get("location")!).pathname, "/login", pathname);
+  }
+});
+
+test("only the exact public paths are exempt; lookalikes still redirect", async () => {
+  const { middleware } = await middlewareModule;
+  for (const pathname of ["/privacy-policy", "/terms/extra", "/admin", "/dashboard"]) {
+    const response = await middleware(anonymous(pathname));
+    assert.equal(response.status, 307, pathname);
+    assert.equal(new URL(response.headers.get("location")!).pathname, "/login", pathname);
+  }
+});
+
 test("anonymous share pages and share APIs bypass the session redirect only", async () => {
   const { middleware } = await middlewareModule;
   for (const pathname of ["/s/AbCdEf1234567890", "/api/share/AbCdEf1234567890"]) {
