@@ -1,6 +1,6 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
+import { googleSheetConnections, googleSheetRowMappings, googleSheetSyncLocks, vocabSets, words } from "@/db/schema";
 import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
@@ -30,6 +30,38 @@ export async function apiForUser(userId: number): Promise<GoogleWorkspaceApi> {
   return createGoogleWorkspaceApi(token);
 }
 
+/**
+ * Advisory lock for the create-sheet workflow.
+ *
+ * Stored in the existing lock table with a create-scoped owner, so no second
+ * table is needed and a crashed process releases it after the TTL.
+ */
+const CREATE_LOCK_TTL_MS = 2 * 60 * 1000;
+
+async function acquireCreateLock(setId: number): Promise<void> {
+  const now = new Date();
+  const until = new Date(now.getTime() + CREATE_LOCK_TTL_MS);
+  const owner = `create:${setId}`;
+  const updated = await db.update(googleSheetSyncLocks)
+    .set({ lockedAt: now, lockedUntil: until, lockedBy: owner })
+    .where(and(eq(googleSheetSyncLocks.connectionId, setId), lt(googleSheetSyncLocks.lockedUntil, now)))
+    .returning({ connectionId: googleSheetSyncLocks.connectionId });
+  if (updated.length) return;
+  const inserted = await db.insert(googleSheetSyncLocks)
+    .values({ connectionId: setId, lockedAt: now, lockedUntil: until, lockedBy: owner })
+    .onConflictDoNothing({ target: googleSheetSyncLocks.connectionId })
+    .returning({ connectionId: googleSheetSyncLocks.connectionId });
+  if (!inserted.length) throw new GoogleSheetsError(CREATE_BUSY_MESSAGE, "RATE_LIMITED", { retryable: true, status: 409 });
+}
+
+async function releaseCreateLock(setId: number): Promise<void> {
+  await db.delete(googleSheetSyncLocks).where(and(eq(googleSheetSyncLocks.connectionId, setId), eq(googleSheetSyncLocks.lockedBy, `create:${setId}`)));
+}
+
+/** Actionable, non-technical messages shared with the create route and the UI. */
+export const CONNECTED_MESSAGE = "Google Sheet đã được kết nối cho bộ từ này.";
+export const RECOVER_MESSAGE = "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Hãy khôi phục kết nối hiện có.";
+export const CREATE_BUSY_MESSAGE = "Google Sheet đang được tạo bởi một yêu cầu khác. Vui lòng chờ lại.";
 export type CreateSheetResult = {
   connectionId: number;
   spreadsheetId: string;
@@ -47,8 +79,20 @@ export type CreateSheetResult = {
 export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOverride?: GoogleWorkspaceApi): Promise<CreateSheetResult> {
   const [set] = await db.select().from(vocabSets).where(eq(vocabSets.id, setId)).limit(1);
   if (!set) throw new GoogleSheetsError("Không tìm thấy bộ từ vựng.", "SHEET_NOT_FOUND", { retryable: false });
-  const [existing] = await db.select({ id: googleSheetConnections.id }).from(googleSheetConnections).where(eq(googleSheetConnections.setId, setId)).limit(1);
-  if (existing) throw new GoogleSheetsError("Bộ từ vựng này đã kết nối Google Sheet.", "INVALID_SCHEMA", { retryable: false, status: 409 });
+  // A healthy existing connection is an idempotent no-op (mapped to a 200 by the
+  // create route), and a broken one is recovered by the recover endpoint. Neither
+  // is a reason to spawn a second spreadsheet.
+  const [existing] = await db.select({ id: googleSheetConnections.id, status: googleSheetConnections.status, enabled: googleSheetConnections.enabled }).from(googleSheetConnections).where(eq(googleSheetConnections.setId, setId)).limit(1);
+  if (existing && existing.enabled && (existing.status === "connected" || existing.status === "syncing")) {
+    throw new GoogleSheetsError(CONNECTED_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
+  }
+  if (existing) {
+    throw new GoogleSheetsError(RECOVER_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
+  }
+  // Concurrency guard: two simultaneous create requests for the same set must not
+  // spawn two spreadsheets. Reuses the lock table with a create-scoped owner so a
+  // crashed process releases it after the TTL, exactly like the sync lock.
+  await acquireCreateLock(setId);
 
   const api = apiOverride ?? await apiForUser(actor.userId);
   const template = getGoogleSheetTemplate(set);
@@ -117,6 +161,8 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
       }).returning({ id: googleSheetConnections.id }).then((rows) => rows[0]?.id ?? null).catch(() => null);
     }
     throw error;
+  } finally {
+    await releaseCreateLock(setId);
   }
 }
 
@@ -139,7 +185,7 @@ async function writeSttFormula(api: GoogleWorkspaceApi, spreadsheetId: string, t
   await api.writeValues(spreadsheetId, range, values as never);
 }
 
-function exportValuesForWord(template: GoogleSheetTemplate, word: typeof words.$inferSelect): Record<string, string> {
+export function exportValuesForWord(template: GoogleSheetTemplate, word: typeof words.$inferSelect): Record<string, string> {
   const values: Record<string, string> = {};
   for (const field of template.fields) {
     if (field.key === SOURCE_ID_HEADER) continue;

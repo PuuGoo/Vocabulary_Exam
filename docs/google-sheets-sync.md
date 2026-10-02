@@ -310,6 +310,7 @@ DELETE /api/admin/google-sheets/connections/[id]
 POST   /api/admin/google-sheets/connections/[id]/preview
 POST   /api/admin/google-sheets/connections/[id]/sync
 GET    /api/admin/google-sheets/connections/[id]/runs
+POST   /api/admin/google-sheets/connections/[id]/recover
 POST   /api/webhooks/google-drive
 GET    /api/cron/google-sheets/reconcile   (daily: reconcile + renewal)
 ```
@@ -318,6 +319,38 @@ RBAC: quyền mới `google_sheets.view` / `google_sheets.manage` / `google_shee
 (owner, manager, content_editor; viewer không có). Mọi route đều check
 `requireAdminPermission` + `requireAdminResourceAccess` (folder level).
 
+## 14a. Recovery thay cho 409 Conflict
+
+Trước fix, `POST /create` trả **409 "Bộ từ vựng này đã kết nối Google Sheet"** cho *bất kỳ* dòng
+`google_sheet_connections` nào, kể cả `status=error`, `enabled=false`, `disconnected` hoặc dòng mồ côi
+để lại khi spreadsheet đã tạo xong nhưng wiring DB thất bại. Trong khi đó UI lại render
+"Chưa kết nối" theo `status` → backend và UI mâu thuẫn về chính một dòng dữ liệu.
+
+Hiện tại trạng thái được ánh xạ bởi một hàm duy nhất (`recoveryState.ts`, dùng chung cho route + UI):
+
+| Trạng thái DB | View | Hành vi POST /create |
+|---|---|---|
+| `connected` + `enabled` | connected | Idempotent **200** (không tạo spreadsheet mới) |
+| `paused` / tắt sync | paused | **200** + hướng dẫn nhấn "Tiếp tục" |
+| `error` / `disconnected` | error | **Recover** spreadsheet hiện có |
+| Không có dòng nào | none | Tạo spreadsheet mới (qua OAuth nếu cần) |
+
+**Luồng recover** (`recoverGoogleSheetConnection`):
+
+1. verify Google access theo `spreadsheetId` hiện có;
+2. refresh metadata (sheetId/sheetTitle có thể đã đổi);
+3. tạo lại row mappings còn thiếu (không đụng mappings cũ);
+4. tạo lại watch channel (channel id + token mới) nếu thiếu/hết hạn/tokenless;
+5. `enabled=true`, `status=connected`, xóa `lastError`;
+6. chạy `syncConnection(..., "initial")` một lần để sheet và DB hội tụ.
+
+Recover **không bao giờ tạo spreadsheet mới** và **không xóa dòng connection** (giữ spreadsheetId,
+mappings, lịch sử). Chỉ khi Google trả về `SHEET_NOT_FOUND` (spreadsheet đã bị xóa/mất quyền) route mới
+cho phép tạo Sheet mới; khi đó dòng connection cũ bị gỡ để unique index không chặn thay thế.
+
+**Chống tạo trùng:** advisory lock theo `setId` trong bảng lock sẵn có (`create:<setId>`, TTL 2 phút) +
+unique index `google_sheet_connections_set_unique` trên `set_id` (migration 0035, additive; script apply
+giải quyết duplicate cũ bằng cách giữ connection healthy/updated gần nhất rồi xoá dòng thua kèm cascade).
 ## 15. Troubleshooting
 
 | Triệu chứng | Nguyên nhân / cách xử lý |
@@ -330,7 +363,7 @@ RBAC: quyền mới `google_sheets.view` / `google_sheets.manage` / `google_shee
 | Webhook không tới | URL không public HTTPS; kiểm tra `GOOGLE_WEBHOOK_BASE_URL` |
 | Channel hết hạn | Renew chạy 1 lần/ngày → kiểm tra `CRON_SECRET`, cron `0 18 * * *` đã đăng ký, webhook còn tới được |
 | Webhook 403 liên tục | Channel chưa có token (legacy) hoặc token không khớp — cron sẽ tạo lại channel mới; đảm bảo cron `0 18 * * *` chạy |
-| `409` | Sync khác đang chạy cho connection này |
+| `409` | Chỉ còn 2 dạng: sync khác đang chạy (`Sync already in progress`) hoặc create đang bị lock bởi request song song. "Bộ từ này đã kết nối" không còn là 409 — trạng thái error/paused/disconnected được recover hoặc trả 200 idempotent. |
 
 ## 16. Migration
 

@@ -1023,6 +1023,7 @@ export const googleSheetConnections = pgTable(
   (table) => ({
     setIdx: index("google_sheet_connections_set_idx").on(table.setId),
     spreadsheetIdx: uniqueIndex("google_sheet_connections_spreadsheet_idx").on(table.spreadsheetId),
+    setUniqueIdx: uniqueIndex("google_sheet_connections_set_unique").on(table.setId),
   }),
 );
 

@@ -85,7 +85,7 @@ test("D. a replayed callback never carries a create instruction of its own", () 
 test("D. create is idempotent per set: an existing connection is returned, not duplicated", () => {
   const create = readFileSync("src/app/api/admin/google-sheets/create/route.ts", "utf8");
   assert.match(create, /googleSheetConnections/, "the existing-connection check must run before creating");
-  const connectionCheck = create.indexOf("from(googleSheetConnections)");
+  const connectionCheck = create.indexOf("loadConnectionForSet(setId)");
   const lifecycleCall = create.indexOf("createGoogleSheetForSet(");
   assert.ok(connectionCheck > 0, "the existing googleSheetConnections check must exist");
   assert.ok(lifecycleCall > connectionCheck, "the duplicate check must run before any spreadsheet is created");
@@ -136,7 +136,11 @@ test("A. already connected: the flow continues to the spreadsheet instead of OAu
   const existingCheck = create.indexOf("if (existing)");
   const oauthGate = create.indexOf("isGoogleOAuthConfigured()");
   assert.ok(existingCheck > 0 && oauthGate > existingCheck, "the existing-connection short circuit must come first");
-  assert.match(create, /alreadyConnected: true \}, \{ status: 200 \}\)/, "an existing connection answers 200 with the existing metadata");
+  // A healthy connection answers 200 with the existing metadata; a broken one is
+  // recovered (never a 409 conflict).
+  assert.match(create, /view === "connected" \|\| view === "paused"/, "connected and paused short-circuit first");
+  assert.match(create, /alreadyConnected: true,/, "the reused connection is reported as alreadyConnected");
+  assert.match(create, /view,\n        message: connectionViewMessage\(view\),\n      \}, \{ status: 200 \}\)/, "an existing connection answers 200 with the existing metadata");
 });
 
 // ---------------------------------------------------------- F: authorization

@@ -9,6 +9,7 @@ import { createGoogleSheetForSet } from "@/lib/googleSheets/sheetLifecycle";
 import { GoogleSheetsError } from "@/lib/googleSheets/errors";
 import { isGoogleOAuthConfigured } from "@/lib/googleSheets/auth";
 import { createSheetErrorOutcome, createSheetJson } from "@/lib/googleSheets/createFlow";
+import { connectionView, connectionViewMessage, loadConnectionForSet, recoverGoogleSheetConnection } from "@/lib/googleSheets/recovery";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,11 +28,55 @@ export async function POST(req: NextRequest) {
   const scoped = await requireAdminResourceAccess({ permission: "google_sheets.manage", folderId: set.folderId, level: "editor", access });
   if (isAuthorizationError(scoped)) return scoped;
 
-  // A repeated create (double click, OAuth callback replay, browser retry) must
-  // not spawn a second spreadsheet: reuse the existing connection.
-  const [existing] = await db.select({ id: googleSheetConnections.id, spreadsheetId: googleSheetConnections.spreadsheetId, spreadsheetUrl: googleSheetConnections.spreadsheetUrl, sheetId: googleSheetConnections.sheetId, sheetTitle: googleSheetConnections.sheetTitle, status: googleSheetConnections.status }).from(googleSheetConnections).where(eq(googleSheetConnections.setId, setId)).limit(1);
+  // ---- Existing connection -------------------------------------------------
+  // A connection row is not proof of a working integration: a half-finished
+  // create leaves status=error/enabled=false with the spreadsheet already
+  // created. A flat 409 for *any* row is what made the admin UI ("Chưa kết
+  // nối") and the API disagree, so every state gets its own actionable outcome
+  // and no state ever silently spawns a second spreadsheet.
+  const existing = await loadConnectionForSet(setId);
   if (existing) {
-    return NextResponse.json({ connectionId: existing.id, spreadsheetId: existing.spreadsheetId, spreadsheetUrl: existing.spreadsheetUrl, sheetId: existing.sheetId, sheetTitle: existing.sheetTitle, status: existing.status, alreadyConnected: true }, { status: 200 });
+    const view = connectionView(existing);
+    if (view === "connected" || view === "paused") {
+      // Idempotent: return the existing connection instead of creating a new
+      // spreadsheet or answering an unhelpful 409 conflict.
+      return NextResponse.json({
+        connectionId: existing.id,
+        spreadsheetId: existing.spreadsheetId,
+        spreadsheetUrl: existing.spreadsheetUrl,
+        sheetId: existing.sheetId,
+        sheetTitle: existing.sheetTitle,
+        status: existing.status,
+        alreadyConnected: true,
+        paused: view === "paused",
+        view,
+        message: connectionViewMessage(view),
+      }, { status: 200 });
+    }
+
+    // error / disconnected: recover the existing spreadsheet, never duplicate it.
+    if (!isGoogleOAuthConfigured()) return createSheetJson({ status: 501, body: { error: "Google OAuth chưa được cấu hình trên máy chủ.", code: "NOT_CONFIGURED", retryable: false, setId } });
+    try {
+      const result = await recoverGoogleSheetConnection(existing.id, { userId: access.userId });
+      return NextResponse.json({ ...result, recovered: true, view: "connected", alreadyConnected: false }, { status: 200 });
+    } catch (error) {
+      if (error instanceof GoogleSheetsError && (error.code === "OAUTH_REQUIRED" || error.code === "OAUTH_REVOKED")) {
+        // Expected onboarding state: hand the browser the OAuth continuation,
+        // exactly like the not-yet-connected case below.
+        return createSheetJson(createSheetErrorOutcome(error, setId));
+      }
+      if (error instanceof GoogleSheetsError && error.code === "SHEET_NOT_FOUND") {
+        // The old spreadsheet is verifiably gone: only now may a fresh one be
+        // created. The unusable row is removed first so the unique-on-set logic
+        // cannot reject the replacement; mappings already cascade-delete with it.
+        await db.delete(googleSheetConnections).where(eq(googleSheetConnections.id, existing.id));
+        console.warn("[google-sheets] removed unusable connection", existing.id, "set", setId);
+      } else if (error instanceof GoogleSheetsError && error.code === "INVALID_SCHEMA") {
+        return NextResponse.json({ error: "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Vui lòng thử khôi phục.", code: error.code, setId }, { status: 409 });
+      }
+      // Any other recovery failure falls through to the create attempt below,
+      // which re-checks the connection state under the create lock.
+    }
   }
 
   if (!isGoogleOAuthConfigured()) return createSheetJson({ status: 501, body: { error: "Google OAuth chưa được cấu hình trên máy chủ.", code: "NOT_CONFIGURED", retryable: false, setId } });

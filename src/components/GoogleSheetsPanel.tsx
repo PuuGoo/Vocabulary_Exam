@@ -48,6 +48,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
   const [preview, setPreview] = useState<{ templateType: string; columns: number; existingWords: number; rowsToExport: number } | null>(null);
   const [createPhase, setCreatePhase] = useState<"idle" | "connecting" | "creating">("idle");
   const [resumeCreate, setResumeCreate] = useState(false);
+  const [canCreateNew, setCanCreateNew] = useState(false);
   const [connectMode, setConnectMode] = useState(false);
   const [connectUrl, setConnectUrl] = useState("");
   const [connectSheet, setConnectSheet] = useState("");
@@ -63,6 +64,8 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       if (!response.ok) return;
       const data = await response.json();
       setConnections(data.connections || []);
+      const found = (data.connections || []).find((item: Connection) => item.setId === setId);
+      setCanCreateNew(found ? found.status !== "error" && found.status !== "disconnected" : false);
     } catch { /* keep prior state */ } finally { setLoading(false); }
   }, [setId]);
 
@@ -112,9 +115,16 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
         window.location.assign(String(data.oauthUrl));
         return;
       }
-      if (data.alreadyConnected) {
+      if (data.alreadyConnected && !data.recovered) {
         setShowPreview(false);
-        toast("Bộ từ vựng này đã có Google Sheet. Đang tải dữ liệu kết nối...");
+        toast("Google Sheet đã được kết nối cho bộ từ này.");
+        await load();
+        return;
+      }
+      if (data.recovered) {
+        setShowPreview(false);
+        setResumeCreate(false);
+        toast("Đã khôi phục kết nối Google Sheet.");
         await load();
         return;
       }
@@ -134,6 +144,22 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       setBusy(null);
       setCreatePhase("idle");
     }
+  }
+
+  async function recoverConnection() {
+    if (!connection) return;
+    setBusy("recover");
+    try {
+      const response = await fetch(`/api/admin/google-sheets/connections/${connection.id}/recover`, { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (data.spreadsheetGone) { setCanCreateNew(true); toast(data.error || "Google Sheet không còn. Bạn có thể tạo Sheet mới."); return; }
+        toast(data.error || "Không thể khôi phục kết nối.");
+        return;
+      }
+      toast("Đã khôi phục kết nối Google Sheet.");
+      await load();
+    } catch { toast("Không thể khôi phục kết nối."); } finally { setBusy(null); }
   }
 
   async function syncNow() {
@@ -222,6 +248,30 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
         )}
       </div>
 
+      {connection && (connection.status === "error" || connection.status === "disconnected") && (
+        <div className="rounded-[11px] border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-semibold text-red-700">
+            {connection.status === "error" ? "Google Sheet gặp lỗi kết nối" : "Google Sheet đã ngắt kết nối"}
+          </p>
+          <p className="mt-1 text-xs text-red-600">
+            Google Sheet tự tạo còn đủ. Lexora có thể khôi phục kết nối hiện có mà không tạo spreadsheet mới.
+          </p>
+          {connection.lastError && <p className="mt-2 rounded-lg bg-white/60 px-3 py-2 text-xs text-red-700">Lỗi gần nhất: {connection.lastError}</p>}
+          {canManage && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" className={cx.btnGold} disabled={busy !== null} onClick={() => void recoverConnection()}>
+                {busy === "recover" ? "Đang khôi phục..." : "Khôi phục kết nối"}
+              </button>
+              <a className={cx.btnGhost} href={connection.spreadsheetUrl} target="_blank" rel="noopener noreferrer">Mở Google Sheet ↗</a>
+              {canCreateNew && (
+                <button type="button" className={cx.btnGhost} disabled={busy !== null} onClick={() => void openCreatePreview()}>
+                  Tạo Google Sheet mới
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {!connection && (
         <div className="rounded-[11px] border border-line bg-[#FBFAFE] p-4">
           <p className="text-sm font-semibold">Google Sheet: Chưa kết nối</p>
