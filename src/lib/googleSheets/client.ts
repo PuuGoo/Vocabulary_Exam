@@ -1,9 +1,12 @@
+import { randomBytes } from "node:crypto";
 import { google } from "googleapis";
 import type { GoogleWorkspaceApi, SheetsValue, SpreadsheetMetadata, WatchChannel } from "@/lib/googleSheets/api";
 import { classifyGoogleApiError } from "@/lib/googleSheets/errors";
+import { WATCH_CHANNEL_EXPIRATION_MS } from "@/lib/googleSheets/api";
+
+export { WATCH_CHANNEL_EXPIRATION_MS };
 
 const WRITE_CHUNK_ROWS = 2_000;
-const WATCH_CHANNEL_EXPIRATION_MS = 1000 * 60 * 60 * 6; // Drive watch channels live ~24h; renew well before that.
 
 type TokenInput = { accessToken: string; refreshToken: string | null; expiresAt: Date };
 
@@ -77,15 +80,24 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
 
     async createWatchChannel({ spreadsheetId, resourceId }) {
       try {
+        // A cryptographically random token (no OAuth material) is sent as part
+        // of the channel definition and echoed back to us as the
+        // X-Goog-Channel-Token header on every notification. This is what makes
+        // webhook authentication possible — Google does not sign the body.
+        const channelToken = randomBytes(32).toString("hex");
         const response = (await drive.files.watch({
           fileId: spreadsheetId,
           supportsAllDrives: true,
           requestBody: {
-            id: `lexora-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+            // A fresh id per watch: Google requires a unique channel id and
+            // dedupes notifications by it, so renewal must never reuse it.
+            id: `lexora-${randomBytes(8).toString("hex")}`,
             type: "web_hook",
             address: `${webhookBaseUrl()}/api/webhooks/google-drive`,
-            resourceUri: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+            token: channelToken,
             expiration: String(Date.now() + WATCH_CHANNEL_EXPIRATION_MS),
+            // Do not set resourceUri here: it is not a valid Channel field for
+            // files.watch (the watched resource is the fileId itself).
           },
         })) as unknown as { data: { id?: string | null; resourceId?: string | null; resourceUri?: string | null; expiration?: string | null } };
         const channelId = response.data.id;
@@ -95,6 +107,7 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
           resourceId: response.data.resourceId || resourceId,
           resourceUri: response.data.resourceUri || "",
           expirationAt: response.data.expiration ? new Date(Number(response.data.expiration)) : null,
+          channelToken,
         };
       } catch (error) { throw classifyGoogleApiError(error); }
     },

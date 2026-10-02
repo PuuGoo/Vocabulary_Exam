@@ -62,14 +62,50 @@ test("delete behavior defaults to archive and never hard-deletes learning data",
   assert.ok(!lifecycle.includes('deleteBehavior: "delete"'), "creating a connection must never default to hard delete");
 });
 
-test("webhook validates channel state, then syncs the notified connection", () => {
+test("webhook authenticates the channel token, never the notification body", () => {
   const source = readFileSync("src/app/api/webhooks/google-drive/route.ts", "utf8");
-  assert.match(source, /recordNotificationState/, "duplicate/out-of-order notifications must be filtered");
-  assert.match(source, /isValidWebhookToken/, "channel token must be verified");
+  assert.match(source, /verifyChannelToken/, "the webhook must verify X-Goog-Channel-Token");
+  assert.match(source, /x-goog-resource-state/, "the webhook must read the resource state header");
+  assert.match(source, /resourceState === "sync"/, "a sync notification must be acknowledged without a diff");
   assert.match(source, /202/, "webhook must answer 202 whether or not the sync succeeded");
-  assert.match(source, /markSyncPending\(connection\.id, "webhook"\)/, "pending state must be persisted before syncing, so a crash is recoverable");
+  assert.match(source, /markSyncPending\(connection\.id, "webhook"\)/, "pending state must be persisted before syncing");
   assert.match(source, /runPendingConnection/, "the webhook runs the sync itself, which is what keeps sync near-real-time without a high-frequency cron");
   assert.ok(!source.includes("syncConnection"), "the webhook must go through the shared lock-guarded helper, not sync a connection directly");
+  assert.ok(!/isValidWebhookToken|HMAC\(.*body|createHmac.*body/i.test(source), "the notification body is empty for files.watch and must never be authenticated");
+  assert.ok(!/req\.text\(\)/.test(source), "the webhook must not depend on the request body");
+});
+
+test("watch channels send a real channel token and store only its digest", () => {
+  const client = readFileSync("src/lib/googleSheets/client.ts", "utf8");
+  assert.match(client, /token: channelToken/, "files.watch must send a channel token");
+  // resourceUri may be *read back* from the Google response (that is a real
+  // Channel field and is kept for diagnostics), but it must never be sent in
+  // the files.watch request body — it is not a valid request field.
+  const watchBody = /requestBody:\s*\{[\s\S]*?\}/.exec(client)?.[0] ?? "";
+  assert.ok(watchBody, "the watch request body must exist");
+  assert.ok(!watchBody.includes("resourceUri"), "resourceUri is not a valid Channel field for files.watch");
+  // The lifetime lives in one place so client, fake and tests cannot drift.
+  const api = readFileSync("src/lib/googleSheets/api.ts", "utf8");
+  assert.match(api, /WATCH_CHANNEL_EXPIRATION_MS = 1000 \* 60 \* 60 \* 23/, "channel lifetime must approach the ~24h Drive cap");
+  assert.match(client, /import \{ WATCH_CHANNEL_EXPIRATION_MS \} from "@\/lib\/googleSheets\/api"/, "the client must reuse the shared lifetime");
+
+  const token = readFileSync("src/lib/googleSheets/channelToken.ts", "utf8");
+  assert.match(token, /randomBytes\(32\)/, "the token must be cryptographically random");
+  assert.ok(!/access_token|refresh_token|client_secret/i.test(token), "the channel token must never carry OAuth material");
+
+  const watch = readFileSync("src/lib/googleSheets/watch.ts", "utf8");
+  assert.match(watch, /hashChannelToken\(/, "only a digest may be persisted");
+  // The renewal threshold is shared between the cron sweep and the lazy
+  // webhook renewal, so both agree on when a channel is close to expiring.
+  assert.match(watch, /WATCH_CHANNEL_RENEW_THRESHOLD_MS/, "renewal must use the shared threshold");
+  assert.ok(!/channelToken: /.test(watch), "the raw token must never be written to the database");
+
+  const schema = readFileSync("src/db/schema.ts", "utf8");
+  assert.match(schema, /channelTokenHash/, "the channel table must store the digest");
+  assert.ok(!/channel_token[^_]*text/i.test(schema), "the raw token must never have a plaintext column");
+
+  const webhook = readFileSync("src/app/api/webhooks/google-drive/route.ts", "utf8");
+  assert.ok(!/console\.(log|warn|error)[^\n]*channelToken/i.test(webhook), "the webhook must never log the channel token");
 });
 
 test("connection-level lock guards concurrent syncs", () => {

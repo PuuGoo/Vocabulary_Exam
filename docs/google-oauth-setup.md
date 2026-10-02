@@ -89,7 +89,11 @@ Biến `GOOGLE_CLIENT_SECRET`, `GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY`, `GOOGLE_WEBH
 
 1. Đăng ký `https://vocabulary-exam.vercel.app/api/webhooks/google-drive` là đích nhận push notification (Google Drive watch channel).
 2. Lexora tự tạo watch channel khi kết nối spreadsheet, rồi tự renew theo cron `0 18 * * *` (Vercel Hobby chỉ cho cron chạy 1 lần/ngày; xem `vercel.json`).
-3. Webhook **idempotent**: kiểm tra channel id, resource id, message number.
+3. Webhook **idempotent**: ki tra channel id, resource id, message number.
+4. Webhook **xc thuc bang channel token**: Lexora giu `files.watch` kem `requestBody.token`
+   (random 32 byte) va server luu SHA-256 digest; header `X-Goog-Channel-Token` khop digest moi xac luc.
+   Channel nao tao truoc fix (khong co digest) se bi cron daily tao lai channel moi co token.
+5. Khong can cau hinh them gi tren Google Cloud Console cho webhook - can bat **Google Drive API**.
 
 ---
 

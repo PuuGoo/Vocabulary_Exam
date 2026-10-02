@@ -348,7 +348,7 @@ export async function runRestore(parsed: unknown, action: string, confirmation: 
       const channelId = text(row, "channelId");
       const key = `${connectionId}\u0000${channelId}`;
       if (connectionId == null || !channelId || channelKeys.has(key)) { report.skipped.googleSheetSyncChannels++; continue; }
-      await tx.insert(googleSheetSyncChannels).values({ connectionId, channelId, resourceId: text(row, "resourceId"), resourceUri: text(row, "resourceUri"), expirationAt: nullableDate(row, "expirationAt"), lastMessageNumber: nullableNumber(row, "lastMessageNumber"), status: text(row, "status", "active"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
+      await tx.insert(googleSheetSyncChannels).values({ connectionId, channelId, resourceId: text(row, "resourceId"), resourceUri: text(row, "resourceUri"), expirationAt: nullableDate(row, "expirationAt"), lastMessageNumber: nullableNumber(row, "lastMessageNumber"), channelTokenHash: text(row, "channelTokenHash"), status: text(row, "status", "active"), createdAt: date(row, "createdAt"), updatedAt: date(row, "updatedAt") });
       channelKeys.add(key);
       report.added.googleSheetSyncChannels++;
     }

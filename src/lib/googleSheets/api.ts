@@ -1,9 +1,41 @@
+import { randomBytes } from "node:crypto";
+
 export type SheetsValue = (string | number | boolean | null)[][];
 
 export type SpreadsheetSummary = { spreadsheetId: string; spreadsheetUrl: string; spreadsheetName: string };
 export type CreatedSpreadsheet = SpreadsheetSummary & { sheetId: number; sheetTitle: string };
-export type WatchChannel = { channelId: string; resourceId: string; resourceUri: string; expirationAt: Date | null };
+export type WatchChannel = {
+  channelId: string;
+  resourceId: string;
+  resourceUri: string;
+  expirationAt: Date | null;
+  /**
+   * Raw channel token sent to Google as `token`. Google echoes it back in
+   * the X-Goog-Channel-Token header. Only a SHA-256 digest is persisted; this
+   * value stays in memory for the create/renew call and is never logged.
+   */
+  channelToken?: string;
+};
 export type SpreadsheetMetadata = { sheets: Array<{ sheetId: number; title: string }> };
+
+/**
+ * Drive watch channels are documented to live ~24h, so we ask for 23h: close
+ * enough to the maximum to be useful, with an hour of slack.
+ *
+ * A 6h lifetime (the previous value) combined with a once-a-day cron — the
+ * Vercel Hobby limit — left every connection silently un-notified for most of
+ * each day. Even 22h is not safe on its own: a channel created just after the
+ * daily cron runs would expire before the next one. That is why the webhook
+ * also renews a channel lazily when it sees one that is close to expiring.
+ */
+export const WATCH_CHANNEL_EXPIRATION_MS = 1000 * 60 * 60 * 23;
+
+/**
+ * A channel is renewed lazily when it has less than this much life left, and
+ * by the daily cron on the same condition. It is comfortably larger than the
+ * daily cron interval so a channel is never left to expire unattended.
+ */
+export const WATCH_CHANNEL_RENEW_THRESHOLD_MS = 1000 * 60 * 60 * 6;
 
 /** Thin, testable abstraction over the Google Sheets + Drive APIs. */
 export type GoogleWorkspaceApi = {
@@ -58,14 +90,15 @@ export function createFakeGoogleWorkspaceApi(overrides: Partial<GoogleWorkspaceA
     getSpreadsheetMetadata: async (spreadsheetId) => ({ sheets: ensure(spreadsheetId).metadata.sheets.map((sheet) => ({ ...sheet })) }),
     createWatchChannel: async ({ spreadsheetId, resourceId }) => {
       const entry = ensure(spreadsheetId);
-      const channel: WatchChannel = { channelId: `fake-channel-${entry.watches.length + 1}`, resourceId, resourceUri: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`, expirationAt: new Date(Date.now() + 6 * 60 * 60 * 1000) };
+      const channelToken = randomBytes(32).toString("hex");
+      const channel: WatchChannel = { channelId: `fake-channel-${entry.watches.length + 1}`, resourceId, resourceUri: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`, expirationAt: new Date(Date.now() + WATCH_CHANNEL_EXPIRATION_MS), channelToken };
       entry.watches.push(channel);
       return channel;
     },
     renewWatchChannel: async ({ channelId, spreadsheetId, resourceId }) => {
       const entry = ensure(spreadsheetId);
       const previous = entry.watches.find((watch) => watch.channelId === channelId);
-      const renewed: WatchChannel = { channelId: `fake-channel-${entry.watches.length + 1}`, resourceId, resourceUri: previous?.resourceUri ?? `https://docs.google.com/spreadsheets/d/${spreadsheetId}`, expirationAt: new Date(Date.now() + 6 * 60 * 60 * 1000) };
+      const renewed: WatchChannel = { channelId: `fake-channel-${entry.watches.length + 1}`, resourceId, resourceUri: previous?.resourceUri ?? `https://docs.google.com/spreadsheets/d/${spreadsheetId}`, expirationAt: new Date(Date.now() + WATCH_CHANNEL_EXPIRATION_MS), channelToken: randomBytes(32).toString("hex") };
       entry.watches.push(renewed);
       return renewed;
     },

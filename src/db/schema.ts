@@ -1035,6 +1035,11 @@ export const googleSheetSyncChannels = pgTable(
     resourceId: varchar("resource_id", { length: 255 }).notNull(),
     resourceUri: text("resource_uri").notNull(),
     expirationAt: timestamp("expiration_at", { withTimezone: true }),
+    // SHA-256 of the channel token Google echoes back in X-Goog-Channel-Token.
+    // The token itself is never stored: the webhook hashes the incoming header
+    // and compares against this digest. Rows created before the fix are NULL and
+    // are treated as legacy (replaced automatically, never trusted blindly).
+    channelTokenHash: varchar("channel_token_hash", { length: 128 }),
     lastMessageNumber: integer("last_message_number"),
     status: varchar("status", { length: 16 }).notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels } from "@/db/schema";
 import { markSyncPending, recordNotificationState } from "@/lib/googleSheets/store";
 import { runPendingConnection } from "@/lib/googleSheets/reconcile";
+import { verifyChannelToken } from "@/lib/googleSheets/channelToken";
+import { renewWatchChannelIfExpiring } from "@/lib/googleSheets/watch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,41 +14,77 @@ export const dynamic = "force-dynamic";
 // on serverless, and this project is on Next 14 which has no waitUntil()).
 export const maxDuration = 60;
 
-function isValidWebhookToken(request: NextRequest, body: string): boolean {
-  const secret = process.env.GOOGLE_WEBHOOK_TOKEN_SECRET;
-  const provided = request.headers.get("x-goog-channel-token") || "";
-  if (!secret || !provided) return false;
-  const expected = createHmac("sha256", secret).update(body).digest("hex");
-  const a = Buffer.from(provided, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
 /**
  * Google Drive push notification.
  *
- * The notification is only an event signal — it carries no row/cell delta, so we
- * validate the channel and read the spreadsheet again. The sync runs here, which
- * makes the feature near-real-time without a high-frequency cron (Vercel Hobby
- * rejects cron schedules that run more than once per day); the daily reconcile
- * cron stays as a safety net for webhooks that never arrived or failed.
+ * Authentication follows the Drive Push Notification contract exactly:
+ * the `token` we set when creating the watch channel comes back as the
+ * `X-Goog-Channel-Token` header. The notification body is empty for
+ * files.watch, so nothing is parsed from it and nothing is HMAC-computed from
+ * it — that older scheme could never validate a real Google notification.
  *
- * Duplicate and out-of-order notifications are filtered by
- * recordNotificationState (channel id + resource id + monotonic message number),
- * so a Google retry can never produce a second effective sync. Every run also
- * fingerprints against the database, so re-syncing unchanged rows is a no-op.
+ * The notification is only an event signal: we acknowledge it, then read the
+ * spreadsheet again and diff it against PostgreSQL.
+ *
+ * Resource states:
+ *  - `sync`     → the channel just came online; confirm it works, no vocabulary
+ *                 diff is required.
+ *  - `update`   → content changed; the X-Goog-Changed header tells us whether
+ *                 it was `content` or `properties`.
+ *  - anything else (add / remove / trash / untrash / future states) is handled
+ *    gracefully and still syncs, because a row may have appeared or vanished.
  */
 export async function POST(req: NextRequest) {
-  const body = await req.text().catch(() => "");
   const channelId = req.headers.get("x-goog-channel-id") || "";
   const resourceId = req.headers.get("x-goog-resource-id") || "";
-  const messageNumber = Number(req.headers.get("x-goog-message-number") || "0");
-  if (!channelId || !resourceId) return NextResponse.json({ error: "Missing notification headers." }, { status: 400 });
-  if (!isValidWebhookToken(req, body)) return NextResponse.json({ error: "Invalid channel token." }, { status: 403 });
+  const channelToken = req.headers.get("x-goog-channel-token") || "";
+  const rawMessageNumber = req.headers.get("x-goog-message-number") || "";
+  const resourceState = (req.headers.get("x-goog-resource-state") || "").toLowerCase();
+  const changed = (req.headers.get("x-goog-changed") || "").toLowerCase();
+
+  if (!channelId || !resourceId) {
+    return NextResponse.json({ error: "Missing notification headers." }, { status: 400 });
+  }
 
   const [channel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.channelId, channelId)).limit(1);
   if (!channel) return NextResponse.json({ ok: true, ignored: "unknown_channel" }, { status: 202 });
-  const state = await recordNotificationState(channelId, resourceId, messageNumber);
+
+  // The token must match the digest stored when the channel was created.
+  // Legacy rows (created before this fix) have no digest and can never pass,
+  // so they are rejected here and recreated by the renewal cron.
+  if (!verifyChannelToken(channelToken, channel.channelTokenHash)) {
+    console.warn(`[google-drive-webhook] rejected notification: channel ${channelId} failed token verification`);
+    return NextResponse.json({ error: "Invalid channel token." }, { status: 403 });
+  }
+  if (channel.resourceId && channel.resourceId !== resourceId) {
+    return NextResponse.json({ ok: true, ignored: "resource_mismatch" }, { status: 202 });
+  }
+
+  const messageNumber = Number(rawMessageNumber || "0");
+  const hasMessageNumber = Number.isFinite(messageNumber) && messageNumber > 0;
+  // Idempotency: Google message numbers start at 1 and only increase — they
+  // are not necessarily sequential, so only reject <= lastMessageNumber.
+  if (hasMessageNumber && channel.lastMessageNumber != null && messageNumber <= channel.lastMessageNumber) {
+    return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
+  }
+
+  console.log(
+    `[google-drive-webhook] channelId=${channelId} resourceId=${resourceId} state=${resourceState || "unknown"} changed=${changed || "unknown"} messageNumber=${hasMessageNumber ? messageNumber : "none"} connectionId=${channel.connectionId}`
+  );
+
+  // Lazy renewal: a notification proves the channel is alive, so this is the
+  // cheapest moment to top it up. The daily cron is the safety net, but with a
+  // once-a-day schedule (Vercel Hobby) it cannot be the only renewal path —
+  // otherwise a channel could expire in the gap between two cron runs.
+  await renewWatchChannelIfExpiring(channel.connectionId);
+  // A `sync` notification only confirms the channel is alive: record it, then
+  // stop. Google sends it when a watch starts, before any content change.
+  if (resourceState === "sync") {
+    await recordNotificationState(channelId, resourceId, hasMessageNumber ? messageNumber : (channel.lastMessageNumber ?? 1));
+    return NextResponse.json({ ok: true, connectionId: channel.connectionId, resourceState: "sync", acknowledged: true }, { status: 202 });
+  }
+
+  const state = await recordNotificationState(channelId, resourceId, hasMessageNumber ? messageNumber : (channel.lastMessageNumber ?? 1) + 1);
   if (!state) return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
 
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, channel.connectionId)).limit(1);
@@ -55,10 +92,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ignored: "connection_inactive" }, { status: 202 });
   }
 
+
   // Persist first: if this invocation dies mid-sync (timeout, cold start, revoked
   // OAuth) the connection is still pending and the daily cron picks it up.
   await markSyncPending(connection.id, "webhook");
   const result = await runPendingConnection(connection.id, "webhook");
   if (result.status === "error") console.error(`[google-drive-webhook] connection ${connection.id} sync failed: ${result.error ?? "unknown"}`);
-  return NextResponse.json({ ok: true, connectionId: connection.id, sync: result.status, ...(result.error ? { error: result.error } : {}) }, { status: 202 });
+  return NextResponse.json({
+    ok: true,
+    connectionId: connection.id,
+    resourceState: resourceState || "unknown",
+    changed: changed || null,
+    sync: result.status,
+    ...(result.error ? { error: result.error } : {}),
+  }, { status: 202 });
 }

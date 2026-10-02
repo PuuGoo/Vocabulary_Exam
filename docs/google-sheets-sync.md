@@ -128,7 +128,7 @@ PostgreSQL (không reset learning data)
 | `GOOGLE_CLIENT_SECRET` | OAuth Client Secret (chỉ server-side) |
 | `GOOGLE_REDIRECT_URI` | Redirect URI đã đăng ký, kết thúc bằng `/api/admin/google-sheets/oauth/callback` |
 | `GOOGLE_WEBHOOK_BASE_URL` | Base HTTPS public của deployment |
-| `GOOGLE_WEBHOOK_TOKEN_SECRET` | HMAC secret cho header `x-goog-channel-token` (`openssl rand -hex 32`) |
+| `GOOGLE_WEBHOOK_TOKEN_SECRET` | HMAC secret cho header `x-goog-channel-token` (`openssl rand -hex 32`) | *(legacy — webhook hiện xác thực bằng channel token ngẫu nhiên do Google trả về; không cần secret này ở production mới)*
 | `GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY` | Khóa AES-256-GCM mã hóa OAuth token tại rest (`openssl rand -hex 32`) |
 | `CRON_SECRET` | Đã có sẵn, dùng cho cron daily (reconcile + renew) |
 
@@ -269,11 +269,24 @@ GET /api/admin/google-sheets/oauth/callback  → storeGoogleToken
   nên toàn bộ Google Sheets dùng **đúng 1 cron entry**: `0 18 * * *` → `/api/cron/google-sheets/reconcile`.
   Cron này làm 2 việc trong 1 route:
   1. **Reconcile** — xử lý các connection còn `pending` (bắt webhook bị miss, retry lỗi transient).
-  2. **Renew watch channel** — khi `expirationAt < now + 26h` (Drive channel sống ~24h).
+  2. **Renew watch channel** — channel mới có lifetime ~23h; renew khi còn < 6h (`WATCH_CHANNEL_RENEW_THRESHOLD_MS`);
+     channel tokenless (legacy trước fix) cũng được tạo lại ngay trong lần chạy cron kế tiếp.
+  Renew **lười (lazy)**: mỗi webhook hợp lệ cũng gọi `renewWatchChannelIfExpiring()` nên channel thường được
+  gia hạn ngay khi có tương tác, không phụ thuộc cron.
   Auth: `Authorization: Bearer CRON_SECRET`.
 - **Near-real-time đến từ webhook, không phải từ cron.** Webhook Drive nhận sheet, mark pending
   rồi chạy sync ngay trong request (`maxDuration = 60`). Nếu invocation chết giữa chừng,
   timeout, hoặc OAuth bị thu hồi — cờ `pending` đã ghi trước đó nên cron daily tự dọn.
+
+### Webhook authentication (post-fix)
+
+- **Không** dùng `HMAC-SHA256(body)` — notification body của `files.watch` là rỗng.
+- Mỗi watch channel Lexora tạo gửi `requestBody.token` (random 32 byte hex, `crypto.randomBytes`),
+  Google chuyển header `X-Goog-Channel-Token` tương ứng. Server chỉ lưu SHA-256 digest
+  (`google_sheet_sync_channels.channel_token_hash`) và so sánh digest constant-time khi nhận webhook.
+- Webhook 403 nếu thiếu/sai token hoặc `resourceId` không khớp. Channel legacy (trước fix,
+  `channel_token_hash IS NULL`) fail closed và được cron/webhook lazy-renew tạo lại channel mới có token.
+- Trạng thái `sync` chỉ xác nhận channel; `update` (và các state khác) mới mark pending + sync.
 - Webhook **idempotent**: kiểm tra `channelId`, `resourceId`, `x-goog-message-number`
   (lọc duplicate/out-of-order) → mọi trigger đều qua `runPendingConnection()` (shared connection lock).
 ## 13. Concurrency & retry
@@ -316,6 +329,7 @@ RBAC: quyền mới `google_sheets.view` / `google_sheets.manage` / `google_shee
 | Webhook 403 | `GOOGLE_WEBHOOK_TOKEN_SECRET` sai/không khớp |
 | Webhook không tới | URL không public HTTPS; kiểm tra `GOOGLE_WEBHOOK_BASE_URL` |
 | Channel hết hạn | Renew chạy 1 lần/ngày → kiểm tra `CRON_SECRET`, cron `0 18 * * *` đã đăng ký, webhook còn tới được |
+| Webhook 403 liên tục | Channel chưa có token (legacy) hoặc token không khớp — cron sẽ tạo lại channel mới; đảm bảo cron `0 18 * * *` chạy |
 | `409` | Sync khác đang chạy cho connection này |
 
 ## 16. Migration
