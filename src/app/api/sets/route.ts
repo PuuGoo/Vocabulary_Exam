@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, eq, or, isNull, inArray, and } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress, userWordSkillProgress } from "@/db/schema";
+import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress, userWordSkillProgress, googleSheetConnections, googleSheetRowMappings } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
@@ -12,6 +12,7 @@ import { serializeLanguageSettings } from "@/lib/languageSettings";
 import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderDisplayPaths, getFolderLegacyPath, getVisibleFolderIds, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { buildToneExercise } from "@/lib/toneTrainer";
 import { buildSentenceCloze } from "@/lib/sentenceCloze";
+import { visibleWordsFilter, visibleWordsJoin } from "@/lib/googleSheets/visibility";
 
 export async function GET() {
   const session = await getSession();
@@ -35,6 +36,7 @@ export async function GET() {
     classFilter = visibleFolderIds.length ? inArray(vocabSets.folderId, visibleFolderIds) : sql`false`;
   }
 
+
   const query = db
     .select({
       id: vocabSets.id,
@@ -49,7 +51,7 @@ export async function GET() {
       classId: vocabSets.classId,
       className: classes.name,
       createdAt: vocabSets.createdAt,
-      count: sql<number>`count(distinct ${words.id})::int`,
+      count: sql<number>`count(distinct ${words.id}) filter (where ${googleSheetRowMappings.deletedAt} is null)::int`,
       unknownCount: sql<number>`count(distinct ${wordProgress.wordId}) filter (where ${wordProgress.known} = false)::int`,
       reviewStage: setReviewProgress.stage,
       nextSetReviewAt: setReviewProgress.nextReviewAt,
@@ -61,11 +63,13 @@ export async function GET() {
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
+    .leftJoin(googleSheetConnections, eq(googleSheetConnections.setId, vocabSets.id))
+    .leftJoin(googleSheetRowMappings, and(eq(googleSheetRowMappings.wordId, words.id), visibleWordsJoin(sql`${googleSheetConnections.id}`)))
     .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
     .leftJoin(userWordSkillProgress, and(eq(userWordSkillProgress.wordId, words.id), eq(userWordSkillProgress.userId, session.userId)))
     .leftJoin(classes, eq(classes.id, vocabSets.classId))
     .leftJoin(setReviewProgress, and(eq(setReviewProgress.setId, vocabSets.id), eq(setReviewProgress.userId, session.userId)))
-    .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt)
+    .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt, googleSheetConnections.id, googleSheetConnections.deleteBehavior, googleSheetRowMappings.id, googleSheetRowMappings.deletedAt)
     .orderBy(vocabSets.createdAt);
 
   const rows = classFilter ? await query.where(classFilter) : await query;

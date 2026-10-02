@@ -32,6 +32,7 @@ export type SyncStats = {
   invalidRows: Array<{ rowNumber: number; message: string }>;
   idWrites: Array<{ rowNumber: number; sourceId: string }>;
   changedWordIds: number[];
+  unarchivedWordIds: number[];
 };
 
 export type SyncEngineResult = { stats: SyncStats; writeIds: boolean };
@@ -91,6 +92,7 @@ export async function runVocabularySync(
   const updatedDrafts: Array<{ rowNumber: number; wordId: number; draft: ParsedWordDraft; fingerprint: string }> = [];
   const conflicts: Array<{ rowNumber: number; message: string }> = [];
   const unchangedWordIds = new Set<number>();
+  const unarchivedWordIds = new Set<number>();
   const seenSourceIds = new Set<string>();
 
   for (const row of parsedRows) {
@@ -113,6 +115,14 @@ export async function runVocabularySync(
       if (!resolvedSourceId) idWrites.push({ rowNumber: row.rowNumber, sourceId });
       createdDrafts.push({ rowNumber: row.rowNumber, sourceId, draft, fingerprint });
       continue;
+    }
+
+    // A row that reappears in the Sheet is un-archived. Without this the mapping
+    // would keep deletedAt forever, so the word could never come back.
+    if (mapping?.deletedAt) {
+      await tx.update(googleSheetRowMappings).set({ deletedAt: null, updatedAt: new Date() }).where(eq(googleSheetRowMappings.id, mapping.id));
+      mapping.deletedAt = null;
+      unarchivedWordIds.add(word.id);
     }
 
     const dbFingerprint = computeWordFingerprint(set.type, word as unknown as Record<string, string>);
@@ -182,6 +192,7 @@ export async function runVocabularySync(
     invalidRows,
     idWrites,
     changedWordIds,
+    unarchivedWordIds: [...unarchivedWordIds],
   };
   return { stats, writeIds: idWrites.length > 0 };
 }

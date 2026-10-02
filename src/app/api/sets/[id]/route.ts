@@ -3,6 +3,8 @@ import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { classMembers, vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
+import { googleSheetConnections, googleSheetRowMappings } from "@/db/schema";
+import { visibleWordsFilter, visibleWordsJoin } from "@/lib/googleSheets/visibility";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
@@ -30,8 +32,26 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (set.publicationStatus !== "published" || (set.classId !== null && !memberships.some((item) => item.classId === set.classId))) return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const wordList = await db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id));
-
+  // Google Sheets rows removed from the Sheet are archived (deleted_at on the
+  // mapping) to protect learning data, but they must disappear from the admin
+  // list. Words without a mapping stay visible.
+  const [gsConnection] = await db
+    .select({ id: googleSheetConnections.id, deleteBehavior: googleSheetConnections.deleteBehavior })
+    .from(googleSheetConnections)
+    .where(eq(googleSheetConnections.setId, setId))
+    .limit(1);
+  const archiveFilters = gsConnection?.deleteBehavior === "archive";
+  const wordListQuery = db
+    .select()
+    .from(words)
+    .leftJoin(googleSheetRowMappings, and(eq(googleSheetRowMappings.wordId, words.id), visibleWordsJoin(gsConnection?.id)))
+    .where(and(eq(words.setId, setId), archiveFilters ? visibleWordsFilter(gsConnection?.id) : undefined))
+    .orderBy(asc(words.position), asc(words.id));
+  // select() with a join returns a flat row, so rebuild the shape the UI expects.
+  const wordList = (await wordListQuery).map((row) => {
+    const { google_sheet_row_mappings: _mapping, ...word } = row as Record<string, unknown> & { google_sheet_row_mappings?: unknown };
+    return word as typeof words.$inferSelect;
+  });
   const progress: Record<number, boolean> = {};
   if (wordList.length > 0) {
     const progressRows = await db
