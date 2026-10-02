@@ -87,10 +87,14 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
   // is a reason to spawn a second spreadsheet.
   const [existing] = await db.select({ id: googleSheetConnections.id, status: googleSheetConnections.status, enabled: googleSheetConnections.enabled }).from(googleSheetConnections).where(eq(googleSheetConnections.setId, setId)).limit(1);
   if (existing && existing.enabled && (existing.status === "connected" || existing.status === "syncing")) {
-    throw new GoogleSheetsError(CONNECTED_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
+    const already = new GoogleSheetsError(CONNECTED_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
+    (already as unknown as Record<string, unknown>).alreadyConnected = true;
+    throw already;
   }
   if (existing) {
-    throw new GoogleSheetsError(RECOVER_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
+    const recoverable = new GoogleSheetsError(RECOVER_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
+    (recoverable as unknown as Record<string, unknown>).needsRecovery = true;
+    throw recoverable;
   }
   // Concurrency guard: two simultaneous create requests for the same set must not
   // spawn two spreadsheets. Reuses the lock table with a create-scoped owner so a

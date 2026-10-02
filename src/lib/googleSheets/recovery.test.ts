@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import {
   connectionView, connectionViewMessage, isActiveConnectionState, isBrokenConnectionState, isPausedConnectionState,
 } from "@/lib/googleSheets/recoveryState";
+import { GoogleSheetsError } from "@/lib/googleSheets/errors";
+import { createSheetErrorOutcome } from "@/lib/googleSheets/createFlow";
 
 /**
  * Regression suite for the "Create Google Sheet returns 409 while the UI says
@@ -23,6 +25,46 @@ import {
  */
 
 // ------------------------------------------------- state mapping (UI vs API)
+/**
+ * The three 409 branches must be distinguishable, because the browser console
+ * only ever shows "409 (Conflict)". Without a machine-readable flag in the
+ * body the admin sees a generic failure for what are three very different
+ * situations.
+ */
+test("each 409 reason is machine-readable so the UI can react correctly", () => {
+  // Already connected: a successful no-op, never a scary failure.
+  const already = new GoogleSheetsError("x", "INVALID_SCHEMA", { retryable: false, status: 409 });
+  (already as unknown as Record<string, unknown>).alreadyConnected = true;
+  const alreadyOutcome = createSheetErrorOutcome(already, 5);
+  assert.equal(alreadyOutcome.status, 409);
+  if (alreadyOutcome.kind !== "already_connected") throw new Error("expected already_connected");
+  assert.equal(alreadyOutcome.body.alreadyConnected, true);
+  assert.match(String(alreadyOutcome.body.error), /đã được kết nối/);
+
+  // Broken connection: must point the admin at recovery.
+  const broken = new GoogleSheetsError("x", "INVALID_SCHEMA", { retryable: false, status: 409 });
+  (broken as unknown as Record<string, unknown>).needsRecovery = true;
+  const brokenOutcome = createSheetErrorOutcome(broken, 5);
+  assert.equal(brokenOutcome.status, 409);
+  if (brokenOutcome.kind !== "failed") throw new Error("expected failed");
+  assert.equal(brokenOutcome.body.needsRecovery, true);
+  assert.match(String(brokenOutcome.body.error), /khôi phục/);
+
+  // Concurrent create: a busy lock, which is retryable rather than terminal.
+  const busy = createSheetErrorOutcome(new GoogleSheetsError("busy", "RATE_LIMITED", { retryable: true }), 5);
+  assert.equal(busy.status, 502);
+  if (busy.kind !== "failed") throw new Error("expected failed");
+  assert.equal(busy.body.retryable, true);
+  assert.match(String(busy.body.error), /giới hạn|chờ lại/i);
+});
+
+test("the panel routes each create response to the right admin action", () => {
+  const panel = readFileSync("src/components/GoogleSheetsPanel.tsx", "utf8");
+  assert.match(panel, /if \(data\.alreadyConnected\)/, "already-connected is a no-op, not an error");
+  assert.match(panel, /if \(data\.needsRecovery\)/, "a broken connection offers recovery");
+  assert.match(panel, /data\.code === "RATE_LIMITED"/, "a busy lock asks the admin to wait");
+});
+
 test("H. a single view function maps every connection state for UI and API", () => {
   assert.equal(connectionView(null), "none");
   assert.equal(connectionView({ enabled: true, status: "connected" }), "connected");

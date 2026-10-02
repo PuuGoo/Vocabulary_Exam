@@ -130,6 +130,21 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       }
       if (!response.ok) {
         if (data.code === "NOT_CONFIGURED") { setResumeCreate(true); }
+        // A healthy sheet must never read as a generic failure, and a broken one
+        // must offer recovery instead of an opaque "Conflict".
+        if (data.alreadyConnected) {
+          setShowPreview(false);
+          toast(data.error || "Google Sheet đã được kết nối cho bộ từ này.");
+          await load();
+          return;
+        }
+        if (data.needsRecovery) {
+          setShowPreview(false);
+          toast(data.error || "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Đang khôi phục...");
+          await load();
+          return;
+        }
+        if (data.code === "RATE_LIMITED") { toast(data.error || "Google Sheet đang được tạo bởi yêu cầu khác. Vui lòng chờ lại."); return; }
         toast(data.error || "Không thể tạo Google Sheet lúc này.");
         return;
       }

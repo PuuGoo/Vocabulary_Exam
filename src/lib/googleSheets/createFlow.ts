@@ -80,10 +80,17 @@ export function createSheetErrorOutcome(error: unknown, setId: number): CreateSh
     };
   }
   if (code === "INVALID_SCHEMA") {
-    // Existing implementation throws the "already connected" case with
-    // INVALID_SCHEMA + status 409; keep that contract idempotent.
-    const alreadyConnected = typeof error === "object" && error !== null && (error as { status?: number }).status === 409;
-    if (alreadyConnected) return { kind: "already_connected", status: 409, body: { error: googleSheetsUiMessage(code, "Bộ từ vựng này đã kết nối Google Sheet."), code, retryable, setId } };
+    const rec = typeof error === "object" && error !== null ? error as Record<string, unknown> : {};
+    const alreadyConnected = rec.needsRecovery !== true && (rec.alreadyConnected === true || rec.status === 409);
+    if (alreadyConnected) {
+      // The set already has a healthy sheet: a successful no-op, so the UI shows
+      // "đã kết nối" instead of a scary generic conflict.
+      return { kind: "already_connected", status: 409, body: { error: "Google Sheet đã được kết nối cho bộ từ này.", code, alreadyConnected: true, retryable: false, setId } };
+    }
+    if (rec.needsRecovery === true) {
+      // A connection row exists but is broken: offer recovery, never a bare "Conflict".
+      return { kind: "failed", status: 409, body: { error: "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Hãy khôi phục kết nối hiện có.", code, needsRecovery: true, retryable: true, setId } };
+    }
     return { kind: "failed", status: 409, body: { error: googleSheetsUiMessage(code, "Dữ liệu Google Sheet không hợp lệ."), code, retryable, setId } };
   }
   if (code === "NOT_CONFIGURED") {
