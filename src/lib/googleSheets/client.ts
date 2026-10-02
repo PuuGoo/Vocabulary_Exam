@@ -17,7 +17,15 @@ export function webhookBaseUrl(): string {
 }
 
 export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi {
-  const auth = new google.auth.OAuth2();
+  // The OAuth2 client MUST be constructed with the client id/secret/redirect
+  // URI. Without them googleapis cannot refresh an expired access token, and
+  // every request fails with HTTP 400 invalid_request - even though the stored
+  // refresh token itself is perfectly valid.
+  const auth = new google.auth.OAuth2({
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    redirectUri: process.env.GOOGLE_REDIRECT_URI,
+  });
   auth.setCredentials({ access_token: token.accessToken, refresh_token: token.refreshToken ?? undefined, expiry_date: token.expiresAt.getTime() });
   const sheets = google.sheets({ version: "v4", auth });
   const drive = google.drive({ version: "v3", auth });

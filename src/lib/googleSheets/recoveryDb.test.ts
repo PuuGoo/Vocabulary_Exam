@@ -222,6 +222,68 @@ test("the create lock is released even when the Google API call fails", { skip: 
   }
 });
 
+/**
+ * Regression for the production 400 invalid_request on "Tạo Google Sheet".
+ *
+ * The OAuth2 client was constructed without clientId/clientSecret/redirectUri,
+ * so an expired access token could not be refreshed even though the stored
+ * refresh token was valid. This test forces the stored token to look expired
+ * and creates a spreadsheet through the real client path.
+ */
+test("create refreshes an expired access token through the real Google client", { skip: !enabled, timeout: 90000 }, async () => {
+  const { loadGoogleToken, storeGoogleToken } = await import("@/lib/googleSheets/auth");
+  const { createGoogleWorkspaceApi } = await import("@/lib/googleSheets/client");
+
+  const token = await loadGoogleToken(1);
+  if (!token?.refreshToken) return; // no Google account connected in this environment
+
+  // Preserve the original expiry, then force the token to look long expired.
+  const original = token.expiresAt;
+  try {
+    await storeGoogleToken(1, {
+      access_token: "probe-placeholder",
+      refresh_token: token.refreshToken,
+      expiry_date: Date.now() - 60 * 60 * 1000,
+      scope: token.scope,
+    });
+
+    const reloaded = await loadGoogleToken(1);
+    if (!reloaded) return;
+    const api = createGoogleWorkspaceApi(reloaded);
+    const created = await api.createSpreadsheet({ title: "__probe_delete_me__", sheetTitle: "Từ vựng IELTS" });
+    assert.ok(created.spreadsheetId, "a spreadsheet must be creatable after refresh");
+
+    // Clean up the probe spreadsheet so it does not litter the Drive.
+    const { google } = await import("googleapis");
+    const { decryptSecret } = await import("@/lib/googleSheets/crypto");
+    const { db } = await import("@/db");
+    const { googleSheetOauthTokens } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const [row] = await db.select().from(googleSheetOauthTokens).where(eq(googleSheetOauthTokens.userId, 1)).limit(1);
+    const auth = new google.auth.OAuth2({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri: process.env.GOOGLE_REDIRECT_URI,
+    });
+    auth.setCredentials({
+      access_token: decryptSecret(row.accessTokenEncrypted),
+      refresh_token: row.refreshTokenEncrypted ? decryptSecret(row.refreshTokenEncrypted) : undefined,
+      expiry_date: row.expiresAt.getTime(),
+    });
+    const drive = google.drive({ version: "v3", auth });
+    const res = await drive.files.list({ q: "name = '__probe_delete_me__' and trashed = false", fields: "files(id)" });
+    for (const f of res.data.files || []) if (f.id) await drive.files.delete({ fileId: f.id });
+  } finally {
+    // Restore a healthy token state for the user.
+    await storeGoogleToken(1, {
+      access_token: "probe-restored",
+      refresh_token: token.refreshToken,
+      expiry_date: original.getTime(),
+      scope: token.scope,
+    });
+  }
+});
+
 test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplicate", { skip: !enabled, timeout: 90000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;

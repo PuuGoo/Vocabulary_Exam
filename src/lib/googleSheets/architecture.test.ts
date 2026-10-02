@@ -75,6 +75,21 @@ test("webhook authenticates the channel token, never the notification body", () 
   assert.ok(!/req\.text\(\)/.test(source), "the webhook must not depend on the request body");
 });
 
+/**
+ * Regression: the OAuth2 client must be constructed with the client id,
+ * client secret and redirect URI. Without them googleapis cannot refresh an
+ * expired access token and every Google call fails with HTTP 400
+ * invalid_request - even though the stored refresh token is perfectly valid.
+ * This surfaced as "Tạo Google Sheet" returning INVALID_SCHEMA in production.
+ */
+test("the Google API client carries client credentials so expired access tokens can refresh", () => {
+  const client = readFileSync("src/lib/googleSheets/client.ts", "utf8");
+  assert.match(client, /new google\.auth\.OAuth2\(\{/, "OAuth2 must be constructed with config, not empty");
+  assert.match(client, /clientId: process\.env\.GOOGLE_CLIENT_ID/);
+  assert.match(client, /clientSecret: process\.env\.GOOGLE_CLIENT_SECRET/);
+  assert.match(client, /redirectUri: process\.env\.GOOGLE_REDIRECT_URI/);
+  assert.match(client, /refresh_token: token\.refreshToken/, "the stored refresh token is passed through");
+});
 test("watch channels send a real channel token and store only its digest", () => {
   const client = readFileSync("src/lib/googleSheets/client.ts", "utf8");
   assert.match(client, /token: channelToken/, "files.watch must send a channel token");
