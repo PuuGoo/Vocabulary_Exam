@@ -1,7 +1,18 @@
 import type { VocabSetDescriptor } from "@/lib/vocabImport/parse";
 
-export const GOOGLE_SHEET_TEMPLATE_VERSION = 1;
+export const GOOGLE_SHEET_TEMPLATE_VERSION = 2;
 export const SOURCE_ID_HEADER = "__lexora_id";
+
+/**
+ * Display-only row number shown to humans in the Google Sheet.
+ *
+ * STT is NOT an identity: it is never persisted, never fingerprinted, never
+ * used to resolve a word, and never compared during a sync. The column is
+ * filled by a spreadsheet formula, so the numbers renumber themselves when
+ * rows are added, removed, sorted or filtered.
+ */
+export const STT_HEADER = "STT";
+export const STT_FIELD_KEY = "__stt";
 export const SOURCE_ID_PREFIX = "v_";
 
 export type GoogleSheetTemplateField = {
@@ -10,6 +21,11 @@ export type GoogleSheetTemplateField = {
   width: number;
   wrap: boolean;
   text?: boolean;
+  /**
+   * Presentation-only column. It is written to the sheet but never mapped to a
+   * database field, never fingerprinted and never part of vocabulary identity.
+   */
+  displayOnly?: boolean;
 };
 
 export type GoogleSheetTemplate = {
@@ -19,7 +35,11 @@ export type GoogleSheetTemplate = {
   fields: GoogleSheetTemplateField[];
 };
 
+/** STT is always the first column; the formula fills the body. */
+const STT_FIELD: GoogleSheetTemplateField = { key: STT_FIELD_KEY, header: STT_HEADER, width: 56, wrap: false, text: true, displayOnly: true };
+
 const IELTS_FIELDS: GoogleSheetTemplateField[] = [
+  STT_FIELD,
   { key: SOURCE_ID_HEADER, header: SOURCE_ID_HEADER, width: 130, wrap: false, text: true },
   { key: "term", header: "Word", width: 180, wrap: false },
   { key: "meaning", header: "Meaning", width: 240, wrap: true },
@@ -39,6 +59,7 @@ const IELTS_FIELDS: GoogleSheetTemplateField[] = [
 ];
 
 const IRREGULAR_VERB_FIELDS: GoogleSheetTemplateField[] = [
+  STT_FIELD,
   { key: SOURCE_ID_HEADER, header: SOURCE_ID_HEADER, width: 130, wrap: false, text: true },
   { key: "meaning", header: "Meaning", width: 260, wrap: true },
   { key: "v1", header: "V1", width: 140, wrap: false },
@@ -50,6 +71,7 @@ const IRREGULAR_VERB_FIELDS: GoogleSheetTemplateField[] = [
 ];
 
 const MANDARIN_FIELDS: GoogleSheetTemplateField[] = [
+  STT_FIELD,
   { key: SOURCE_ID_HEADER, header: SOURCE_ID_HEADER, width: 130, wrap: false, text: true },
   { key: "term", header: "Chữ Hán", width: 140, wrap: false },
   { key: "alternateTerm", header: "Phồn thể", width: 140, wrap: false },
@@ -73,6 +95,51 @@ export function getGoogleSheetTemplate(set: Pick<VocabSetDescriptor, "type" | "l
     return { templateType: "language_vocab_mandarin", templateVersion: GOOGLE_SHEET_TEMPLATE_VERSION, sheetTitle: "Từ vựng tiếng Trung", fields: MANDARIN_FIELDS };
   }
   return { templateType: "ielts_vocab", templateVersion: GOOGLE_SHEET_TEMPLATE_VERSION, sheetTitle: "Từ vựng IELTS", fields: IELTS_FIELDS };
+}
+
+/** 0-based column index of the display-only STT column. */
+export function sttColumnIndex(template: GoogleSheetTemplate): number {
+  return Math.max(0, template.fields.findIndex((field) => field.key === STT_FIELD_KEY));
+}
+
+/** 0-based column index of the stable identity column. */
+export function sourceIdColumnIndex(template: GoogleSheetTemplate): number {
+  const index = template.fields.findIndex((field) => field.key === SOURCE_ID_HEADER);
+  return index >= 0 ? index : sttColumnIndex(template) + 1;
+}
+
+function columnLetterOf(index: number): string {
+  let current = index + 1;
+  let result = "";
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    current = Math.floor((current - 1) / 26);
+  }
+  return result;
+}
+
+/**
+ * Formula that numbers the visible vocabulary rows contiguously.
+ *
+ * It counts how many `__lexora_id` cells are filled from the first data row down
+ * to the current one, so the sequence is always 1, 2, 3... with no gaps after a
+ * delete, an insert, a sort or a filter. A row whose `__lexora_id` is still empty
+ * (a brand new row the admin has not saved a word for yet) renders blank instead
+ * of consuming a number, and the rows below renumber on their own.
+ *
+ * Position-based numbering was rejected: it leaves gaps when rows are blank.
+ *
+ * The reference is relative so Sheets shifts it for every row it is applied to.
+ */
+export function buildSttFormula(template: GoogleSheetTemplate, row: number = 2): string {
+  const idColumn = columnLetterOf(sourceIdColumnIndex(template));
+  return `=IF(${idColumn}${row}="","",COUNTIF($${idColumn}$2:${idColumn}${row},"<>"))`;
+}
+
+/** Same formula with the row reference advanced, for writing a filled column. */
+export function buildSttFormulaForRow(template: GoogleSheetTemplate, row: number): string {
+  return buildSttFormula(template, row);
 }
 
 export function getSheetTemplateColumnCount(template: GoogleSheetTemplate): number {

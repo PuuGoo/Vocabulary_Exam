@@ -22,6 +22,11 @@ export async function configureSheetLayout(api: SheetsApiPort, options: { spread
     requests.push({ updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: index, endIndex: index + 1 }, properties: { pixelSize: field.width }, fields: "pixelSize" } });
     if (field.wrap) requests.push({ repeatCell: { range: { sheetId, startColumnIndex: index, endColumnIndex: index + 1 }, cell: { userEnteredFormat: { wrapStrategy: "WRAP" } }, fields: "userEnteredFormat.wrapStrategy" } });
     if (field.text) requests.push({ repeatCell: { range: { sheetId, startColumnIndex: index, endColumnIndex: index + 1 }, cell: { userEnteredFormat: { numberFormat: { type: "TEXT" } } }, fields: "userEnteredFormat.numberFormat" } });
+    if (field.displayOnly) {
+      // STT is a narrow, centered, non-wrapping display column: readable at a
+      // glance without ever becoming vocabulary data.
+      requests.push({ repeatCell: { range: { sheetId, startColumnIndex: index, endColumnIndex: index + 1 }, cell: { userEnteredFormat: { horizontalAlignment: "CENTER", wrapStrategy: "OVERFLOW", numberFormat: { type: "NUMBER", pattern: "0" } } }, fields: "userEnteredFormat(horizontalAlignment,wrapStrategy,numberFormat)" } });
+    }
   });
   requests.push({ setBasicFilter: { filter: { range: { sheetId, startRowIndex: 0, endRowIndex: lastRow, startColumnIndex: 0, endColumnIndex: template.fields.length } } } });
   await api.batchUpdate(spreadsheetId, requests);

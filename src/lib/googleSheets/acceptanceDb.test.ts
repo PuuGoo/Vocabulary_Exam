@@ -5,7 +5,7 @@ import postgres from "postgres";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, mistakes, userWordSkillProgress, vocabSets, wordProgress, words } from "@/db/schema";
-import { getGoogleSheetTemplate, SOURCE_ID_HEADER } from "@/lib/googleSheets/template";
+import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
@@ -58,11 +58,14 @@ test("acceptance #17 on real Postgres: sync edits content but never resets learn
       skill: (await sql`select * from user_word_skill_progress where word_id=${wordId}`)[0],
     };
 
+    const sttIdx = tpl.fields.findIndex((f) => f.key === STT_FIELD_KEY);
     const sourceIdx = tpl.fields.findIndex((f) => f.key === SOURCE_ID_HEADER);
     const termIdx = tpl.fields.findIndex((f) => f.key === "term");
     const meaningIdx = tpl.fields.findIndex((f) => f.key === "meaning");
-    const row = (meaning: string) =>
-      tpl.fields.map((f, ci) => (ci === sourceIdx ? sourceId : ci === termIdx ? "mitigate" : ci === meaningIdx ? meaning : ""));
+    // STT is a display-only formula column: we fill plausible numbers to prove
+    // the sync ignores them entirely.
+    const row = (meaning: string, stt: string = "1") =>
+      tpl.fields.map((f, ci) => (ci === sttIdx ? stt : ci === sourceIdx ? sourceId : ci === termIdx ? "mitigate" : ci === meaningIdx ? meaning : ""));
     const header = tpl.fields.map((f) => f.header);
     const state = { id: connectionId, setId, spreadsheetId: "ac-sheet", sheetTitle: tpl.sheetTitle, deleteBehavior: "archive", status: "connected", enabled: true };
 
@@ -86,6 +89,16 @@ test("acceptance #17 on real Postgres: sync edits content but never resets learn
     const run2 = await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header, row("giảm nhẹ / làm dịu")]), tx));
     assert.equal(run2.stats.rowsUpdated, 0, "second sync must be a no-op");
     assert.equal(run2.stats.rowsUnchanged, 1, "second sync must report UNCHANGED");
+
+    // STT changes (and row moves) must never look like a vocabulary change.
+    const sttShift = await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header, row("giảm nhẹ / làm dịu", "987")]), tx));
+    assert.equal(sttShift.stats.rowsUpdated, 0, "changing only STT must not update the word");
+    assert.equal(sttShift.stats.rowsUnchanged, 1, "changing only STT must report UNCHANGED");
+    assert.equal(sttShift.stats.rowsCreated, 0, "changing only STT must not create a word");
+    const afterStt = (await sql`select id, meaning from words where id=${wordId}`)[0];
+    assert.deepEqual(afterStt, { id: wordId, meaning: "giảm nhẹ / làm dịu" }, "STT must not alter the word row");
+    const sttColumns = (await sql`select column_name from information_schema.columns where table_name='words' and column_name ilike '%stt%'`);
+    assert.equal(sttColumns.length, 0, "the words table must never persist STT");
     const wordCount = (await sql`select count(*)::int as n from words where set_id=${setId}`)[0];
     assert.equal(wordCount.n, 1, "no duplicate word may be created");
 

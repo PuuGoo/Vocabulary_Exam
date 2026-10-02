@@ -4,7 +4,7 @@ import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from
 import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
-import { getGoogleSheetTemplate, SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { buildSttFormulaForRow, getGoogleSheetTemplate, SOURCE_ID_HEADER, sttColumnIndex, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { buildRangeA1, valuesForExport, columnLetter } from "@/lib/googleSheets/spreadsheet";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
@@ -64,6 +64,10 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     const values = valuesForExport(template, exportRows);
     const rangeA1 = buildRangeA1(template.sheetTitle, template.fields.length, values.length);
     await api.writeValues(created.spreadsheetId, rangeA1, values);
+    // STT is a spreadsheet-side display number: a single relative formula filled
+    // down the column renumbers itself whenever rows are added, deleted or
+    // sorted. Nothing is ever written back to the database for it.
+    await writeSttFormula(api, created.spreadsheetId, template, values.length);
     await configureSheetLayout(api as never, { spreadsheetId: created.spreadsheetId, sheetId: created.sheetId, template, rowCount: exportRows.length });
 
     const [connection] = await db.insert(googleSheetConnections).values({
@@ -114,6 +118,25 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     }
     throw error;
   }
+}
+
+/**
+ * Fill the display-only STT column with the renumbering formula.
+ *
+ * Every row gets its own formula with the row reference advanced, because
+ * values.update writes literals (Sheets cannot shift a single formula through
+ * that call). All rows are written in one request, and the formula renumbers
+ * itself whenever rows are added, deleted, sorted or filtered — nothing is ever
+ * written back to the database for STT.
+ */
+async function writeSttFormula(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number): Promise<void> {
+  if (rowCount < 1) return;
+  const letter = columnLetter(sttColumnIndex(template));
+  const lastRow = rowCount + 1; // + header row
+  const values: (string | number)[][] = [];
+  for (let row = 2; row <= lastRow; row += 1) values.push([buildSttFormulaForRow(template, row)]);
+  const range = `'${template.sheetTitle.replace(/'/g, "''")}'!${letter}2:${letter}${lastRow}`;
+  await api.writeValues(spreadsheetId, range, values as never);
 }
 
 function exportValuesForWord(template: GoogleSheetTemplate, word: typeof words.$inferSelect): Record<string, string> {

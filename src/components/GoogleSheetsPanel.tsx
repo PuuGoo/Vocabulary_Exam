@@ -87,7 +87,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       const response = await fetch(`/api/admin/google-sheets/connections?setId=${setId}`);
       const data = await response.json();
       const existing = (data.connections || []).find((item: Connection) => item.setId === setId);
-      setPreview({ templateType: existing?.templateType ?? (setId ? "ielts_vocab" : "ielts_vocab"), columns: existing?.columnCount ?? 16, existingWords: existing?.wordCount ?? 0, rowsToExport: existing?.wordCount ?? 0 });
+      setPreview({ templateType: existing?.templateType ?? "ielts_vocab", columns: existing?.columnCount ?? 17, existingWords: existing?.wordCount ?? 0, rowsToExport: existing?.wordCount ?? 0 });
       setShowPreview(true);
     } catch { toast("Không thể tải thông tin preview."); } finally { setBusy(null); }
   }

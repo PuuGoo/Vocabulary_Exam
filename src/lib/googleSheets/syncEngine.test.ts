@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseSpreadsheetUrl } from "./spreadsheet";
-import { getGoogleSheetTemplate, SOURCE_ID_HEADER } from "./template";
+import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY, STT_HEADER } from "./template";
 import { computeWordFingerprint, fingerprintFields } from "./fingerprint";
 import { generateSourceId, isValidSourceId, fallbackIdentityForRow } from "./identity";
 import { parseSheetGrid, gridFromValuesRange, mapHeadersToFieldKeys } from "./parser";
@@ -16,8 +16,11 @@ test("spreadsheet URL parser extracts ids from common Google Sheets links", () =
 
 test("IELTS template has the documented columns including __lexora_id", () => {
   const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
-  assert.equal(template.fields[0].key, SOURCE_ID_HEADER);
-  assert.equal(template.fields[0].header, SOURCE_ID_HEADER);
+  // STT is the human-facing first column; __lexora_id is still the identity.
+  assert.equal(template.fields[0].key, STT_FIELD_KEY);
+  assert.equal(template.fields[0].header, STT_HEADER);
+  assert.equal(template.fields[1].key, SOURCE_ID_HEADER);
+  assert.equal(template.fields[1].header, SOURCE_ID_HEADER);
   const headers = template.fields.map((field) => field.header);
   for (const expected of ["Word", "Meaning", "IPA", "Part of Speech", "Example", "CEFR", "IELTS Band"]) assert.ok(headers.includes(expected), `missing ${expected}`);
 });

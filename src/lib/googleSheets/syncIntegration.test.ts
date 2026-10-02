@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getGoogleSheetTemplate, SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { buildRangeA1 } from "@/lib/googleSheets/spreadsheet";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
@@ -14,7 +14,7 @@ type FakeWord = { id: number; setId: number; position: number; term: string | nu
 function wordToValues(template: GoogleSheetTemplate, word: FakeWord): Record<string, string> {
   const values: Record<string, string> = {};
   for (const field of template.fields) {
-    if (field.key === SOURCE_ID_HEADER) continue;
+    if (field.key === SOURCE_ID_HEADER || field.displayOnly) continue;
     const value = (word as unknown as Record<string, unknown>)[field.key];
     values[field.key] = value == null ? "" : String(value);
   }
@@ -49,20 +49,22 @@ test("acceptance: create sheet, add row, edit meaning and reorder keep one ident
   const grid: string[][] = [template.fields.map((field) => field.header)];
   for (const word of words) {
     const values = wordToValues(template, word);
-    grid.push(template.fields.map((field) => (field.key === SOURCE_ID_HEADER ? sourceIdByWordId.get(word.id)! : values[field.key] ?? "")));
+    // STT is blank in the export: the spreadsheet formula fills it, never the backend.
+    grid.push(template.fields.map((field) => (field.key === SOURCE_ID_HEADER ? sourceIdByWordId.get(word.id)! : field.displayOnly ? "" : values[field.key] ?? "")));
   }
   const rangeA1 = buildRangeA1(template.sheetTitle, width, grid.length);
   await api.writeValues(spreadsheetId, rangeA1, grid);
   const exported = api.__inspect(spreadsheetId)!.values as string[][];
-  assert.equal(exported[0][0], SOURCE_ID_HEADER);
+  assert.equal(exported[0][0], STT_FIELD_KEY === "__stt" ? "STT" : "STT", "STT header must be the first column");
+  assert.equal(exported[0][1], SOURCE_ID_HEADER, "__lexora_id must be the second column");
   assert.equal(exported.length, words.length + 1);
-  assert.ok(readSourceIdCell(exported[1][0]).length > 0);
+  assert.ok(readSourceIdCell(exported[1][1]).length > 0, "the first data row carries a source id at column B");
 
   // 2. Admin appends a row with no __lexora_id.
   const withNewRow = exported.map((row) => [...row]);
   const newRow: string[] = blankRow(width);
-  newRow[1] = "mitigate";
-  newRow[2] = "giảm nhẹ";
+  newRow[2] = "mitigate";
+  newRow[3] = "giảm nhẹ";
   withNewRow.push(newRow);
 
   const parsed = parseSheetGrid(gridFromValuesRange(withNewRow), template);
@@ -97,12 +99,12 @@ test("acceptance: create sheet, add row, edit meaning and reorder keep one ident
   // 3. The engine writes the minted ID back into the Sheet.
   const newRowIndex = created[0].rowNumber - 2;
   const afterWriteBack = withNewRow.map((row) => [...row]);
-  afterWriteBack[newRowIndex][0] = created[0].sourceId;
-  const newSourceId = readSourceIdCell(afterWriteBack[newRowIndex][0]);
+  afterWriteBack[newRowIndex][1] = created[0].sourceId;
+  const newSourceId = readSourceIdCell(afterWriteBack[newRowIndex][1]);
   assert.ok(newSourceId.startsWith("v_"), "the engine must generate a v_ prefixed source ID");
 
   // 4. Admin edits Meaning on that same row: identity must stay the same wordId.
-  afterWriteBack[newRowIndex][2] = "giảm nhẹ / làm dịu";
+  afterWriteBack[newRowIndex][3] = "giảm nhẹ / làm dịu";
   const editedRows = parseSheetGrid(gridFromValuesRange(afterWriteBack), template);
   const editedDrafts = parseVocabularyRows(
     editedRows.map((row) => ({ ...row.values, [SOURCE_ID_HEADER]: row.sourceId })),

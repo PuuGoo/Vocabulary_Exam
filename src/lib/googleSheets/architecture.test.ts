@@ -9,6 +9,39 @@ import { join } from "node:path";
  * could reset progress. These assertions guard that invariant at the source
  * level, in addition to the DB-level integration test.
  */
+test("STT is display-only: it never reaches the database or the fingerprint", () => {
+  const template = readFileSync("src/lib/googleSheets/template.ts", "utf8");
+  assert.match(template, /STT_HEADER = "STT"/);
+  assert.match(template, /STT_FIELD_KEY = "__stt"/);
+  assert.match(template, /displayOnly: true/, "the STT field must be marked display-only");
+  // The formula must count filled __lexora_id cells, never ROW() (which leaves
+  // gaps when rows are blank or filtered).
+  const helper = readFileSync("src/lib/googleSheets/template.ts", "utf8");
+  assert.match(helper, /buildSttFormula/, "the STT formula must live in one place");
+  assert.ok(!/ROW\(/.test(helper), "ROW()-based numbering leaves gaps after a delete");
+
+  // Parser must never map STT into the vocabulary model.
+  const parser = readFileSync("src/lib/googleSheets/parser.ts", "utf8");
+  assert.match(parser, /field\.displayOnly\) return/, "the parser must skip display-only fields");
+  assert.ok(!/fieldByColumn\.has\(SOURCE_ID_HEADER\)/.test(parser), "the parser must locate __lexora_id by value, not by column 0");
+
+  // Fingerprint must not mention STT anywhere.
+  const fingerprint = readFileSync("src/lib/googleSheets/fingerprint.ts", "utf8");
+  assert.ok(!/STT|__stt|sheetRowNumber/i.test(fingerprint), "the fingerprint must exclude STT and row numbers");
+
+  // The import model must not carry STT.
+  const parse = readFileSync("src/lib/vocabImport/parse.ts", "utf8");
+  assert.ok(!/stt/i.test(parse), "ParsedWordDraft must never carry stt");
+
+  // Schema must never add a column just to render STT.
+  const schema = readFileSync("src/db/schema.ts", "utf8");
+  assert.ok(!/stt/i.test(schema), "the database must never persist STT");
+
+  // The backend writes blank STT cells only; the formula fills them.
+  const lifecycle = readFileSync("src/lib/googleSheets/sheetLifecycle.ts", "utf8");
+  assert.match(lifecycle, /writeSttFormula/, "create-sheet must write the STT formula");
+});
+
 test("sync engine never writes learning tables", () => {
   const source = readFileSync("src/lib/googleSheets/syncVocabulary.ts", "utf8");
   for (const forbidden of ["wordProgress", "mistakes", "wordSkillProgress", "userWordSkillProgress", "setReviewProgress", "userWordSkillEvents", "reviewSessions"]) {

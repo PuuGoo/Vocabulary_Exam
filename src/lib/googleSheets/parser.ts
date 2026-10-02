@@ -1,4 +1,4 @@
-import { SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { SOURCE_ID_HEADER, STT_FIELD_KEY, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 
 export type SheetGrid = { headers: string[]; rows: string[][] };
 
@@ -7,6 +7,9 @@ export function mapHeadersToFieldKeys(headers: readonly string[], template: Goog
   const mapping = new Map<number, string>();
   const normalizedHeaders = headers.map((header) => normalizeHeader(header));
   template.fields.forEach((field) => {
+    // STT is presentation only: it is deliberately not mapped, so it can never
+    // reach the vocabulary import model, the fingerprint or the database.
+    if (field.displayOnly) return;
     const normalizedField = normalizeHeader(field.header);
     const index = normalizedHeaders.findIndex((header) => header === normalizedField);
     if (index >= 0) mapping.set(index, field.key);
@@ -21,7 +24,10 @@ function normalizeHeader(header: string): string {
 /** Row 1 is the header; every subsequent row is keyed by canonical field. */
 export function parseSheetGrid(grid: SheetGrid, template: GoogleSheetTemplate): Array<{ rowNumber: number; sourceId: string; values: Record<string, string> }> {
   const fieldByColumn = mapHeadersToFieldKeys(grid.headers, template);
-  if (!fieldByColumn.has(0) || !fieldByColumn.has(1)) {
+  // The sheet may (or may not) carry a display-only STT column at A; identity
+  // only cares that __lexora_id is present somewhere in the header row.
+  const mappedKeys = new Set(fieldByColumn.values());
+  if (!mappedKeys.has(SOURCE_ID_HEADER)) {
     throw new Error("Header không khớp template của Lexora.");
   }
   const results: Array<{ rowNumber: number; sourceId: string; values: Record<string, string> }> = [];
@@ -30,6 +36,7 @@ export function parseSheetGrid(grid: SheetGrid, template: GoogleSheetTemplate): 
     const values: Record<string, string> = {};
     let sourceId = "";
     fieldByColumn.forEach((key, columnIndex) => {
+      if (key === STT_FIELD_KEY) return; // never enters the values map
       const raw = cells[columnIndex] ?? "";
       if (key === SOURCE_ID_HEADER) sourceId = String(raw ?? "").trim();
       else values[key] = String(raw ?? "");

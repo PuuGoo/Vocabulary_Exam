@@ -1,4 +1,4 @@
-import { SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { SOURCE_ID_HEADER, STT_FIELD_KEY, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 
 /** Accept only a full docs.google.com spreadsheet URL and extract its id. */
 export function parseSpreadsheetUrl(input: string): string | null {
@@ -44,6 +44,8 @@ export function valuesForExport(template: GoogleSheetTemplate, rows: readonly Sh
   const dataRows = rows.map((row) =>
     template.fields.map((field) => {
       if (field.key === SOURCE_ID_HEADER) return row.sourceId;
+      // STT is produced by the spreadsheet formula, never written from the backend.
+      if (field.key === STT_FIELD_KEY) return "";
       const value = row.values[field.key];
       return value == null ? "" : value;
     }),

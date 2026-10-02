@@ -199,6 +199,42 @@ Nếu `lastSyncedFingerprint ≠ current DB fingerprint` và Sheet cũng đổi 
 - `state` OAuth được HMAC-sign để chống CSRF.
 - Scope tối thiểu: `spreadsheets` + `drive.file`.
 
+## 11a. Cột STT tự động
+
+Mỗi Google Sheet do Lexora tạo đều có cột **STT** ở vị trí đầu tiên:
+
+```text
+| STT | __lexora_id | Word      | Meaning     | ... |
+|-----|-------------|-----------|-------------|-----|
+| 1   | v_8f21a     | abandon   | từ bỏ       | ... |
+| 2   | v_2e91c     | acquire   | đạt được     | ... |
+| 3   | v_7bd92     | facilitate| tạo điều kiện| ... |
+```
+
+STT là **cột hiển thị**, không phải identity của vocabulary:
+
+- Không lưu vào PostgreSQL (không cột `stt` nào trong `words`).
+- Không nằm trong fingerprint, không dùng để dedupe, không map word → DB.
+- Không gửi vào vocabulary import model (`ParsedWordDraft` không có `stt`).
+- Identity vẫn là `__lexora_id` (fallback: logic của importer).
+
+Công thức được ghi một lần khi tạo Sheet (formula trên từng dòng, tham chiếu
+tương đối để Sheets tự shift):
+
+```text
+=IF(B2="","",COUNTIF($B$2:B2,"<>"))
+```
+
+- `B` là cột `__lexora_id`; đếm số ô đã điền từ dòng đầu tới dòng hiện tại
+  nên STT luôn liên tục `1, 2, 3...` sau khi thêm / xóa / sort / filter row.
+- Dòng chưa có `__lexora_id` (admin nhập mà chưa có từ) để trống, không ăn số.
+- Không dùng `ROW()` vì sẽ để sót số khi có dòng trống (đã bị test chặn).
+- Format: căn giữa, cột hẹp (56px), không wrap, có trong basic filter.
+- Sheet cũ (không có STT) vẫn sync bình thường — parser chỉ yêu cầu có
+  `__lexora_id`, không ép vị trí cột 0.
+
+Template version đã nâng lên **2** vì layout header đổi (thêm cột STT).
+
 ## 11b. Create Sheet: OAuth onboarding
 
 Thiếu khi admin chưa kết nối Google **không phải** là lỗi từ phía máy chủ — đó là trạng thái onboarding bình thường.
