@@ -168,6 +168,60 @@ test("create acquires its lock before any connection row exists", { skip: !enabl
   }
 });
 
+/**
+ * Regression for the leaked create lock (the other half of the 502 bug).
+ *
+ * createGoogleSheetForSet used to run api.createSpreadsheet OUTSIDE its
+ * try/finally, so if the Google API call, the token load, or any DB write
+ * failed, the advisory lock row was never released. The next create then
+ * hit the busy lock and the route returned an opaque 502 instead of a
+ * meaningful message. The lock must be released on every path, including
+ * the very first failure.
+ */
+test("the create lock is released even when the Google API call fails", { skip: !enabled, timeout: 90000 }, async () => {
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  let setId = 0;
+  const base = Date.now();
+  try {
+    const [admin] = await sql`select id from users where role='admin' order by id limit 1`;
+    const [set] = await sql`insert into vocab_sets (name, type, language_code, translation_language_code, language_settings, created_by)
+      values (${`__gs_lockfail__${base}`},'ielts_vocab','en','vi','{}',${admin.id}) returning id`;
+    setId = set.id;
+
+    const { createGoogleSheetForSet } = await import("@/lib/googleSheets/sheetLifecycle");
+    const { createFakeGoogleWorkspaceApi } = await import("@/lib/googleSheets/api");
+
+    // The fake's createSpreadsheet fails immediately - no spreadsheet row,
+    // no connection row, exactly the state that used to leak the lock.
+    const api = createFakeGoogleWorkspaceApi({
+      createSpreadsheet: async () => { throw new Error("simulated Google API failure"); },
+    });
+
+    await assert.rejects( () => createGoogleSheetForSet(setId, { userId: admin.id }, api));
+
+    // The lock must be gone: a second create must be able to acquire it.
+    const locks = await sql`select set_id from google_sheet_create_locks where set_id=${setId}`;
+    assert.equal(locks.length, 0, "the create lock must be released on failure");
+
+    // A retry with a healthy API must now succeed (proves the lock is free).
+    const healthy = createFakeGoogleWorkspaceApi();
+    const result = await createGoogleSheetForSet(setId, { userId: admin.id }, healthy);
+    assert.equal(result.status, "connected", "a retry after failure must work");
+    await sql`delete from google_sheet_connections where id=${result.connectionId}`;
+  } finally {
+    try {
+      await sql.begin(async (tx) => {
+        await tx`delete from google_sheet_create_locks where set_id=${setId}`;
+        await tx`delete from google_sheet_connections where set_id=${setId}`;
+        await tx`delete from words where set_id=${setId}`;
+        await tx`delete from vocab_sets where id=${setId}`;
+      });
+    } finally {
+      await sql.end();
+    }
+  }
+});
+
 test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplicate", { skip: !enabled, timeout: 90000 }, async () => {
   const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
   let setId = 0;

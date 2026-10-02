@@ -89,7 +89,10 @@ export async function POST(req: NextRequest) {
       if (outcome.kind === "failed") console.error("[google-sheets] create failed", error.code, error.message);
       return createSheetJson(outcome);
     }
-    console.error("[google-sheets] create failed", error instanceof Error ? error.message : "unknown");
+    // Anything else (PostgresError, timeout, unexpected throw) must still come
+    // back as a structured, admin-friendly JSON response - never a raw 502 with
+    // an empty body. The raw message is logged server-side only.
+    console.error("[google-sheets] create failed (non-GoogleSheetsError)", error instanceof Error ? error.name + ": " + error.message : String(error));
     return createSheetJson(createSheetErrorOutcome(new GoogleSheetsError("Không thể tạo Google Sheet lúc này.", "UNKNOWN", { retryable: true }), setId));
   }
 }

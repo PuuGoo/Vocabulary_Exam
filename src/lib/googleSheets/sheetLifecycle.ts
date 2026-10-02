@@ -97,12 +97,16 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
   // crashed process releases it after the TTL, exactly like the sync lock.
   await acquireCreateLock(setId);
 
-  const api = apiOverride ?? await apiForUser(actor.userId);
-  const template = getGoogleSheetTemplate(set);
-  const created = await api.createSpreadsheet({ title: `${set.name} – Google Sheet`, sheetTitle: template.sheetTitle });
-
+  // Everything below runs inside the try so the lock is released even when the
+  // Google API call, the token load, or any DB write fails. The previous code
+  // had createSpreadsheet outside the try, which leaked the lock and made the
+  // next create fail with an opaque 502 instead of a meaningful message.
   let connectionId: number | null = null;
+  let created: Awaited<ReturnType<GoogleWorkspaceApi["createSpreadsheet"]>> | null = null;
+  const template = getGoogleSheetTemplate(set);
   try {
+    const api = apiOverride ?? await apiForUser(actor.userId);
+    created = await api.createSpreadsheet({ title: `${set.name} – Google Sheet`, sheetTitle: template.sheetTitle });
     const wordRows = await db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id));
     const exportRows = wordRows.map((word) => ({
       sourceId: generateSourceId(),
