@@ -169,8 +169,9 @@ test("the admin read paths consult mapping.deleted_at, not just SELECT * FROM wo
   assert.match(detail, /archived[.]has/, "archived words must be filtered out of the detail list");
   assert.ok(!/db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id))/.test(detail), "the unfiltered query must be gone");
   const list = readFileSync("src/app/api/sets/route.ts", "utf8");
-  assert.match(list, /googleSheetRowMappings\.deletedAt\} is null/, "the set list count must exclude archived rows");
-  assert.match(list, /leftJoin\(googleSheetRowMappings/, "the set list must join the mappings");
+  assert.match(list, /archivedCountBySet/, "the set list count must exclude archived rows");
+  assert.match(list, /isNotNull\(googleSheetRowMappings\.deletedAt\)/, "archived rows are counted by mapping.deleted_at");
+  assert.ok(!/\.leftJoin\(googleSheetRowMappings/.test(list), "the set list must NOT join the mappings - that fans one set into N cards");
   const sync = readFileSync("src/lib/googleSheets/syncVocabulary.ts", "utf8");
   assert.match(sync, /deletedAt: null/, "a restored row must be un-archived");
   assert.match(sync, /unarchivedWordIds/, "un-archived rows must be reported");

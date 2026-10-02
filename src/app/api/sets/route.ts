@@ -12,7 +12,7 @@ import { serializeLanguageSettings } from "@/lib/languageSettings";
 import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderDisplayPaths, getFolderLegacyPath, getVisibleFolderIds, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { buildToneExercise } from "@/lib/toneTrainer";
 import { buildSentenceCloze } from "@/lib/sentenceCloze";
-import { visibleWordsFilter, visibleWordsJoin } from "@/lib/googleSheets/visibility";
+import { isNotNull } from "drizzle-orm";
 
 export async function GET() {
   const session = await getSession();
@@ -51,7 +51,7 @@ export async function GET() {
       classId: vocabSets.classId,
       className: classes.name,
       createdAt: vocabSets.createdAt,
-      count: sql<number>`count(distinct ${words.id}) filter (where ${googleSheetRowMappings.deletedAt} is null)::int`,
+      count: sql<number>`count(distinct ${words.id})::int`,
       unknownCount: sql<number>`count(distinct ${wordProgress.wordId}) filter (where ${wordProgress.known} = false)::int`,
       reviewStage: setReviewProgress.stage,
       nextSetReviewAt: setReviewProgress.nextReviewAt,
@@ -63,16 +63,34 @@ export async function GET() {
     })
     .from(vocabSets)
     .leftJoin(words, sql`${words.setId} = ${vocabSets.id}`)
-    .leftJoin(googleSheetConnections, eq(googleSheetConnections.setId, vocabSets.id))
-    .leftJoin(googleSheetRowMappings, and(eq(googleSheetRowMappings.wordId, words.id), visibleWordsJoin(sql`${googleSheetConnections.id}`)))
     .leftJoin(wordProgress, and(eq(wordProgress.wordId, words.id), eq(wordProgress.userId, session.userId)))
     .leftJoin(userWordSkillProgress, and(eq(userWordSkillProgress.wordId, words.id), eq(userWordSkillProgress.userId, session.userId)))
     .leftJoin(classes, eq(classes.id, vocabSets.classId))
     .leftJoin(setReviewProgress, and(eq(setReviewProgress.setId, vocabSets.id), eq(setReviewProgress.userId, session.userId)))
-    .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt, googleSheetConnections.id, googleSheetConnections.deleteBehavior, googleSheetRowMappings.id, googleSheetRowMappings.deletedAt)
+    .groupBy(vocabSets.id, classes.name, setReviewProgress.stage, setReviewProgress.nextReviewAt, setReviewProgress.initialCompletedAt)
     .orderBy(vocabSets.createdAt);
 
   const rows = classFilter ? await query.where(classFilter) : await query;
+
+  // Words archived by a Google Sheet connection must not be counted. This is a
+  // separate aggregated query on purpose: joining the mappings into the set list
+  // fans one set out into one row per mapping, which is what rendered a
+  // 5-word set as 6 identical set cards.
+  const activeSetIds = rows.map((row) => row.id);
+  const archivedCountBySet = new Map<number, number>();
+  if (activeSetIds.length) {
+    const archivedRows = await db
+      .select({ setId: vocabSets.id, archived: sql<number>`count(distinct ${words.id})::int` })
+      .from(vocabSets)
+      .innerJoin(googleSheetConnections, eq(googleSheetConnections.setId, vocabSets.id))
+      .innerJoin(googleSheetRowMappings, eq(googleSheetRowMappings.connectionId, googleSheetConnections.id))
+      .innerJoin(words, eq(words.id, googleSheetRowMappings.wordId))
+      .where(and(inArray(vocabSets.id, activeSetIds), eq(googleSheetConnections.deleteBehavior, "archive"), isNotNull(googleSheetRowMappings.deletedAt)))
+      .groupBy(vocabSets.id);
+    for (const row of archivedRows) archivedCountBySet.set(row.setId, Number(row.archived) || 0);
+  }
+  for (const row of rows) row.count = Math.max(0, Number(row.count || 0) - (archivedCountBySet.get(row.id) ?? 0));
+
   const chineseSets = rows.filter((row) => row.languageCode === "zh-CN");
   const chineseSetById = new Map(chineseSets.map((row) => [row.id, row]));
   const eligibilityWords = chineseSets.length ? await db.select({ id:words.id,setId:words.setId,term:words.term,alternateTerm:words.alternateTerm,pronunciation:words.pronunciation,example:words.example,examplePronunciation:words.examplePronunciation,exampleMeaning:words.exampleMeaning }).from(words).where(inArray(words.setId,chineseSets.map((row)=>row.id))) : [];
