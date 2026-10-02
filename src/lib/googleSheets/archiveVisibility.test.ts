@@ -164,9 +164,10 @@ test("archiving a Sheet row never touches learning data", async () => {
 
 test("the admin read paths consult mapping.deleted_at, not just SELECT * FROM words", () => {
   const detail = readFileSync("src/app/api/sets/[id]/route.ts", "utf8");
-  assert.match(detail, /visibleWordsFilter/, "set detail must filter archived rows");
-  assert.match(detail, /visibleWordsJoin/, "set detail must join the mappings");
-  assert.ok(!/db\.select\(\)\.from\(words\)\.where\(eq\(words\.setId, setId\)\)\.orderBy\(asc\(words\.position\), asc\(words\.id\)\)/.test(detail), "the plain query must be gone");
+  assert.match(detail, /archiveFilters && gsConnection/, "set detail only filters when the connection archives");
+  assert.match(detail, /googleSheetRowMappings.deletedAt/, "set detail must consult the mapping archive flag");
+  assert.match(detail, /archived[.]has/, "archived words must be filtered out of the detail list");
+  assert.ok(!/db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id))/.test(detail), "the unfiltered query must be gone");
   const list = readFileSync("src/app/api/sets/route.ts", "utf8");
   assert.match(list, /googleSheetRowMappings\.deletedAt\} is null/, "the set list count must exclude archived rows");
   assert.match(list, /leftJoin\(googleSheetRowMappings/, "the set list must join the mappings");

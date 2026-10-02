@@ -4,7 +4,6 @@ import { z } from "zod";
 import { db } from "@/db";
 import { classMembers, vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
 import { googleSheetConnections, googleSheetRowMappings } from "@/db/schema";
-import { visibleWordsFilter, visibleWordsJoin } from "@/lib/googleSheets/visibility";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
@@ -41,17 +40,21 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .where(eq(googleSheetConnections.setId, setId))
     .limit(1);
   const archiveFilters = gsConnection?.deleteBehavior === "archive";
-  const wordListQuery = db
-    .select()
-    .from(words)
-    .leftJoin(googleSheetRowMappings, and(eq(googleSheetRowMappings.wordId, words.id), visibleWordsJoin(gsConnection?.id)))
-    .where(and(eq(words.setId, setId), archiveFilters ? visibleWordsFilter(gsConnection?.id) : undefined))
-    .orderBy(asc(words.position), asc(words.id));
-  // select() with a join returns a flat row, so rebuild the shape the UI expects.
-  const wordList = (await wordListQuery).map((row) => {
-    const { google_sheet_row_mappings: _mapping, ...word } = row as Record<string, unknown> & { google_sheet_row_mappings?: unknown };
-    return word as typeof words.$inferSelect;
-  });
+  const allWords = await db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id));
+  // A word is hidden only when this connection archived it. Words with no
+  // mapping (CSV/XLSX import, never exported) always stay visible.
+  let wordList = allWords;
+  if (archiveFilters && gsConnection?.id != null) {
+    const archived = new Set<number>();
+    if (allWords.length) {
+      const mappings = await db
+        .select({ wordId: googleSheetRowMappings.wordId, deletedAt: googleSheetRowMappings.deletedAt })
+        .from(googleSheetRowMappings)
+        .where(eq(googleSheetRowMappings.connectionId, gsConnection.id));
+      for (const mapping of mappings) if (mapping.deletedAt && mapping.wordId != null) archived.add(mapping.wordId);
+    }
+    wordList = archived.size ? allWords.filter((word) => !archived.has(word.id)) : allWords;
+  }
   const progress: Record<number, boolean> = {};
   if (wordList.length > 0) {
     const progressRows = await db
