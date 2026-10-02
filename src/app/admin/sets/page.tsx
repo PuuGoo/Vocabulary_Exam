@@ -120,6 +120,9 @@ export default function AdminSetsPage() {
   const [newScriptVariant, setNewScriptVariant] = useState<"simplified"|"traditional"|"both">("simplified");
   const [newTonePolicy, setNewTonePolicy] = useState<"strict"|"relaxed">("strict");
   const [newClassId, setNewClassId] = useState<string>("");
+  const [googleSheetsResume, setGoogleSheetsResume] = useState<null | { autoCreate: boolean; failed: boolean; setId: number }>(null);
+  const markGoogleSheetsResumeHandled = useCallback(() => setGoogleSheetsResume(null), []);
+
   const [detail, setDetail] = useState<SetDetail | null>(null);
   const [detailTab, setDetailTab] = useState<SetWorkspaceTab>("overview");
   const [editSetName, setEditSetName] = useState("");
@@ -663,9 +666,19 @@ export default function AdminSetsPage() {
     const returnParams = new URLSearchParams(window.location.search);
     const requestedCategory = returnParams.get("category")?.trim();
     const requestedSetId = Number(returnParams.get("openSet"));
+    const requestedCreateSheet = returnParams.get("gSheetCreate") === "1";
+    const createSheetFailed = returnParams.get("gSheetError") === "1";
     if (requestedCategory) navigateCategory(requestedCategory);
+    const shouldResumeCreateSheet = Number.isInteger(requestedSetId) && requestedSetId > 0 && (requestedCreateSheet || createSheetFailed);
+    if (shouldResumeCreateSheet) {
+      setGoogleSheetsResume({ autoCreate: requestedCreateSheet && !createSheetFailed, failed: createSheetFailed, setId: requestedSetId });
+    }
     if (Number.isInteger(requestedSetId) && requestedSetId > 0) {
-      void openDetail(requestedSetId);
+      void openDetail(requestedSetId).then(() => {
+        // The Google Sheets panel lives in the settings tab and openDetail
+        // resets the tab, so re-select it once the set is actually open.
+        if (shouldResumeCreateSheet) setDetailTab("settings");
+      });
     }
   }, []);
 
@@ -1935,7 +1948,7 @@ export default function AdminSetsPage() {
           </section>}
 
           {detailTab === "settings" && <>
-          <GoogleSheetsPanel setId={detail.id} isAdmin canManage={adminAccess.can("google_sheets.manage")} canSync={adminAccess.can("google_sheets.sync")} />
+          <GoogleSheetsPanel setId={detail.id} createResume={googleSheetsResume && googleSheetsResume.setId === detail.id ? { autoCreate: googleSheetsResume.autoCreate, failed: googleSheetsResume.failed, onHandled: markGoogleSheetsResumeHandled } : null} isAdmin canManage={adminAccess.can("google_sheets.manage")} canSync={adminAccess.can("google_sheets.sync")} />
           {detail.languageCode === "zh-CN" && (() => { const chinese = getChineseSettings(detail); return <div className="mb-4 grid gap-3 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] p-4 sm:grid-cols-2">
             <div className="sm:col-span-2"><b className="text-sm text-ink">中文 · Cài đặt tiếng Trung</b><p className="mt-1 text-xs text-muted">Thay đổi được lưu ngay và áp dụng cho flashcard, bài điền và chia sẻ.</p></div>
             <label><span className={cx.label}>Hệ chữ</span><select className={`${cx.input} !mb-0`} value={chinese.scriptVariant} onChange={(event) => void saveChineseSettings({ scriptVariant: event.target.value as typeof chinese.scriptVariant })}><option value="simplified">Giản thể</option><option value="traditional">Phồn thể</option><option value="both">Cả hai</option></select></label>

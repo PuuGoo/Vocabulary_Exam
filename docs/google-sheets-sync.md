@@ -78,6 +78,7 @@ PostgreSQL (không reset learning data)
 | `src/lib/googleSheets/syncVocabulary.ts` | Đồng bộ Google → Lexora (DB transaction) |
 | `src/lib/googleSheets/sheetLifecycle.ts` | Tạo Sheet, write-back ID, orchestrate sync |
 | `src/lib/googleSheets/auth.ts` / `crypto.ts` | OAuth + mã hóa token AES-256-GCM |
+| `src/lib/googleSheets/createFlow.ts` | Response contract của create-sheet: OAuth redirect, message tiếng Việt, anti-duplicate |
 | `src/lib/googleSheets/client.ts` | Google API thật (googleapis) |
 | `src/lib/googleSheets/api.ts` | Interface trừu tượng + fake cho test |
 | `src/lib/googleSheets/store.ts` | Lock, pending state, sync runs |
@@ -197,6 +198,34 @@ Nếu `lastSyncedFingerprint ≠ current DB fingerprint` và Sheet cũng đổi 
 - Không log access/refresh token/client secret.
 - `state` OAuth được HMAC-sign để chống CSRF.
 - Scope tối thiểu: `spreadsheets` + `drive.file`.
+
+## 11b. Create Sheet: OAuth onboarding
+
+Thiếu khi admin chưa kết nối Google **không phải** là lỗi từ phía máy chủ — đó là trạng thái onboarding bình thường.
+
+```text
+Admin bấm “Tạo Google Sheet”
+        ↓
+POST /api/admin/google-sheets/create
+   ├─ Google đã có token → tạo Sheet ngay (201)
+   └─ Chưa có token   → 202 { oauthRequired, oauthUrl, setId }
+        ↓ (UI tự redirect)
+GET /api/admin/google-sheets/oauth/start?next=/admin/sets?openSet=123&gSheetCreate=1
+        ↓
+GET /api/admin/google-sheets/oauth/callback  → storeGoogleToken
+        ↓
+/admin/sets?openSet=123&gSheetCreate=1  → tự tạo tiếp (hoặc nút “Tiếp tục tạo Google Sheet”)
+```
+
+- **Không có OAuth implementation thứ hai**: tái sử dụng `getGoogleOAuthConfig`,
+  `googleOAuthStateFor`, `parseGoogleOAuthState`, `storeGoogleToken`, `loadGoogleToken`.
+- `setId` được mang qua OAuth trong `state` đã ký HMAC; chỉ nhận URL
+  cùng-site (bắt đầu bằng `/`, từ chối `//` để tránh open redirect).
+- **Callback không bao giờ tạo spreadsheet** — nó chỉ lưu token. Nhờ vậy refresh/replay
+  callback không thể tạo sheet thứ hai. `create` route cũng idempotent: đã có
+  `google_sheet_connections` thì trả lại kết nối cũ thay vì tạo sheet mới.
+- Trạng thái UI: `Kết nối Google để tiếp tục` / `Đang kết nối Google...` /
+  `Đang tạo Google Sheet...` / `Tạo Google Sheet thành công`. Lỗi thô kỹ thuật chỉ log server-side.
 
 ## 12. Reconciliation & channel renewal
 

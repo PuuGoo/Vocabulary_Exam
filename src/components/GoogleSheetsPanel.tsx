@@ -38,12 +38,16 @@ function formatDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
-export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin }: { setId: number; canManage: boolean; canSync: boolean; isAdmin: boolean }) {
+type CreateResume = { autoCreate: boolean; failed: boolean; onHandled: () => void };
+
+export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, createResume }: { setId: number; canManage: boolean; canSync: boolean; isAdmin: boolean; createResume?: CreateResume | null }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [preview, setPreview] = useState<{ templateType: string; columns: number; existingWords: number; rowsToExport: number } | null>(null);
+  const [createPhase, setCreatePhase] = useState<"idle" | "connecting" | "creating">("idle");
+  const [resumeCreate, setResumeCreate] = useState(false);
   const [connectMode, setConnectMode] = useState(false);
   const [connectUrl, setConnectUrl] = useState("");
   const [connectSheet, setConnectSheet] = useState("");
@@ -63,6 +67,19 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin }
   }, [setId]);
 
   useEffect(() => { void load(); }, [load]);
+  // After the OAuth callback the set page comes back with ?gSheetCreate=1.
+  // Continue automatically; if that is not possible (or it failed), keep an
+  // explicit "Tiếp tục tạo Google Sheet" action instead of losing the intent.
+  useEffect(() => {
+    if (!createResume) return;
+    if (connection) { createResume.onHandled(); return; }
+    if (createResume.failed) { setResumeCreate(true); createResume.onHandled(); return; }
+    if (createResume.autoCreate) { createResume.onHandled(); void createSheet(); }
+    else { setResumeCreate(true); createResume.onHandled(); }
+  // createSheet is intentionally not a dependency: it must run once per resume.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createResume, connection]);
+
 
   async function openCreatePreview() {
     setBusy("preview");
@@ -75,16 +92,48 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin }
     } catch { toast("Không thể tải thông tin preview."); } finally { setBusy(null); }
   }
 
+  /**
+   * Create the spreadsheet for this set.
+   *
+   * A missing Google connection is not an error state: the API answers 202
+   * with an oauthUrl, and we send the admin straight into the existing
+   * OAuth flow (Kết nối Google để tiếp tục) instead of showing a 401.
+   */
   async function createSheet() {
+    if (createPhase !== "idle") return;
+    setCreatePhase("creating");
     setBusy("create");
     try {
       const response = await fetch("/api/admin/google-sheets/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ setId }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) { toast(data.error || "Không thể tạo Google Sheet."); return; }
-      toast(`Đã tạo Google Sheet và xuất ${data.exportedRows} từ vựng.`);
+      if (data.oauthRequired && data.oauthUrl) {
+        setCreatePhase("connecting");
+        toast("Đang kết nối Google...");
+        window.location.assign(String(data.oauthUrl));
+        return;
+      }
+      if (data.alreadyConnected) {
+        setShowPreview(false);
+        toast("Bộ từ vựng này đã có Google Sheet. Đang tải dữ liệu kết nối...");
+        await load();
+        return;
+      }
+      if (!response.ok) {
+        if (data.code === "NOT_CONFIGURED") { setResumeCreate(true); }
+        toast(data.error || "Không thể tạo Google Sheet lúc này.");
+        return;
+      }
       setShowPreview(false);
+      setResumeCreate(false);
+      toast("Tạo Google Sheet thành công.");
       await load();
-    } catch { toast("Không thể kết nối để tạo Google Sheet."); } finally { setBusy(null); }
+    } catch {
+      setCreatePhase("idle");
+      toast("Không thể kết nối để tạo Google Sheet.");
+    } finally {
+      setBusy(null);
+      setCreatePhase("idle");
+    }
   }
 
   async function syncNow() {
@@ -182,6 +231,11 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin }
               <button type="button" className={cx.btn} disabled={busy !== null} onClick={() => void openCreatePreview()}>
                 {busy === "preview" ? "Đang chuẩn bị..." : "Tạo Google Sheet"}
               </button>
+              {resumeCreate && (
+                <button type="button" className={cx.btnGold} disabled={busy !== null} onClick={() => { setResumeCreate(false); void createSheet(); }}>
+                  Tiếp tục tạo Google Sheet
+                </button>
+              )}
               <button type="button" className={cx.btnGhost} disabled={busy !== null} onClick={() => setConnectMode((value) => !value)}>
                 Kết nối Sheet hiện có
               </button>
@@ -223,7 +277,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin }
             </dl>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" className={cx.btnGhost} onClick={() => setShowPreview(false)}>Hủy</button>
-              <button type="button" className={cx.btnGold} disabled={busy === "create"} onClick={() => void createSheet()}>{busy === "create" ? "Đang tạo..." : "Tạo"}</button>
+              <button type="button" className={cx.btnGold} disabled={busy === "create"} onClick={() => void createSheet()}>{createPhase === "connecting" ? "Đang kết nối Google..." : createPhase === "creating" ? "Đang tạo Google Sheet..." : busy === "create" ? "Đang tạo..." : "Tạo"}</button>
             </div>
           </div>
         </div>
