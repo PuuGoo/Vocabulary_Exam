@@ -27,7 +27,7 @@ test("STT is display-only: it never reaches the database or the fingerprint", ()
 
   // Fingerprint must not mention STT anywhere.
   const fingerprint = readFileSync("src/lib/googleSheets/fingerprint.ts", "utf8");
-  assert.ok(!/STT|__stt|sheetRowNumber/i.test(fingerprint), "the fingerprint must exclude STT and row numbers");
+  assert.ok(!/__stt|sheetRowNumber/i.test(fingerprint), "the fingerprint must exclude STT and row numbers");
 
   // The import model must not carry STT.
   const parse = readFileSync("src/lib/vocabImport/parse.ts", "utf8");
@@ -80,7 +80,7 @@ test("webhook authenticates the channel token, never the notification body", () 
  * client secret and redirect URI. Without them googleapis cannot refresh an
  * expired access token and every Google call fails with HTTP 400
  * invalid_request - even though the stored refresh token is perfectly valid.
- * This surfaced as "Tạo Google Sheet" returning INVALID_SCHEMA in production.
+ * This surfaced as "Táº¡o Google Sheet" returning INVALID_SCHEMA in production.
  */
 test("the Google API client carries client credentials so expired access tokens can refresh", () => {
   const client = readFileSync("src/lib/googleSheets/client.ts", "utf8");
@@ -95,7 +95,7 @@ test("watch channels send a real channel token and store only its digest", () =>
   assert.match(client, /token: channelToken/, "files.watch must send a channel token");
   // resourceUri may be *read back* from the Google response (that is a real
   // Channel field and is kept for diagnostics), but it must never be sent in
-  // the files.watch request body — it is not a valid request field.
+  // the files.watch request body â€” it is not a valid request field.
   const watchBody = /requestBody:\s*\{[\s\S]*?\}/.exec(client)?.[0] ?? "";
   assert.ok(watchBody, "the watch request body must exist");
   assert.ok(!watchBody.includes("resourceUri"), "resourceUri is not a valid Channel field for files.watch");

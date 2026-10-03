@@ -1,4 +1,5 @@
-﻿import { createHash } from "node:crypto";
+import { createHash } from "node:crypto";
+import { SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 
 /**
  * Fingerprint is computed from canonicalized *business* fields only.
@@ -7,7 +8,7 @@
  */
 export const FINGERPRINT_VERSION = "2";
 
-type FingerprintInput = Record<string, string | null | undefined>;
+export type FingerprintInput = Record<string, string | null | undefined>;
 
 function canonicalizeValue(value: unknown): string {
   return String(value ?? "").normalize("NFC").replace(/\s+/g, " ").trim();
@@ -70,4 +71,86 @@ export function computeWordFingerprint(setType: string, fields: FingerprintInput
   return setType === "irregular_verb"
     ? fingerprintFields(canonical, IRREGULAR_VERB_FINGERPRINT_KEYS)
     : fingerprintFields(canonical, VOCAB_FINGERPRINT_KEYS);
+}
+
+/**
+ * Template-scoped fingerprint keys: exactly the fields a Google Sheet actually
+ * exposes for this template.
+ *
+ * The old global key list (VOCAB_FINGERPRINT_KEYS) included columns such as
+ * `alternateTerm`, `pronunciation` and `classifier`, which exist in the DB but
+ * are NOT part of an IELTS sheet. Fingerprinting a raw DB row with those keys
+ * while the mapping was created from template-shaped values produced two
+ * different hashes for identical content, which the conflict rule then read as
+ * "the DB changed since the last sync" - a false CONFLICT on a normal Sheet
+ * edit.
+ *
+ * Rules:
+ *  - STT and every display-only column are excluded (they are never content)
+ *  - `__lexora_id` is excluded (it is identity, not content)
+ *  - only fields present in the template are included
+ */
+export function templateFingerprintKeys(template: GoogleSheetTemplate): readonly string[] {
+  return template.fields
+    .filter((field) => !field.displayOnly && field.key !== SOURCE_ID_HEADER)
+    .map((field) => field.key);
+}
+
+/**
+ * ONE canonical fingerprint for a vocabulary row.
+ *
+ * Both sides of every comparison must go through this function:
+ *  - Sheet row: fingerprintSheetValues(template, row.values)
+ *  - DB word:   fingerprintDbWord(template, word)
+ *
+ * Keeping a single implementation is what guarantees the two hashes are
+ * comparable; two competing rules are exactly what produced the false
+ * conflicts.
+ */
+export function fingerprintSheetValues(template: GoogleSheetTemplate, values: FingerprintInput): string {
+  const keys = templateFingerprintKeys(template);
+  const canonical: FingerprintInput = {};
+  for (const key of keys) canonical[key] = canonicalizeFieldValue(key, values[key]);
+  return fingerprintFields(canonical, keys);
+}
+
+/**
+ * DB row -> template-shaped values -> fingerprint.
+ *
+ * The DB word is first projected through exactly the same mapping used when the
+ * row was exported to the Sheet, so fields the Sheet does not carry can never
+ * influence the hash.
+ */
+export function fingerprintDbWord(template: GoogleSheetTemplate, word: Record<string, unknown>): string {
+  const values: FingerprintInput = {};
+  for (const field of template.fields) {
+    if (field.key === SOURCE_ID_HEADER) continue;
+    const value = word[field.key];
+    values[field.key] = value == null ? "" : String(value);
+  }
+  return fingerprintSheetValues(template, values);
+}
+
+/** Fields whose DB (JSON) and Sheet (text) representations differ. */
+function canonicalizeFieldValue(key: string, raw: string | null | undefined): string {
+  if (key === "ieltsSkills" || key === "usageContext") return canonicalizeListCell(raw);
+  return raw == null ? "" : String(raw);
+}
+
+/**
+ * Human-readable field names for a fingerprint comparison, used to explain a
+ * conflict ("Trường đã đổi: Example") instead of only reporting the row.
+ */
+export function changedFingerprintFields(
+  template: GoogleSheetTemplate,
+  before: FingerprintInput,
+  after: FingerprintInput,
+): string[] {
+  const changed: string[] = [];
+  for (const field of template.fields) {
+    if (field.displayOnly || field.key === SOURCE_ID_HEADER) continue;
+    const key = field.key;
+    if (canonicalizeFieldValue(key, before[key]) !== canonicalizeFieldValue(key, after[key])) changed.push(field.header);
+  }
+  return changed;
 }

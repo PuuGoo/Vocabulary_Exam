@@ -5,7 +5,7 @@ import type { GoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { apiForUser, exportValuesForWord, syncConnection } from "@/lib/googleSheets/sheetLifecycle";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { buildRangeA1 } from "@/lib/googleSheets/spreadsheet";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintDbWord } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { ensureWatchChannel } from "@/lib/googleSheets/watch";
 import { writeAdminAudit } from "@/lib/adminAudit";
@@ -121,7 +121,7 @@ export async function recoverGoogleSheetConnection(
   let mappingsCreated = 0;
   if (missing.length) {
     await db.insert(googleSheetRowMappings).values(missing.map((word) => {
-      const fingerprint = computeWordFingerprint(set.type, exportValuesForWord(template, word));
+      const fingerprint = fingerprintDbWord(template, word as unknown as Record<string, unknown>);
       // sheetRowNumber 0 = "unknown position"; the first sync resolves it from
       // the __lexora_id column it writes back into the sheet.
       return { connectionId, wordId: word.id, sourceId: generateSourceId(), sheetRowNumber: 0, sourceFingerprint: fingerprint, lastSyncedFingerprint: fingerprint };

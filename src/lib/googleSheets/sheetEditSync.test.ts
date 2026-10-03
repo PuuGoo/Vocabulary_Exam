@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
 import { runVocabularySync } from "@/lib/googleSheets/syncVocabulary";
@@ -38,9 +38,9 @@ test("Sheet edit updates the same word in Postgres and reports changedWordIds", 
       setId: set.id,
       position: 1,
       term: "mitigate",
-      meaning: "giảm nhẹ",
+      meaning: "giáº£m nháº¹",
       example: "Although simple digital greetings...",
-      ipa: "/ˈmɪtɪɡeɪt/",
+      ipa: "/ËˆmÉªtÉªÉ¡eÉªt/",
     }).returning();
     const [conn] = await db.insert(googleSheetConnections).values({
       setId: set.id,
@@ -49,8 +49,8 @@ test("Sheet edit updates the same word in Postgres and reports changedWordIds", 
       spreadsheetUrl: "u",
       spreadsheetName: "n",
       sheetId: 0,
-      sheetTitle: "Từ vựng IELTS",
-      rangeA1: "'Từ vựng IELTS'!A1:Q2",
+      sheetTitle: "Tá»« vá»±ng IELTS",
+      rangeA1: "'Tá»« vá»±ng IELTS'!A1:Q2",
       templateType: "ielts_vocab",
       templateVersion: 2,
       syncDirection: "google_to_lexora",
@@ -69,8 +69,8 @@ test("Sheet edit updates the same word in Postgres and reports changedWordIds", 
       wordId: word.id,
       sourceId,
       sheetRowNumber: 2,
-      sourceFingerprint: computeWordFingerprint("ielts_vocab", dbValues),
-      lastSyncedFingerprint: computeWordFingerprint("ielts_vocab", dbValues),
+      sourceFingerprint: fingerprintSheetValues(template, dbValues),
+      lastSyncedFingerprint: fingerprintSheetValues(template, dbValues),
     });
 
     // The admin replaces the AI-generated example with the plain text "test".
@@ -84,7 +84,7 @@ test("Sheet edit updates the same word in Postgres and reports changedWordIds", 
       if (columnIndex === sttIdx) return "1";
       if (columnIndex === sourceIdx) return sourceId;
       if (columnIndex === termIdx) return "mitigate";
-      if (columnIndex === meaningIdx) return "giảm nhẹ";
+      if (columnIndex === meaningIdx) return "giáº£m nháº¹";
       if (columnIndex === exampleIdx) return "test";
       return "";
     });

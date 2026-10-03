@@ -52,4 +52,33 @@ test("manual Sync Now and webhook share one sync engine (no duplicate logic)", (
   // The webhook goes through the lock-guarded shared helper (architecture test
   // covers runPendingConnection; here we only prove there is no second engine).
   assert.match(webhookRoute, /runPendingConnection\(/, "the webhook delegates to the shared reconciler");
+test("Lexora never writes vocabulary cells back to the Sheet (no Lexora-origin drift)", () => {
+  const lifecycle = readFileSync("src/lib/googleSheets/sheetLifecycle.ts", "utf8");
+  const lines = lifecycle.split(/\r?\n/);
+  const nameOf = (index: number) => {
+    for (let i = index; i >= 0; i -= 1) {
+      const match = lines[i].match(/^\s*(?:export )?async function (\w+)/);
+      if (match) return match[1];
+    }
+    return "?";
+  };
+  // The create flow writes the initial export; every later write must touch
+  // only identity (source id), STT, AI formulas or the help tab. Vocabulary
+  // content is never written back by Lexora, so a webhook caused by Lexora can
+  // never look like an admin edit of the same cell.
+  let createWrites = 0;
+  let otherWrites = 0;
+  lines.forEach((line, index) => {
+    if (!line.includes("api.writeValues(")) return;
+    const fn = nameOf(index);
+    if (fn === "createGoogleSheetForSet") { createWrites += 1; return; }
+    otherWrites += 1;
+    assert.ok(
+      /idColumn|STT|AI|formula|AI_HELP/i.test(line) || /writeBackSourceIds|writeRowAiFormulas|writeSttFormula|ensureAiHelpSheet/.test(fn),
+      `${fn} must not write vocabulary content to the Sheet`,
+    );
+  });
+  assert.ok(createWrites >= 1, "the create flow writes the initial export");
+  assert.equal(otherWrites >= 3, true, "the known post-create writes are all identity/STT/AI/help only");
+});
 });

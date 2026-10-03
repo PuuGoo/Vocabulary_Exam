@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { buildRangeA1 } from "@/lib/googleSheets/spreadsheet";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange, parseSheetGrid } from "@/lib/googleSheets/parser";
 import { parseVocabularyRows } from "@/lib/vocabImport/parse";
@@ -35,9 +35,9 @@ function blankRow(width: number): string[] {
 test("acceptance: create sheet, add row, edit meaning and reorder keep one identity", async () => {
   const set = { id: 123, type: "ielts_vocab", languageCode: "en", name: "IELTS Unit 01" };
   const words: FakeWord[] = [
-    { id: 1, setId: 123, position: 1, term: "abandon", meaning: "từ bỏ" },
-    { id: 2, setId: 123, position: 2, term: "acquire", meaning: "đạt được" },
-    { id: 3, setId: 123, position: 3, term: "facilitate", meaning: "tạo điều kiện" },
+    { id: 1, setId: 123, position: 1, term: "abandon", meaning: "tá»« bá»" },
+    { id: 2, setId: 123, position: 2, term: "acquire", meaning: "Ä‘áº¡t Ä‘Æ°á»£c" },
+    { id: 3, setId: 123, position: 3, term: "facilitate", meaning: "táº¡o Ä‘iá»u kiá»‡n" },
   ];
   const template = getGoogleSheetTemplate(set);
   const api = createFakeGoogleWorkspaceApi();
@@ -64,7 +64,7 @@ test("acceptance: create sheet, add row, edit meaning and reorder keep one ident
   const withNewRow = exported.map((row) => [...row]);
   const newRow: string[] = blankRow(width);
   newRow[2] = "mitigate";
-  newRow[3] = "giảm nhẹ";
+  newRow[3] = "giáº£m nháº¹";
   withNewRow.push(newRow);
 
   const parsed = parseSheetGrid(gridFromValuesRange(withNewRow), template);
@@ -104,7 +104,7 @@ test("acceptance: create sheet, add row, edit meaning and reorder keep one ident
   assert.ok(newSourceId.startsWith("v_"), "the engine must generate a v_ prefixed source ID");
 
   // 4. Admin edits Meaning on that same row: identity must stay the same wordId.
-  afterWriteBack[newRowIndex][3] = "giảm nhẹ / làm dịu";
+  afterWriteBack[newRowIndex][3] = "giáº£m nháº¹ / lÃ m dá»‹u";
   const editedRows = parseSheetGrid(gridFromValuesRange(afterWriteBack), template);
   const editedDrafts = parseVocabularyRows(
     editedRows.map((row) => ({ ...row.values, [SOURCE_ID_HEADER]: row.sourceId })),
@@ -115,11 +115,11 @@ test("acceptance: create sheet, add row, edit meaning and reorder keep one ident
   const editedRow = editedRows.find((row) => readSourceIdCell(row.sourceId) === newSourceId);
   assert.ok(editedRow, "the edited row keeps its __lexora_id");
   const editedDraft = editedDrafts.rows.find((candidate) => candidate.rowNumber === editedRow!.rowNumber);
-  assert.equal(editedDraft?.meaning, "giảm nhẹ / làm dịu");
+  assert.equal(editedDraft?.meaning, "giáº£m nháº¹ / lÃ m dá»‹u");
   assert.equal(wordIdBySourceId.get(newSourceId), created[0].wordId, "the edit must update the same wordId");
   assert.notEqual(
-    computeWordFingerprint(set.type, editedRow!.values as Record<string, string>),
-    computeWordFingerprint(set.type, { meaning: "giảm nhẹ" }),
+    fingerprintSheetValues(template, editedRow!.values as Record<string, string>),
+    fingerprintSheetValues(template, { meaning: "giáº£m nháº¹" }),
     "the fingerprint must change so the row is detected as UPDATED",
   );
 

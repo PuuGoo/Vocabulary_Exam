@@ -10,7 +10,7 @@ import {
 } from "@/lib/googleSheets/template";
 import { columnLetter, valuesForExport } from "@/lib/googleSheets/spreadsheet";
 import { mapHeadersToFieldKeys, parseSheetGrid } from "@/lib/googleSheets/parser";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { parseVocabularyRows } from "@/lib/vocabImport/parse";
 import { createFakeGoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { configureSheetLayout } from "@/lib/googleSheets/formatting";
@@ -47,9 +47,9 @@ test("A. create sheet: STT exists as the first column of every template", () => 
 test("B. initial vocabulary: export blanks STT and the formula numbers rows", () => {
   const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
   const rows = [
-    { sourceId: "v_abc123", values: { term: "abandon", meaning: "từ bỏ" } },
-    { sourceId: "v_def456", values: { term: "acquire", meaning: "đạt được" } },
-    { sourceId: "v_ghi789", values: { term: "facilitate", meaning: "tạo điều kiện" } },
+    { sourceId: "v_abc123", values: { term: "abandon", meaning: "tá»« bá»" } },
+    { sourceId: "v_def456", values: { term: "acquire", meaning: "Ä‘áº¡t Ä‘Æ°á»£c" } },
+    { sourceId: "v_ghi789", values: { term: "facilitate", meaning: "táº¡o Ä‘iá»u kiá»‡n" } },
   ];
   const values = valuesForExport(template, rows);
   assert.equal(values[0][0], STT_HEADER, "header row starts with STT");
@@ -95,7 +95,7 @@ test("G. sync ignores STT: it never reaches the vocabulary import model", () => 
   const mapping = mapHeadersToFieldKeys(headers, template);
   for (const key of mapping.values()) assert.notEqual(key, STT_FIELD_KEY, "STT must not be mapped");
 
-  const parsed = parseSheetGrid({ headers, rows: [["99", "v_abc123", "abandon", "từ bỏ"]] }, template);
+  const parsed = parseSheetGrid({ headers, rows: [["99", "v_abc123", "abandon", "tá»« bá»"]] }, template);
   assert.equal(parsed.length, 1);
   assert.ok(!("stt" in parsed[0].values), "no stt key in the parsed values");
   assert.ok(!("__stt" in parsed[0].values), "no display field in the parsed values");
@@ -116,10 +116,10 @@ test("G. sync ignores STT: it never reaches the vocabulary import model", () => 
 test("H. changing only STT never changes the fingerprint", () => {
   const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
   const headers = template.fields.map((field) => field.header);
-  const a = parseSheetGrid({ headers, rows: [["1", "v_abc123", "abandon", "từ bỏ"]] }, template)[0];
-  const b = parseSheetGrid({ headers, rows: [["20", "v_abc123", "abandon", "từ bỏ"]] }, template)[0];
-  const fa = computeWordFingerprint("ielts_vocab", a.values as Record<string, string>);
-  const fb = computeWordFingerprint("ielts_vocab", b.values as Record<string, string>);
+  const a = parseSheetGrid({ headers, rows: [["1", "v_abc123", "abandon", "tá»« bá»"]] }, template)[0];
+  const b = parseSheetGrid({ headers, rows: [["20", "v_abc123", "abandon", "tá»« bá»"]] }, template)[0];
+  const fa = fingerprintSheetValues(template, a.values as Record<string, string>);
+  const fb = fingerprintSheetValues(template, b.values as Record<string, string>);
   assert.equal(fa, fb, "STT must not be part of the business fingerprint");
   const keys = template.fields.filter((field) => !field.displayOnly && field.key !== SOURCE_ID_HEADER).map((field) => field.key);
   assert.ok(!keys.includes(STT_FIELD_KEY));
@@ -128,13 +128,13 @@ test("H. changing only STT never changes the fingerprint", () => {
 test("I. identity ignores STT: moving a row keeps the same source id", () => {
   const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
   const headers = template.fields.map((field) => field.header);
-  const top = parseSheetGrid({ headers, rows: [["1", "v_abc123", "abandon", "từ bỏ"]] }, template)[0];
-  const moved = parseSheetGrid({ headers, rows: [["50", "v_abc123", "abandon", "từ bỏ"]] }, template)[0];
+  const top = parseSheetGrid({ headers, rows: [["1", "v_abc123", "abandon", "tá»« bá»"]] }, template)[0];
+  const moved = parseSheetGrid({ headers, rows: [["50", "v_abc123", "abandon", "tá»« bá»"]] }, template)[0];
   assert.equal(top.sourceId, moved.sourceId);
   assert.equal(top.sourceId, "v_abc123");
   // STT and the row number are bookkeeping: only __lexora_id resolves a word.
   assert.equal(top.rowNumber, moved.rowNumber, "the row number must not vary with STT");
-  assert.equal(parseSheetGrid({ headers, rows: [["", "v_abc123", "abandon", "từ bỏ"]] }, template)[0].sourceId, "v_abc123", "a blank STT cell still resolves the same word");
+  assert.equal(parseSheetGrid({ headers, rows: [["", "v_abc123", "abandon", "tá»« bá»"]] }, template)[0].sourceId, "v_abc123", "a blank STT cell still resolves the same word");
 });
 
 test("the STT column is centered, narrow and covered by the header filter", async () => {
@@ -162,8 +162,8 @@ test("the STT column is centered, narrow and covered by the header filter", asyn
  * HTTP 400 invalid_value at `requests[4].repeat_cell...wrap_strategy`,
  * configureSheetLayout threw, and createGoogleSheetForSet aborted AFTER the
  * vocabulary had been written. The sheet ended up with headers only and the
- * connection was stuck in status=error (what the admin saw as "Chưa kết
- * nối" while POST /create answered 409).
+ * connection was stuck in status=error (what the admin saw as "ChÆ°a káº¿t
+ * ná»‘i" while POST /create answered 409).
  *
  * Verified against the real API: CLIP and WRAP are accepted; OVERFLOW, NONE
  * and "" are all rejected.
@@ -217,7 +217,7 @@ test("create survives a formatting failure after the vocabulary is written", () 
 test("legacy sheets without an STT column still parse (STT is optional)", () => {
   const template = getGoogleSheetTemplate({ type: "irregular_verb", languageCode: "en" });
   const headers = [SOURCE_ID_HEADER, "Meaning", "V1", "V2", "V3", "IPA V1", "IPA V2", "IPA V3"];
-  const rows = [["v_abc123", "go", "go", "went", "gone", "ɡəʊ", "wɛnt", "ɡɒn"]];
+  const rows = [["v_abc123", "go", "go", "went", "gone", "É¡É™ÊŠ", "wÉ›nt", "É¡É’n"]];
   const parsed = parseSheetGrid({ headers, rows }, template);
   assert.equal(parsed.length, 1);
   assert.equal(parsed[0].sourceId, "v_abc123");
@@ -229,8 +229,8 @@ test("a header of STT anywhere in the row is still ignored", () => {
   const headers = ["Word", STT_HEADER, SOURCE_ID_HEADER, "Meaning"];
   const mapping = mapHeadersToFieldKeys(headers, template);
   for (const key of mapping.values()) assert.notEqual(key, STT_FIELD_KEY);
-  const parsed = parseSheetGrid({ headers, rows: [["abandon", "1", "v_abc123", "từ bỏ"]] }, template);
+  const parsed = parseSheetGrid({ headers, rows: [["abandon", "1", "v_abc123", "tá»« bá»"]] }, template);
   assert.equal(parsed[0].sourceId, "v_abc123");
   assert.equal(parsed[0].values.term, "abandon");
-  assert.equal(parsed[0].values.meaning, "từ bỏ");
+  assert.equal(parsed[0].values.meaning, "tá»« bá»");
 });

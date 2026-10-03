@@ -32,7 +32,7 @@ type Fixture = {
 async function seed(): Promise<Fixture> {
   const { vocabSets, googleSheetConnections } = await import("@/db/schema");
   const { eq: eq2, asc: asc2 } = await import("drizzle-orm");
-  const { computeWordFingerprint } = await import("@/lib/googleSheets/fingerprint");
+  const { fingerprintSheetValues } = await import("@/lib/googleSheets/fingerprint");
   const { generateSourceId } = await import("@/lib/googleSheets/identity");
 
   const [admin] = await db.select().from((await import("@/db/schema")).users).where(eq2((await import("@/db/schema")).users.username, "admin")).limit(1);
@@ -42,12 +42,12 @@ async function seed(): Promise<Fixture> {
   }).returning();
   const wordsRows = [];
   for (let i = 0; i < 5; i += 1) {
-    wordsRows.push({ setId: set.id, position: i + 1, term: `word${i + 1}`, meaning: `nghĩa${i + 1}` });
+    wordsRows.push({ setId: set.id, position: i + 1, term: `word${i + 1}`, meaning: `nghÄ©a${i + 1}` });
   }
   const inserted = await db.insert((await import("@/db/schema")).words).values(wordsRows).returning();
   const [conn] = await db.insert(googleSheetConnections).values({
     setId: set.id, createdBy: admin.id, spreadsheetId: `arch-${set.id}`, spreadsheetUrl: "u", spreadsheetName: "n",
-    sheetId: 0, sheetTitle: "Từ vựng IELTS", rangeA1: "'Từ vựng IELTS'!A1:Q6",
+    sheetId: 0, sheetTitle: "Tá»« vá»±ng IELTS", rangeA1: "'Tá»« vá»±ng IELTS'!A1:Q6",
     templateType: "ielts_vocab", templateVersion: 2, syncDirection: "google_to_lexora", deleteBehavior: "archive",
     enabled: true, status: "connected",
   }).returning();
@@ -55,8 +55,8 @@ async function seed(): Promise<Fixture> {
   const sourceIds = inserted.map(() => generateSourceId());
   await db.insert(googleSheetRowMappings).values(inserted.map((word, i) => ({
     connectionId: conn.id, wordId: word.id, sourceId: sourceIds[i], sheetRowNumber: i + 2,
-    sourceFingerprint: computeWordFingerprint("ielts_vocab", { term: word.term, meaning: word.meaning }),
-    lastSyncedFingerprint: computeWordFingerprint("ielts_vocab", { term: word.term, meaning: word.meaning }),
+    sourceFingerprint: fingerprintSheetValues(getGoogleSheetTemplate(set as never), { term: word.term, meaning: word.meaning }),
+    lastSyncedFingerprint: fingerprintSheetValues(getGoogleSheetTemplate(set as never), { term: word.term, meaning: word.meaning }),
   })));
   return { connectionId: conn.id, setId: set.id, wordIds: inserted.map((w) => w.id), sourceIds, set: set as never };
 }
@@ -66,7 +66,7 @@ test("archived rows disappear from the admin read path (bug: delete in Sheet, ad
   try {
     const header = getGoogleSheetTemplate(fixture.set).fields.map((f) => f.header);
     const tpl = getGoogleSheetTemplate(fixture.set);
-    const rowFor = (i: number) => tpl.fields.map((f) => (f.key === SOURCE_ID_HEADER ? fixture.sourceIds[i] : f.key === "term" ? `word${i + 1}` : f.key === "meaning" ? `nghĩa${i + 1}` : ""));
+    const rowFor = (i: number) => tpl.fields.map((f) => (f.key === SOURCE_ID_HEADER ? fixture.sourceIds[i] : f.key === "term" ? `word${i + 1}` : f.key === "meaning" ? `nghÄ©a${i + 1}` : ""));
 
     // Simulate deleting 3 of 5 rows in the Sheet, then sync.
     const grid = gridFromValuesRange([header, rowFor(0), rowFor(1)]);
@@ -101,7 +101,7 @@ test("a row restored in the Sheet is un-archived and reappears in the admin", as
   try {
     const tpl = getGoogleSheetTemplate(fixture.set);
     const header = tpl.fields.map((f) => f.header);
-    const rowFor = (i: number) => tpl.fields.map((f) => (f.key === SOURCE_ID_HEADER ? fixture.sourceIds[i] : f.key === "term" ? `word${i + 1}` : f.key === "meaning" ? `nghĩa${i + 1}` : ""));
+    const rowFor = (i: number) => tpl.fields.map((f) => (f.key === SOURCE_ID_HEADER ? fixture.sourceIds[i] : f.key === "term" ? `word${i + 1}` : f.key === "meaning" ? `nghÄ©a${i + 1}` : ""));
     const state = { id: fixture.connectionId, setId: fixture.setId, spreadsheetId: "x", sheetTitle: tpl.sheetTitle, deleteBehavior: "archive", status: "connected", enabled: true };
 
     // 1. delete everything

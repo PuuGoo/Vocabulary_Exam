@@ -7,7 +7,7 @@ import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, googleSheetSyncRuns, vocabSets, words } from "@/db/schema";
 import { createFakeGoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 
 const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
@@ -37,9 +37,9 @@ test("webhook trigger syncs a plain-text Sheet edit to Postgres", { skip: !enabl
       setId: set.id,
       position: 1,
       term: "mitigate",
-      meaning: "giảm nhẹ",
+      meaning: "giáº£m nháº¹",
       example: "Although simple digital greetings...",
-      ipa: "/ˈmɪtɪɡeɪt/",
+      ipa: "/ËˆmÉªtÉªÉ¡eÉªt/",
     }).returning();
     const template = getGoogleSheetTemplate(set);
     const sourceId = generateSourceId();
@@ -68,8 +68,8 @@ test("webhook trigger syncs a plain-text Sheet edit to Postgres", { skip: !enabl
       wordId: word.id,
       sourceId,
       sheetRowNumber: 2,
-      sourceFingerprint: computeWordFingerprint("ielts_vocab", dbValues),
-      lastSyncedFingerprint: computeWordFingerprint("ielts_vocab", dbValues),
+      sourceFingerprint: fingerprintSheetValues(template, dbValues),
+      lastSyncedFingerprint: fingerprintSheetValues(template, dbValues),
     });
 
     // Seed the fake Google Sheet with the admin's edit: Example = "test".

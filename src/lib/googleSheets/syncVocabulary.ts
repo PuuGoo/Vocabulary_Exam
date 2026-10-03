@@ -1,10 +1,10 @@
-﻿import { asc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import { gridFromValuesRange, parseSheetGrid, type SheetGrid } from "@/lib/googleSheets/parser";
-import { getGoogleSheetTemplate, SOURCE_ID_HEADER } from "@/lib/googleSheets/template";
+import { getGoogleSheetTemplate, SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, parseAiPromptOverrides } from "@/lib/googleSheets/aiFormula";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { changedFingerprintFields, fingerprintDbWord, fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
 import { draftToWordInsert, parseVocabularyRows, type ParsedWordDraft } from "@/lib/vocabImport/parse";
 import { appendWords } from "@/lib/wordOrder.server";
@@ -31,7 +31,11 @@ export type SyncStats = {
   rowsSkipped: number;
   duplicateCount: number;
   validationErrorCount: number;
-  conflicts: Array<{ rowNumber: number; message: string }>;
+  /**
+   * Structured conflicts. The UI renders sourceId / word / fieldsChanged
+   * directly, so nothing has to be parsed back out of a message string.
+   */
+  conflicts: Array<{ rowNumber: number; sourceId: string; word: string; fieldsChanged: string[]; message: string }>;
   invalidRows: Array<{ rowNumber: number; message: string }>;
   idWrites: Array<{ rowNumber: number; sourceId: string }>;
   changedWordIds: number[];
@@ -110,7 +114,7 @@ export async function runVocabularySync(
   const idWrites: Array<{ rowNumber: number; sourceId: string }> = [];
   const createdDrafts: Array<{ rowNumber: number; sourceId: string; draft: ParsedWordDraft; fingerprint: string }> = [];
   const updatedDrafts: Array<{ rowNumber: number; wordId: number; draft: ParsedWordDraft; fingerprint: string }> = [];
-  const conflicts: Array<{ rowNumber: number; message: string }> = [];
+  const conflicts: Array<{ rowNumber: number; sourceId: string; word: string; fieldsChanged: string[]; message: string }> = [];
   const unchangedWordIds = new Set<number>();
   const unarchivedWordIds = new Set<number>();
   const seenSourceIds = new Set<string>();
@@ -156,7 +160,7 @@ export async function runVocabularySync(
     const mapping = resolvedSourceId ? mappingBySourceId.get(resolvedSourceId) : undefined;
     const fallbackKey = importWordKey({ term: draft.term, v1: draft.v1, v2: draft.v2, v3: draft.v3 }, set.type);
     const fallbackWord = existingWords.find((candidate) => importWordKey({ term: candidate.term, v1: candidate.v1, v2: candidate.v2, v3: candidate.v3 }, set.type) === fallbackKey);
-    const fingerprint = computeWordFingerprint(set.type, { ...row.values } as Record<string, string>);
+    const fingerprint = fingerprintSheetValues(template, { ...row.values } as Record<string, string>);
     const word = mapping?.wordId != null ? wordById.get(mapping.wordId) : fallbackWord;
 
     if (!word) {
@@ -177,11 +181,26 @@ export async function runVocabularySync(
       unarchivedWordIds.add(word.id);
     }
 
-    const dbFingerprint = computeWordFingerprint(set.type, word as unknown as Record<string, string>);
+    // DB side: project the word through the SAME template mapping used on
+    // export, then fingerprint. Comparing a raw DB row against a Sheet-shaped
+    // fingerprint is what produced false conflicts for DB-only columns.
+    const dbValues = templateValuesForWord(template, word);
+    const dbFingerprint = fingerprintDbWord(template, dbValues);
     const lastSynced = mapping?.lastSyncedFingerprint ?? null;
     if (dbFingerprint === fingerprint && (!lastSynced || lastSynced === fingerprint)) { unchangedWordIds.add(word.id); continue; }
-    if (lastSynced && dbFingerprint !== lastSynced && dbFingerprint !== fingerprint) {
-      conflicts.push({ rowNumber: row.rowNumber, message: `Cột ${SOURCE_ID_HEADER}=${mapping?.sourceId} đã bị sửa trực tiếp trong Lexora; Sheet và DB đã phân kỳ.` });
+    // Conflict requires BOTH sides to have moved since the last sync:
+    // DB != lastSynced AND Sheet != lastSynced. When the DB still equals
+    // lastSynced, the Sheet is simply the side that changed - that is the
+    // normal Google-Sheet-edits-the-vocabulary workflow, so it is an UPDATE.
+    if (lastSynced && dbFingerprint !== lastSynced && fingerprint !== lastSynced) {
+      const fieldsChanged = changedFingerprintFields(template, dbValues, { ...row.values } as Record<string, string>);
+      conflicts.push({
+        rowNumber: row.rowNumber,
+        sourceId: mapping?.sourceId ?? resolvedSourceId ?? "",
+        word: String(row.values.term ?? row.values.v1 ?? ""),
+        fieldsChanged,
+        message: `Cột ${SOURCE_ID_HEADER}=${mapping?.sourceId} đã bị sửa trực tiếp trong Lexora; Sheet và DB đã phân kỳ.`,
+      });
       continue;
     }
     updatedDrafts.push({ rowNumber: row.rowNumber, wordId: word.id, draft, fingerprint });
@@ -253,4 +272,21 @@ export async function runVocabularySync(
     // to the Sheet. They are pure Google Sheets instructions; no AI API call.
     aiFormulaWrites: [...aiFormulasByRow.entries()].map(([rowNumber, cells]) => ({ rowNumber, cells })),
   };
+}
+
+/**
+ * Project a database word onto exactly the columns this template exposes.
+ *
+ * This is the single normalization used for every DB-side fingerprint, so a
+ * column the Sheet does not have (alternateTerm, pronunciation, classifier for
+ * an IELTS set) can never make the DB look "changed since last sync".
+ */
+function templateValuesForWord(template: GoogleSheetTemplate, word: Record<string, unknown>): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const field of template.fields) {
+    if (field.key === SOURCE_ID_HEADER) continue;
+    const value = word[field.key];
+    values[field.key] = value == null ? "" : String(value);
+  }
+  return values;
 }

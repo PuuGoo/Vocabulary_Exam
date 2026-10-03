@@ -1,4 +1,4 @@
-﻿import "dotenv/config";
+import "dotenv/config";
 import assert from "node:assert/strict";
 import test from "node:test";
 import postgres from "postgres";
@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, mistakes, userWordSkillProgress, vocabSets, wordProgress, words } from "@/db/schema";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
 import { runVocabularySync } from "@/lib/googleSheets/syncVocabulary";
@@ -49,7 +49,7 @@ test("acceptance #17 on real Postgres: sync edits content but never resets learn
       wordId,
       sourceId,
       sheetRowNumber: 2,
-      lastSyncedFingerprint: computeWordFingerprint("ielts_vocab", { term: wordRow.term || "", meaning: wordRow.meaning }),
+      lastSyncedFingerprint: fingerprintSheetValues(tpl, { term: wordRow.term || "", meaning: wordRow.meaning }),
     });
 
     const before = {

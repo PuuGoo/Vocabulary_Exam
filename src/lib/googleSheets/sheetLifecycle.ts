@@ -7,7 +7,7 @@ import { loadGoogleToken } from "@/lib/googleSheets/auth";
 import { buildSttFormulaForRow, getGoogleSheetTemplate, SOURCE_ID_HEADER, sttColumnIndex, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, AI_HELP_SHEET_TITLE, buildAiHelpRows, AI_FORMULA_BUFFER_ROWS, parseAiPromptOverrides, type AiPromptOverrides } from "@/lib/googleSheets/aiFormula";
 import { buildRangeA1, valuesForExport, columnLetter } from "@/lib/googleSheets/spreadsheet";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintDbWord } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { readSheetGrid, runVocabularySync, type SyncConnection, type SyncStats } from "@/lib/googleSheets/syncVocabulary";
 import { configureSheetLayout } from "@/lib/googleSheets/formatting";
@@ -198,8 +198,8 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
       wordId: word.id,
       sourceId: exportRows[index].sourceId,
       sheetRowNumber: index + 2,
-      sourceFingerprint: computeWordFingerprint(set.type, exportValuesForWord(template, word)),
-      lastSyncedFingerprint: computeWordFingerprint(set.type, exportValuesForWord(template, word)),
+      sourceFingerprint: fingerprintDbWord(template, word as unknown as Record<string, unknown>),
+      lastSyncedFingerprint: fingerprintDbWord(template, word as unknown as Record<string, unknown>),
     }));
     if (mappingValues.length) await db.insert(googleSheetRowMappings).values(mappingValues);
 

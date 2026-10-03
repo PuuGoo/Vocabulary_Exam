@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
 import { runVocabularySync } from "@/lib/googleSheets/syncVocabulary";
@@ -27,7 +27,7 @@ test("prompt change -> materialized text -> user edit keeps the user value", { s
       languageSettings: "{}", createdBy: admin.id,
     }).returning();
     const [word] = await db.insert(words).values({
-      setId: set.id, position: 1, term: "mitigate", meaning: "giảm nhẹ", example: "old example", ipa: "/ˈmɪtɪɡeɪt/",
+      setId: set.id, position: 1, term: "mitigate", meaning: "giáº£m nháº¹", example: "old example", ipa: "/ËˆmÉªtÉªÉ¡eÉªt/",
     }).returning();
     const template = getGoogleSheetTemplate(set);
     const sourceId = generateSourceId();
@@ -40,8 +40,8 @@ test("prompt change -> materialized text -> user edit keeps the user value", { s
     }).returning();
     await db.insert(googleSheetRowMappings).values({
       connectionId: conn.id, wordId: word.id, sourceId, sheetRowNumber: 2,
-      sourceFingerprint: computeWordFingerprint("ielts_vocab", dbValues),
-      lastSyncedFingerprint: computeWordFingerprint("ielts_vocab", dbValues),
+      sourceFingerprint: fingerprintSheetValues(template, dbValues),
+      lastSyncedFingerprint: fingerprintSheetValues(template, dbValues),
     });
 
     const state = { id: conn.id, setId: set.id, spreadsheetId: conn.spreadsheetId, sheetTitle: template.sheetTitle, deleteBehavior: "archive", status: "connected", enabled: true };

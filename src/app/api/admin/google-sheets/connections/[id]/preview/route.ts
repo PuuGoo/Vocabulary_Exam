@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import { gridFromValuesRange, parseSheetGrid } from "@/lib/googleSheets/parser";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
-import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
+import { fingerprintDbWord, fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { readSourceIdCell } from "@/lib/googleSheets/identity";
 import { parseVocabularyRows } from "@/lib/vocabImport/parse";
 import { importWordKey } from "@/lib/importDedup";
@@ -50,8 +50,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
       const mapping = mappingBySourceId.get(readSourceIdCell(row.sourceId));
       const word = mapping?.wordId != null ? wordById.get(mapping.wordId) : undefined;
       if (!word) { created += 1; continue; }
-      const rowFingerprint = computeWordFingerprint(set.type, row.values as Record<string, string>);
-      const dbFingerprint = computeWordFingerprint(set.type, word as unknown as Record<string, string>);
+      const rowFingerprint = fingerprintSheetValues(template, row.values as Record<string, string>);
+      const dbFingerprint = fingerprintDbWord(template, word as unknown as Record<string, unknown>);
       if (dbFingerprint === rowFingerprint) unchanged += 1; else updated += 1;
     }
     return NextResponse.json({
