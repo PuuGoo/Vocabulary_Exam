@@ -108,6 +108,11 @@ test("a completed row still syncs normally alongside an incomplete one", async (
     // edited and re-synced without losing identity.
     assert.equal(stats.idWrites.length, 1, "the new row gets a source id written back");
     assert.equal(stats.idWrites[0].rowNumber, 3);
+
+    // Spec item 13: a word created from a new Sheet row must be reported in
+    // changedWordIds, otherwise the admin list would never show it without a
+    // manual browser reload.
+    assert.ok(stats.changedWordIds.includes(inserted[0].id), "a created word must be reported so the UI can refresh");
   } finally {
     await cleanup(set.id, conn.id);
   }

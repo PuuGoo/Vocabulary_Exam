@@ -97,6 +97,11 @@ test("webhook trigger syncs a plain-text Sheet edit to Postgres", { skip: !enabl
     assert.ok(typeof successRun.finishedAt === "string" || successRun.finishedAt instanceof Date, "finishedAt is recorded");
     const metadata = JSON.parse(String(successRun.metadata ?? "{}"));
     assert.ok(Array.isArray(metadata.changedWordIds) && metadata.changedWordIds.includes(word.id), "changedWordIds is persisted in the run metadata");
+
+    // Spec item 1: the connection's last successful sync timestamp is advanced.
+    const [connectionAfter] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, conn.id)).limit(1);
+    assert.ok(connectionAfter.lastSuccessfulSyncAt, "lastSuccessfulSyncAt must be set after a successful sync");
+    assert.equal(connectionAfter.status, "connected", "the connection must end up connected");
   } finally {
     await sql.end();
   }

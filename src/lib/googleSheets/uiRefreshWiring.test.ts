@@ -38,3 +38,14 @@ test("the sync event payload carries everything the parent needs", () => {
   assert.equal(hasVocabularyChanges({ changedWordIds: [], rowsCreated: 0, rowsDeleted: 1 }), true);
   assert.equal(hasVocabularyChanges({ changedWordIds: [], rowsCreated: 0, rowsDeleted: 0 }), false, "an unchanged run must not trigger a reload");
 });
+
+test("manual Sync Now and webhook share one sync engine (no duplicate logic)", () => {
+  const syncRoute = readFileSync("src/app/api/admin/google-sheets/connections/[id]/sync/route.ts", "utf8");
+  const webhookRoute = readFileSync("src/app/api/webhooks/google-drive/route.ts", "utf8");
+  assert.match(syncRoute, /syncConnection\(connectionId, "manual"/, "manual sync calls the shared engine");
+  assert.ok(!/runVocabularySync\(/.test(syncRoute), "the manual route must not reimplement the sync engine");
+  assert.ok(!/runVocabularySync\(/.test(webhookRoute), "the webhook must not reimplement the sync engine");
+  // The webhook goes through the lock-guarded shared helper (architecture test
+  // covers runPendingConnection; here we only prove there is no second engine).
+  assert.match(webhookRoute, /runPendingConnection\(/, "the webhook delegates to the shared reconciler");
+});
