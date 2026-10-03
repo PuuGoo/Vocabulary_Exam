@@ -127,8 +127,11 @@ test("the sync run persists WHY rows were skipped, not just how many", () => {
   );
 
   // The admin panel is the only place the admin can act on this, so it must
-  // surface the reasons instead of only counting them.
+  // surface the reasons instead of only counting them. After the UX redesign
+  // the toast lives in the orchestrator and the count lives in the summary
+  // component; both still read off the same per-row reasons.
   const panel = readFileSync("src/components/GoogleSheetsPanel.tsx", "utf8");
+  const statsUi = readFileSync("src/components/google-sheets/GoogleSheetsSyncStats.tsx", "utf8");
   assert.match(panel, /stats\.invalidRows/, "the sync toast must list the skipped rows");
-  assert.match(panel, /run\.validationErrorCount/, "the history must show the skipped count");
+  assert.match(statsUi, /validationErrorCount/, "the history must show the skipped count");
 });

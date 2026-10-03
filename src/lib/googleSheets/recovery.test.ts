@@ -228,8 +228,12 @@ test("a genuinely gone spreadsheet surfaces SHEET_NOT_FOUND so a new one may be 
 // ---------------------------------------------------------------- UI agreement
 test("H. the panel renders an explicit error state with recovery actions", () => {
   const panel = readFileSync("src/components/GoogleSheetsPanel.tsx", "utf8");
+  // The broken-state card was split into its own component during the UX
+  // redesign; the guarantee under test is that the recovery affordance is
+  // rendered, so read both files.
+  const brokenCard = readFileSync("src/components/google-sheets/GoogleSheetsBrokenCard.tsx", "utf8");
   assert.match(panel, /connection\.status === "error" \|\| connection\.status === "disconnected"/, "broken states get their own branch");
-  assert.match(panel, /Khôi phục kết nối/, "the recovery button exists");
+  assert.match(brokenCard, /Khôi phục kết nối/, "the recovery button exists");
   assert.match(panel, /recoverConnection\(/, "the button calls the recover endpoint");
   assert.match(panel, /connections\/\$\{connection\.id\}\/recover/);
   // "not connected" must only render when there is genuinely no connection.

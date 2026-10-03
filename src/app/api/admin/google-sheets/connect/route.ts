@@ -11,12 +11,13 @@ import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { ensureWatchChannel } from "@/lib/googleSheets/watch";
 import { writeAdminAudit } from "@/lib/adminAudit";
 import { GoogleSheetsError } from "@/lib/googleSheets/errors";
+import { gridFromValuesRange, parseSheetGrid } from "@/lib/googleSheets/parser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const bodySchema = z.object({ setId: z.number().int().positive(), spreadsheetUrl: z.string().trim().min(1).max(2048), sheetTitle: z.string().trim().min(1).max(255), deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional() });
+const bodySchema = z.object({ setId: z.number().int().positive(), spreadsheetUrl: z.string().trim().min(1).max(2048), sheetTitle: z.string().trim().min(1).max(255), preview: z.boolean().optional(), deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional() });
 
 export async function POST(req: NextRequest) {
   const access = await requireAdminPermission("google_sheets.manage");
@@ -40,6 +41,11 @@ export async function POST(req: NextRequest) {
     const tab = metadata.sheets.find((sheet) => sheet.title === sheetTitle) ?? metadata.sheets[0];
     if (!tab) return NextResponse.json({ error: "Không tìm thấy tab đã chọn." }, { status: 404 });
     const template = getGoogleSheetTemplate(set);
+    if (parsed.data.preview) {
+      const range = `'${tab.title.replace(/'/g, "''")}'!A:Z`;
+      const rows = parseSheetGrid(gridFromValuesRange(await api.readValues(spreadsheetId, range)), template);
+      return NextResponse.json({ tabs: metadata.sheets, sheetTitle: tab.title, templateType: template.templateType, totalRows: rows.length, previewRows: rows.slice(0, 5).map((row) => ({ rowNumber: row.rowNumber, values: row.values })) });
+    }
     const [connection] = await db.insert(googleSheetConnections).values({
       setId, createdBy: access.userId, spreadsheetId, spreadsheetUrl, spreadsheetName: set.name,
       sheetId: tab.sheetId, sheetTitle: tab.title, rangeA1: `'${tab.title.replace(/'/g, "''")}'!A:Z`,
