@@ -14,11 +14,15 @@ test("the panel accepts an onVocabularyChanged callback and fires it after a syn
   assert.match(panel, /onVocabularyChanged\?\.\(changedWordIds\)/, "the callback is invoked with the changed word ids");
   assert.match(panel, /notifyVocabularyChanged\(\{ \.\.\.stats, finishedAt/, "manual sync notifies the parent");
   assert.match(panel, /if \(latestRun\?\.status === "success"\) notifyVocabularyChanged\(latestRun\)/, "a newly finished run notifies the parent");
-  // The 30s poll is status-only: it must never notify the vocabulary parent.
+  // Spec item 12: the 30s poll is status-only and must never refresh
+  // vocabulary data. It only reloads connection/runs; the vocabulary parent is
+  // notified only when a NEW run finishes.
   const pollStart = panel.indexOf("setInterval");
   assert.ok(pollStart > 0, "the panel keeps its status-only polling");
   const pollBody = panel.slice(pollStart, pollStart + 600);
+  assert.match(pollBody, /30000/, "poll interval must stay at 30s, never high frequency");
   assert.ok(!pollBody.includes("notifyVocabularyChanged"), "polling must never refresh vocabulary data");
+  assert.ok(!/setInterval[\s\S]{0,400}fetch\(`\/api\/sets/.test(panel), "polling must never fetch vocabulary rows");
 });
 
 test("the parent page listens for the sync event and refreshes the open set", () => {
