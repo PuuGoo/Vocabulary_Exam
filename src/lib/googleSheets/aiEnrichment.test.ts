@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
-import { aiColumnsForTemplate, AI_PROMPTS, buildAiColumnFormulas, buildAiFormula, aiColumnLetters, isAiEligibleField } from "@/lib/googleSheets/aiFormula";
+import { aiColumnsForTemplate, AI_PROMPTS, buildAiColumnFormulas, buildAiFormula, aiColumnLetters, isAiEligibleField, AI_FORMULA_BUFFER_ROWS } from "@/lib/googleSheets/aiFormula";
 import { isRawAiFormula, parseSheetGrid, readGeneratedValue } from "@/lib/googleSheets/parser";
 
 const ielts = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
@@ -173,4 +173,13 @@ test("13. isAiEligibleField rejects system columns", () => {
   assert.equal(isAiEligibleField(ielts.fields[1]), false, "__lexora_id is not AI-eligible");
   assert.equal(isAiEligibleField(ielts.fields.find((field) => field.key === "meaning")), true);
   assert.equal(isAiEligibleField(undefined), false);
+});
+
+test("14. an empty Sheet still gets an AI formula buffer so the admin can see it", () => {
+  assert.equal(AI_FORMULA_BUFFER_ROWS, 1_000, "the buffer must cover a realistic vocabulary set");
+  const formulas = buildAiColumnFormulas(ielts, "AI", aiColumnsForTemplate("ielts_vocab")[0], AI_FORMULA_BUFFER_ROWS);
+  assert.equal(formulas.length, AI_FORMULA_BUFFER_ROWS, "one formula per buffer row");
+  assert.match(formulas[0], /^=AI\(/, "row 2 must carry a native Google Sheets AI instruction");
+  assert.match(formulas[999], /^=AI\(/, "the last buffer row must too");
+  assert.ok(!formulas.some((formula) => formula.includes("A2")), "the buffer must never target STT (column A)");
 });

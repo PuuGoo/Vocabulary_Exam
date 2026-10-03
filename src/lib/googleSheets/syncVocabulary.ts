@@ -110,11 +110,40 @@ export async function runVocabularySync(
   const unarchivedWordIds = new Set<number>();
   const seenSourceIds = new Set<string>();
 
+  // Spec item 5: user-entered data always wins. AI formulas are only planted
+  // into cells the admin has not filled in yet. Without this guard a manual
+  // Meaning / IPA / Example edit would be overwritten by Google Sheets on the
+  // next sync, which is exactly what the spec forbids.
+  function pushAiCellsForBlankCells(rowNumber: number, sourceValues: Record<string, string>, lettersByPlan: Map<string, string>) {
+    for (const plan of aiColumnsForTemplate(template.templateType)) {
+      const letter = lettersByPlan.get(plan.key);
+      if (!letter) continue;
+      if ((sourceValues[plan.key] ?? "").trim() !== "") continue;
+      const [formula] = buildAiColumnFormulas(template, "AI", plan, 1, rowNumber);
+      if (!formula) continue;
+      const cells = aiFormulasByRow.get(rowNumber) ?? [];
+      cells.push({ letter, formula });
+      aiFormulasByRow.set(rowNumber, cells);
+    }
+  }
+
   for (const row of parsedRows) {
     if (!Object.values(row.values).some((value) => value !== "" && value != null)) continue; // blank row
     const resolvedSourceId = readSourceIdCell(row.sourceId);
     const draft = draftByRowNumber.get(row.rowNumber);
-    if (!draft) continue;
+    if (!draft) {
+      // The row is not valid vocabulary yet (Word or Meaning is still blank).
+      // It is skipped by the parser, so no word/mapping is created - but the
+      // Sheet-side AI formulas must still be planted for it. Without this the
+      // admin would see an empty AI column forever: the row would never match
+      // a draft, the formula write-back would never fire, and Google Sheets
+      // would have no =AI(...) instruction to run when they type the word.
+      //
+      // Identity is left alone: source id, STT and the mapping table are not
+      // written for an incomplete row. Only the AI formula cells are filled.
+      pushAiCellsForBlankCells(row.rowNumber, row.values, aiColumnLetters(template, template.templateType));
+      continue;
+    }
     const identityKey = resolvedSourceId || importWordKey({ term: draft.term, v1: draft.v1, v2: draft.v2, v3: draft.v3 }, set.type);
     if (seenSourceIds.has(identityKey)) { duplicateCount += 1; continue; }
     seenSourceIds.add(identityKey);
@@ -131,16 +160,7 @@ export async function runVocabularySync(
       createdDrafts.push({ rowNumber: row.rowNumber, sourceId, draft, fingerprint });
       // Collect the AI formulas for this new row so the caller can write them
       // back to the Sheet (one formula per AI-enabled column, one row only).
-      for (const plan of aiColumnsForTemplate(template.templateType)) {
-        const letters = aiColumnLetters(template, template.templateType);
-        const letter = letters.get(plan.key);
-        if (!letter) continue;
-        const [formula] = buildAiColumnFormulas(template, "AI", plan, 1, row.rowNumber);
-        if (!formula) continue;
-        const cells = aiFormulasByRow.get(row.rowNumber) ?? [];
-        cells.push({ letter, formula });
-        aiFormulasByRow.set(row.rowNumber, cells);
-      }
+      pushAiCellsForBlankCells(row.rowNumber, row.values, aiColumnLetters(template, template.templateType));
       continue;
     }
 

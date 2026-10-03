@@ -5,7 +5,7 @@ import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
 import { buildSttFormulaForRow, getGoogleSheetTemplate, SOURCE_ID_HEADER, sttColumnIndex, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
-import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, AI_HELP_SHEET_TITLE, buildAiHelpRows } from "@/lib/googleSheets/aiFormula";
+import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, AI_HELP_SHEET_TITLE, buildAiHelpRows, AI_FORMULA_BUFFER_ROWS } from "@/lib/googleSheets/aiFormula";
 import { buildRangeA1, valuesForExport, columnLetter } from "@/lib/googleSheets/spreadsheet";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
@@ -139,9 +139,9 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     // never runs fetchIpaSingle/fetchIpaBatch here. Google Sheets then generates
     // the values (with "Generate and Insert" / "Refresh and Insert" where
     // required), and the existing webhook + sync path persists them.
-    if (aiEnrich && exportRows.length) {
+    if (aiEnrich) {
       try {
-        await writeAiColumnFormulas(api, created.spreadsheetId, template, exportRows.length);
+        await writeAiColumnFormulas(api, created.spreadsheetId, template, Math.max(exportRows.length, AI_FORMULA_BUFFER_ROWS));
       } catch (error) {
         console.warn("[google-sheets] AI formula columns skipped:", error instanceof Error ? error.message : "unknown");
       }

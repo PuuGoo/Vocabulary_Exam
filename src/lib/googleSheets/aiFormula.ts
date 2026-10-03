@@ -33,6 +33,17 @@ export const AI_PROMPTS: Record<AiPromptKey, string> = {
 
 export type AiColumnPlan = { key: string; prompt: AiPromptKey; /** column that the formula reads as its input */ sourceKey: string };
 
+/**
+ * Minimum number of AI formula rows Lexora plants into an AI-enabled column
+ * when it creates a Sheet.
+ *
+ * Google Sheets' native AI function needs the formula to already exist in the
+ * cell before "Generate and Insert" can run. A Sheet created from an empty set
+ * (or from a set whose rows are all still incomplete) would otherwise have no
+ * AI instruction anywhere, and the admin would have to type one by hand.
+ */
+export const AI_FORMULA_BUFFER_ROWS = 1_000;
+
 /** The native AI formulas that Lexora can plant into a newly created Sheet. */
 const IELTS_AI_COLUMNS: AiColumnPlan[] = [
   { key: "meaning", prompt: "meaning", sourceKey: "term" },
