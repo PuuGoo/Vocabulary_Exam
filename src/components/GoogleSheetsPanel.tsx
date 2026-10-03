@@ -228,14 +228,28 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
     } catch { toast("Không thể kết nối."); } finally { setBusy(null); }
   }
 
-  async function applyAiPrompts(value: Record<string, string>) {
+  async function applyAiPrompts(value: Record<string, string>, handlers?: { onStats?: (stats: { updatedFormulaCells: number; blankCellsFilled: number; protectedUserCells: number; columnsUpdated: number; rowsScanned: number }) => void; onError?: (message: string) => void }) {
     if (!connection) return;
     setBusy("aiPrompts");
     try {
-      const response = await fetch(`/api/admin/google-sheets/connections/${connection.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ aiPrompts: value }) });
-      if (!response.ok) { toast("Không thể lưu prompt AI."); return; }
+      // Operation B: save AND rewrite the EXISTING Sheet's AI formulas.
+      const response = await fetch(`/api/admin/google-sheets/connections/${connection.id}/ai-prompts/apply`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ aiPrompts: value }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const message = data.error || "Không thể cập nhật prompt AI trên Sheet.";
+        handlers?.onError?.(message);
+        toast(message);
+        return;
+      }
       await load();
-      toast("Đã lưu prompt AI. Hành động này áp dụng cho các dòng mới.");
+      handlers?.onStats?.({
+        updatedFormulaCells: data.updatedFormulaCells ?? 0,
+        blankCellsFilled: data.blankCellsFilled ?? 0,
+        protectedUserCells: data.protectedUserCells ?? 0,
+        columnsUpdated: data.columnsUpdated ?? 0,
+        rowsScanned: data.rowsScanned ?? 0,
+      });
+      toast("✓ Đã cập nhật prompt AI trên Sheet.");
     } catch { toast("Không thể kết nối."); } finally { setBusy(null); }
   }
 
@@ -378,7 +392,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
           onSync={() => void syncNow("settings")}
           onDeleteBehavior={(value) => void applyDeleteBehavior(value)}
           onAiEnrich={(value) => void applyAiEnrich(value)}
-          onAiPrompts={(value) => void applyAiPrompts(value)}
+          onAiPrompts={(value, handlers) => void applyAiPrompts(value, handlers)}
         />
       )}
 

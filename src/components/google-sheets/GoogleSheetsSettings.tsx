@@ -1,10 +1,18 @@
 "use client";
 import { useState } from "react";
 import Modal from "@/components/Modal";
-import { Connection, danger, formatDate, secondary, templateLabel } from "./types";
+import { Connection, danger, formatDate, primary, secondary, templateLabel } from "./types";
 import { AI_PROMPTS, aiColumnsForTemplate, type AiPromptKey } from "@/lib/googleSheets/aiFormula";
 
-export default function GoogleSheetsSettings({ connection, canManage, canSync, busy, channel, onClose, onPause, onDisconnect, onSync, onDeleteBehavior, onAiEnrich, onAiPrompts }: { connection: Connection; canManage: boolean; canSync: boolean; busy: string | null; channel: Record<string, unknown> | null; onClose: () => void; onPause: () => void; onDisconnect: () => void; onSync: () => void; onDeleteBehavior: (value: string) => void; onAiEnrich: (value: boolean) => void; onAiPrompts: (value: Record<string, string>) => void }) {
+export type AiPromptApplyStats = {
+  updatedFormulaCells: number;
+  blankCellsFilled: number;
+  protectedUserCells: number;
+  columnsUpdated: number;
+  rowsScanned: number;
+};
+
+export default function GoogleSheetsSettings({ connection, canManage, canSync, busy, channel, onClose, onPause, onDisconnect, onSync, onDeleteBehavior, onAiEnrich, onAiPrompts }: { connection: Connection; canManage: boolean; canSync: boolean; busy: string | null; channel: Record<string, unknown> | null; onClose: () => void; onPause: () => void; onDisconnect: () => void; onSync: () => void; onDeleteBehavior: (value: string) => void; onAiEnrich: (value: boolean) => void; onAiPrompts: (value: Record<string, string>, handlers?: { onStats?: (stats: AiPromptApplyStats) => void; onError?: (message: string) => void }) => void }) {
   const [advanced, setAdvanced] = useState(false);
   const [promptDraft, setPromptDraft] = useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {};
@@ -15,6 +23,12 @@ export default function GoogleSheetsSettings({ connection, canManage, canSync, b
   });
   const broken = connection.status === "error" || connection.status === "disconnected";
   const autoOn = connection.enabled && !broken;
+  // Operation B ("Lưu & áp dụng cho Sheet") rewrites live formulas, so it is
+  // confirmed first. Operation A ("Lưu prompt") only touches the database.
+  const [confirmApply, setConfirmApply] = useState(false);
+  const [applyStats, setApplyStats] = useState<AiPromptApplyStats | null>(null);
+  const [applyError, setApplyError] = useState("");
+  const dirty = aiColumnsForTemplate(connection.templateType).some((plan) => (promptDraft[plan.key] ?? "") !== (connection.aiPrompts?.[plan.key] ?? AI_PROMPTS[plan.prompt as AiPromptKey]));
   return (
     <Modal title="Cài đặt Google Sheets" onClose={onClose}>
       <div className="space-y-5 text-sm">
@@ -58,7 +72,7 @@ export default function GoogleSheetsSettings({ connection, canManage, canSync, b
             <p className="font-semibold">Prompt cho cột AI</p>
             <p className="mt-1 text-xs leading-5 text-muted">
               Đây là câu lệnh Lexora ghi vào Sheet dưới dạng <code>=AI(&quot;câu lệnh&quot;;C6)</code>.
-              Google Sheets vẫn chạy AI, Lexora chỉ đồng bộ kết quả. Sửa xong bấm &ldquo;Áp dụng cho Sheet&rdquo;.
+              Google Sheets vẫn chạy AI, Lexora chỉ đồng bộ kết quả. Bấm &ldquo;Lưu &amp; áp dụng cho Sheet&rdquo; để cập nhật các ô đang dùng AI formula; nội dung bạn tự nhập sẽ được giữ nguyên.
             </p>
             <div className="mt-3 space-y-3">
               {aiColumnsForTemplate(connection.templateType).map((plan) => {
@@ -94,14 +108,61 @@ export default function GoogleSheetsSettings({ connection, canManage, canSync, b
                 );
               })}
             </div>
-            <button
-              type="button"
-              className={`${secondary} mt-4 w-full`}
-              disabled={!canManage || !!busy}
-              onClick={() => onAiPrompts(promptDraft)}
-            >
-              {busy === "aiPrompts" ? "Đang áp dụng…" : "Áp dụng cho Sheet"}
-            </button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className={`${secondary} flex-1`}
+                disabled={!canManage || !!busy || !dirty}
+                onClick={() => onAiPrompts(promptDraft)}
+              >
+                Lưu prompt
+              </button>
+              <button
+                type="button"
+                className={`${primary} flex-1`}
+                disabled={!canManage || !!busy || !dirty}
+                onClick={() => { setApplyError(""); setApplyStats(null); setConfirmApply(true); }}
+              >
+                {busy === "aiPrompts" ? "Đang cập nhật prompt trên Sheet…" : "Lưu & áp dụng cho Sheet"}
+              </button>
+            </div>
+            {applyStats ? (
+              <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs leading-5 text-emerald-800" role="status">
+                ✓ Đã cập nhật prompt AI trên Sheet.
+                <br />
+                {applyStats.updatedFormulaCells} công thức AI đã được cập nhật. {applyStats.blankCellsFilled} ô trống đã được điền. {applyStats.protectedUserCells} ô được giữ nguyên.
+                <br />
+                Google Sheets sẽ tạo/làm mới nội dung theo lệnh mới.
+              </p>
+            ) : null}
+            {applyError ? (
+              <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs leading-5 text-red-700" role="alert">{applyError}</p>
+            ) : null}
+            {confirmApply ? (
+              <div className="mt-3 rounded-xl border border-line p-3" role="alertdialog" aria-modal="true" aria-labelledby="gs-ai-apply-title">
+                <p id="gs-ai-apply-title" className="text-sm font-semibold">Cập nhật prompt AI trên Sheet?</p>
+                <p className="mt-1 text-xs leading-5 text-muted">
+                  Lexora sẽ cập nhật các ô đang dùng AI formula và giữ nguyên nội dung bạn đã nhập thủ công.
+                </p>
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <button type="button" className={secondary} disabled={!!busy} onClick={() => setConfirmApply(false)}>Hủy</button>
+                  <button
+                    type="button"
+                    className={primary}
+                    disabled={!!busy}
+                    onClick={() => {
+                      setConfirmApply(false);
+                      void onAiPrompts(promptDraft, {
+                        onStats: (stats) => setApplyStats(stats),
+                        onError: (message) => setApplyError(message),
+                      });
+                    }}
+                  >
+                    Cập nhật
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
         <div>

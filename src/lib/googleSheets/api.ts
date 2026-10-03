@@ -2,6 +2,19 @@ import { randomBytes } from "node:crypto";
 
 export type SheetsValue = (string | number | boolean | null)[][];
 
+/**
+ * `UNFORMATTED_VALUE` returns generated text, which is what the vocabulary
+ * sync needs. `FORMULA` returns the raw formula source, which is required when
+ * deciding whether a cell is an AI-managed formula or admin-entered text.
+ */
+export type SheetsRenderOption = "UNFORMATTED_VALUE" | "FORMULA";
+
+export type SheetsBatchValueUpdate = {
+  rangeA1: string;
+  values: SheetsValue;
+  parseFormulas?: boolean;
+};
+
 export type SpreadsheetSummary = { spreadsheetId: string; spreadsheetUrl: string; spreadsheetName: string };
 export type CreatedSpreadsheet = SpreadsheetSummary & { sheetId: number; sheetTitle: string };
 export type WatchChannel = {
@@ -40,8 +53,13 @@ export const WATCH_CHANNEL_RENEW_THRESHOLD_MS = 1000 * 60 * 60 * 6;
 /** Thin, testable abstraction over the Google Sheets + Drive APIs. */
 export type GoogleWorkspaceApi = {
   createSpreadsheet(options: { title: string; sheetTitle: string }): Promise<CreatedSpreadsheet>;
-  readValues(spreadsheetId: string, rangeA1: string): Promise<SheetsValue>;
+  readValues(spreadsheetId: string, rangeA1: string, options?: { renderOption?: SheetsRenderOption }): Promise<SheetsValue>;
   writeValues(spreadsheetId: string, rangeA1: string, values: SheetsValue, options?: { parseFormulas?: boolean }): Promise<void>;
+  /**
+   * Optional single-request multi-range write. Callers must degrade to
+   * `writeValues` when an older/fake API object does not provide it.
+   */
+  batchWriteValues?: (spreadsheetId: string, updates: readonly SheetsBatchValueUpdate[]) => Promise<void>;
   batchUpdate(spreadsheetId: string, requests: Record<string, unknown>[]): Promise<void>;
   getSpreadsheetMetadata(spreadsheetId: string): Promise<SpreadsheetMetadata>;
   createWatchChannel(options: { spreadsheetId: string; resourceId: string }): Promise<WatchChannel>;
@@ -71,7 +89,7 @@ export function createFakeGoogleWorkspaceApi(overrides: Partial<GoogleWorkspaceA
       entry.metadata = { sheets: [{ sheetId: 0, title: sheetTitle }] };
       return { spreadsheetId, spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, spreadsheetName: title, sheetId: 0, sheetTitle };
     },
-    readValues: async (spreadsheetId) => ensure(spreadsheetId).values.map((row) => [...row]),
+    readValues: async (spreadsheetId, _rangeA1, _options) => ensure(spreadsheetId).values.map((row) => [...row]),
     writeValues: async (spreadsheetId, rangeA1, values, _options) => {
       const entry = ensure(spreadsheetId);
       entry.writes += 1;
@@ -87,6 +105,9 @@ export function createFakeGoogleWorkspaceApi(overrides: Partial<GoogleWorkspaceA
         row.forEach((cellValue, columnOffset) => { current[Math.max(0, startColumn + columnOffset)] = cellValue; });
       });
       entry.values = next;
+    },
+    batchWriteValues: async (spreadsheetId, updates) => {
+      for (const update of updates) await base.writeValues(spreadsheetId, update.rangeA1, update.values, { parseFormulas: update.parseFormulas });
     },
     batchUpdate: async () => undefined,
     getSpreadsheetMetadata: async (spreadsheetId) => ({ sheets: ensure(spreadsheetId).metadata.sheets.map((sheet) => ({ ...sheet })) }),
@@ -127,4 +148,3 @@ function columnIndexFromLetter(letters: string): number {
 export type FakeGoogleWorkspaceApi = GoogleWorkspaceApi & {
   __inspect: (spreadsheetId: string) => { values: SheetsValue; writes: number; watches: WatchChannel[] } | null;
 };
-

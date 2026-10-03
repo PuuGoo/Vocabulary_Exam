@@ -66,9 +66,17 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
       }
     },
 
-    async readValues(spreadsheetId, rangeA1) {
+    async readValues(spreadsheetId, rangeA1, options) {
       try {
-        const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: rangeA1, majorDimension: "ROWS", valueRenderOption: "UNFORMATTED_VALUE" });
+        const response = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: rangeA1,
+          majorDimension: "ROWS",
+          // FORMULA is only used by the prompt-application flow so it can tell
+          // =AI(...)/=Gemini(...) apart from admin-entered text. The normal
+          // vocabulary sync keeps UNFORMATTED_VALUE (materialized text).
+          valueRenderOption: options?.renderOption ?? "UNFORMATTED_VALUE",
+        });
         return (response.data.values || []) as SheetsValue;
       } catch (error) { throw classifyGoogleApiError(error); }
     },
@@ -90,6 +98,24 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
             requestBody: { values: values.slice(offset, offset + WRITE_CHUNK_ROWS) },
           });
         }
+      } catch (error) { throw classifyGoogleApiError(error); }
+    },
+
+    async batchWriteValues(spreadsheetId, updates) {
+      if (!updates.length) return;
+      try {
+        // One values.batchUpdate request replaces one update call per cell.
+        // 981 rows x 8 AI columns stays a single request instead of thousands.
+        // 981 rows x 8 AI columns stays a single request instead of thousands.
+        // USER_ENTERED is mandatory: RAW would store "=AI(...)" as plain text
+        // instead of a live formula. This flow only ever writes formula strings.
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            valueInputOption: "USER_ENTERED",
+            data: updates.map((update) => ({ range: update.rangeA1, values: update.values })),
+          },
+        });
       } catch (error) { throw classifyGoogleApiError(error); }
     },
 
@@ -160,4 +186,3 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
   };
   return api;
 }
-
