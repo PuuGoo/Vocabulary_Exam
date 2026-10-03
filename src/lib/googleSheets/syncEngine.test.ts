@@ -43,6 +43,16 @@ test("fingerprint ignores whitespace differences but tracks content changes", ()
   assert.notEqual(a, c);
 });
 
+test("fingerprint tracks the reported scenario: example old -> test, and ignores STT/row number", () => {
+  const base = { term: "mitigate", meaning: "giảm nhẹ", ipa: "/ˈmɪtɪɡeɪt/", example: "Although simple digital greetings..." };
+  const oldFingerprint = computeWordFingerprint("ielts_vocab", base);
+  const newFingerprint = computeWordFingerprint("ielts_vocab", { ...base, example: "test" });
+  assert.notEqual(oldFingerprint, newFingerprint, "the example change must produce a different fingerprint");
+  const withSttA = fingerprintFields({ ...base, stt: "1", rowNumber: "2" }, ["term", "meaning", "ipa", "example"]);
+  const withSttB = fingerprintFields({ ...base, stt: "999", rowNumber: "42" }, ["term", "meaning", "ipa", "example"]);
+  assert.equal(withSttA, withSttB, "STT and row number must never affect the fingerprint");
+});
+
 test("source IDs are stable, prefixed and unique", () => {
   const id = generateSourceId();
   assert.ok(isValidSourceId(id));
