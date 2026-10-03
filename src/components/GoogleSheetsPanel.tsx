@@ -228,6 +228,17 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
     } catch { toast("Không thể kết nối."); } finally { setBusy(null); }
   }
 
+  async function applyAiPrompts(value: Record<string, string>) {
+    if (!connection) return;
+    setBusy("aiPrompts");
+    try {
+      const response = await fetch(`/api/admin/google-sheets/connections/${connection.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ aiPrompts: value }) });
+      if (!response.ok) { toast("Không thể lưu prompt AI."); return; }
+      await load();
+      toast("Đã lưu prompt AI. Hành động này áp dụng cho các dòng mới.");
+    } catch { toast("Không thể kết nối."); } finally { setBusy(null); }
+  }
+
   async function disconnectSheet() {
     if (!connection) return;
     setBusy("disconnect");
@@ -367,6 +378,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
           onSync={() => void syncNow("settings")}
           onDeleteBehavior={(value) => void applyDeleteBehavior(value)}
           onAiEnrich={(value) => void applyAiEnrich(value)}
+          onAiPrompts={(value) => void applyAiPrompts(value)}
         />
       )}
 

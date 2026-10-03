@@ -4,6 +4,7 @@ import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthori
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels, vocabSets, words } from "@/db/schema";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { parseAiPromptOverrides } from "@/lib/googleSheets/aiFormula";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,9 @@ export async function GET(req: Request) {
     const channel = channelByConnection.get(connection.id);
     return {
       ...connection,
+      // The UI edits prompts as text fields, so hand over the parsed object
+      // instead of the raw JSON column.
+      aiPrompts: parseAiPromptOverrides(connection.aiPrompts),
       setName: set?.name ?? null,
       setType: set?.type ?? null,
       languageCode: set?.languageCode ?? null,

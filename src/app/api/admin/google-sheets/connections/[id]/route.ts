@@ -6,6 +6,7 @@ import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels, vocabSets } from "@/db/schema";
 import { writeAdminAudit } from "@/lib/adminAudit";
+import { normalizeAiPrompt } from "@/lib/googleSheets/aiFormula";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ const patchSchema = z.object({
   // Whether Lexora planted (or should plant) the native Sheets AI formulas.
   // Purely a template switch: no AI API is ever called by Lexora.
   aiEnrich: z.boolean().optional(),
+  // Admin-authored instruction text per AI column, stored as JSON. Google
+  // Sheets still executes the formula; this only changes its wording.
+  aiPrompts: z.record(z.string(), z.string()).optional(),
   status: z.enum(["connected", "paused", "error", "disconnected"]).optional(),
 });
 
@@ -47,6 +51,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (parsed.data.enabled !== undefined) patch.enabled = parsed.data.enabled;
   if (parsed.data.deleteBehavior !== undefined) patch.deleteBehavior = parsed.data.deleteBehavior;
   if (parsed.data.aiEnrich !== undefined) patch.aiEnrich = parsed.data.aiEnrich;
+  if (parsed.data.aiPrompts !== undefined) {
+    // Normalize and drop unusable values server-side; the UI shows only what
+    // was actually accepted so the stored JSON always parses back cleanly.
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed.data.aiPrompts)) {
+      const prompt = normalizeAiPrompt(value);
+      if (prompt) normalized[key] = prompt;
+    }
+    patch.aiPrompts = Object.keys(normalized).length ? JSON.stringify(normalized) : null;
+  }
   if (parsed.data.status !== undefined) { patch.status = parsed.data.status; patch.enabled = parsed.data.status === "paused" ? false : parsed.data.status === "disconnected" ? false : true; }
   await db.update(googleSheetConnections).set(patch).where(eq(googleSheetConnections.id, connectionId));
   const [updated] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);

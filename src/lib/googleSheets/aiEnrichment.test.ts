@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, STT_FIELD_KEY } from "@/lib/googleSheets/template";
-import { aiColumnsForTemplate, AI_PROMPTS, buildAiColumnFormulas, buildAiFormula, aiColumnLetters, isAiEligibleField, AI_FORMULA_BUFFER_ROWS } from "@/lib/googleSheets/aiFormula";
+import { aiColumnsForTemplate, AI_PROMPTS, buildAiColumnFormulas, buildAiFormula, aiColumnLetters, isAiEligibleField, AI_FORMULA_BUFFER_ROWS, normalizeAiPrompt, parseAiPromptOverrides, resolveAiPrompt } from "@/lib/googleSheets/aiFormula";
 import { isRawAiFormula, parseSheetGrid, readGeneratedValue } from "@/lib/googleSheets/parser";
 
 const ielts = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
@@ -182,4 +182,23 @@ test("14. an empty Sheet still gets an AI formula buffer so the admin can see it
   assert.match(formulas[0], /^=AI\(/, "row 2 must carry a native Google Sheets AI instruction");
   assert.match(formulas[999], /^=AI\(/, "the last buffer row must too");
   assert.ok(!formulas.some((formula) => formula.includes("A2")), "the buffer must never target STT (column A)");
+});
+
+test("15. an admin custom prompt is embedded in the Sheet formula", () => {
+  const formulas = buildAiColumnFormulas(ielts, "AI", aiColumnsForTemplate("ielts_vocab")[0], 3, 6, { meaning: "Dịch sang tiếng Việt ngắn gọn." });
+  assert.ok(formulas[0].includes('Dịch sang tiếng Việt ngắn gọn.'), "the custom text must appear verbatim");
+  assert.ok(!formulas[0].includes("concise Vietnamese meaning"), "the default prompt must not win");
+  // A prompt that cannot be embedded is rejected server-side.
+  assert.equal(normalizeAiPrompt("bad;prompt"), null, "semicolon would break =AI(\"prompt\";C6)");
+  assert.equal(normalizeAiPrompt("  ok  "), "ok");
+  assert.equal(resolveAiPrompt("meaning", null), AI_PROMPTS.meaning, "null uses the built-in default");
+});
+
+test("16. stored prompt JSON parses safely and drops bad entries", () => {
+  const parsed = parseAiPromptOverrides(JSON.stringify({ meaning: "New meaning prompt", ipa: 42, unknown: "x" }));
+  assert.equal(parsed?.meaning, "New meaning prompt", "valid custom prompt is kept");
+  assert.equal(parsed?.ipa, undefined, "non-string is dropped");
+  assert.equal(parsed && "unknown" in parsed, false, "unknown keys are dropped");
+  assert.equal(parseAiPromptOverrides("{not json"), null, "corrupt JSON falls back to defaults");
+  assert.equal(parseAiPromptOverrides(null), null, "null means defaults");
 });

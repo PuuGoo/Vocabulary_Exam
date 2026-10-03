@@ -10,6 +10,7 @@ import { GoogleSheetsError } from "@/lib/googleSheets/errors";
 import { isGoogleOAuthConfigured } from "@/lib/googleSheets/auth";
 import { createSheetErrorOutcome, createSheetJson } from "@/lib/googleSheets/createFlow";
 import { connectionView, connectionViewMessage, loadConnectionForSet, recoverGoogleSheetConnection } from "@/lib/googleSheets/recovery";
+import { normalizeAiPrompt, type AiPromptOverrides } from "@/lib/googleSheets/aiFormula";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,14 @@ export const maxDuration = 60;
 
 // aiEnrich only controls whether Lexora plants the native Google Sheets AI
 // formulas in the new Sheet. Lexora never calls any AI API for this feature.
-const bodySchema = z.object({ setId: z.number().int().positive(), deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional(), aiEnrich: z.boolean().optional() });
+const bodySchema = z.object({
+  setId: z.number().int().positive(),
+  deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional(),
+  aiEnrich: z.boolean().optional(),
+  // Optional admin-authored instruction text per AI column. Normalized before
+  // it is handed to the sheet builder; invalid entries fall back to defaults.
+  aiPrompts: z.record(z.string(), z.string()).optional(),
+});
 
 export async function POST(req: NextRequest) {
   const access = await requireAdminPermission("google_sheets.manage");
@@ -83,7 +91,12 @@ export async function POST(req: NextRequest) {
 
   if (!isGoogleOAuthConfigured()) return createSheetJson({ status: 501, body: { error: "Google OAuth chưa được cấu hình trên máy chủ.", code: "NOT_CONFIGURED", retryable: false, setId } });
   try {
-    const result = await createGoogleSheetForSet(setId, { userId: access.userId, displayName: access.displayName }, undefined, { aiEnrich: parsed.data.aiEnrich });
+    const aiPrompts: AiPromptOverrides = {};
+    for (const [key, value] of Object.entries(parsed.data.aiPrompts ?? {})) {
+      const prompt = normalizeAiPrompt(value);
+      if (prompt) aiPrompts[key as keyof AiPromptOverrides] = prompt;
+    }
+    const result = await createGoogleSheetForSet(setId, { userId: access.userId, displayName: access.displayName }, undefined, { aiEnrich: parsed.data.aiEnrich, aiPrompts });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof GoogleSheetsError) {

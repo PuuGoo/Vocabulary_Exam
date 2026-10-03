@@ -1014,6 +1014,10 @@ export const googleSheetConnections = pgTable(
     // Lexora plants native Google Sheets =AI()/=Gemini() formulas in the Sheet.
     // This flag only controls that template choice; Lexora never calls an AI API.
     aiEnrich: boolean("ai_enrich").notNull().default(true),
+    // Admin-editable instruction text for each AI column, stored as JSON so the
+    // prompts travel with the connection. Google Sheets still runs the =AI()
+    // formula; Lexora only writes the wording the admin chose.
+    aiPrompts: text("ai_prompts"),
     enabled: boolean("enabled").notNull().default(true),
     status: varchar("status", { length: 16 }).notNull().default("connected"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),

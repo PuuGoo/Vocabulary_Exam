@@ -5,7 +5,7 @@ import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
 import { buildSttFormulaForRow, getGoogleSheetTemplate, SOURCE_ID_HEADER, sttColumnIndex, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
-import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, AI_HELP_SHEET_TITLE, buildAiHelpRows, AI_FORMULA_BUFFER_ROWS } from "@/lib/googleSheets/aiFormula";
+import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, AI_HELP_SHEET_TITLE, buildAiHelpRows, AI_FORMULA_BUFFER_ROWS, parseAiPromptOverrides, type AiPromptOverrides } from "@/lib/googleSheets/aiFormula";
 import { buildRangeA1, valuesForExport, columnLetter } from "@/lib/googleSheets/spreadsheet";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
@@ -66,7 +66,7 @@ async function releaseCreateLock(setId: number): Promise<void> {
   await db.delete(googleSheetCreateLocks).where(and(eq(googleSheetCreateLocks.setId, setId), eq(googleSheetCreateLocks.lockedBy, `create:${setId}`)));
 }
 
-export type CreateSheetOptions = { userId?: number; displayName?: string; aiEnrich?: boolean };
+export type CreateSheetOptions = { userId?: number; displayName?: string; aiEnrich?: boolean; aiPrompts?: AiPromptOverrides | null };
 
 export type CreateSheetResult = {
   connectionId: number;
@@ -114,6 +114,8 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
   // The admin-controlled switch decides whether Lexora plants the native Sheets AI formulas.
   // Lexora itself never calls any AI API; Google Sheets owns generation.
   const aiEnrich = options?.aiEnrich !== false;
+  // Admin-authored instruction text for the =AI() formulas planted below.
+  const aiPrompts = options?.aiPrompts ?? null;
   try {
     const api = apiOverride ?? await apiForUser(actor.userId);
     created = await api.createSpreadsheet({ title: `${set.name} – Google Sheet`, sheetTitle: template.sheetTitle });
@@ -141,7 +143,7 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     // required), and the existing webhook + sync path persists them.
     if (aiEnrich) {
       try {
-        await writeAiColumnFormulas(api, created.spreadsheetId, template, Math.max(exportRows.length, AI_FORMULA_BUFFER_ROWS));
+        await writeAiColumnFormulas(api, created.spreadsheetId, template, Math.max(exportRows.length, AI_FORMULA_BUFFER_ROWS), aiPrompts);
       } catch (error) {
         console.warn("[google-sheets] AI formula columns skipped:", error instanceof Error ? error.message : "unknown");
       }
@@ -250,14 +252,14 @@ async function writeSttFormula(api: GoogleWorkspaceApi, spreadsheetId: string, t
  * row's source cell (e.g. =AI("prompt";C2)), so Sheets fills row N from the
  * Word in row N. Materialized text, not the formula, is what sync persists.
  */
-async function writeAiColumnFormulas(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number): Promise<void> {
+async function writeAiColumnFormulas(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number, promptOverrides?: AiPromptOverrides | null): Promise<void> {
   if (rowCount < 1) return;
   const letters = aiColumnLetters(template, template.templateType);
   if (!letters.size) return;
   for (const plan of aiColumnsForTemplate(template.templateType)) {
     const letter = letters.get(plan.key);
     if (!letter) continue;
-    const formulas = buildAiColumnFormulas(template, "AI", plan, rowCount);
+    const formulas = buildAiColumnFormulas(template, "AI", plan, rowCount, 2, promptOverrides);
     if (!formulas.length) continue;
     const values: (string | number)[][] = formulas.map((formula) => [formula]);
     const range = `'${template.sheetTitle.replace(/'/g, "''")}'!${letter}2:${letter}${rowCount + 1}`;

@@ -2,9 +2,17 @@
 import { useState } from "react";
 import Modal from "@/components/Modal";
 import { Connection, danger, formatDate, secondary, templateLabel } from "./types";
+import { AI_PROMPTS, aiColumnsForTemplate, type AiPromptKey } from "@/lib/googleSheets/aiFormula";
 
-export default function GoogleSheetsSettings({ connection, canManage, canSync, busy, channel, onClose, onPause, onDisconnect, onSync, onDeleteBehavior, onAiEnrich }: { connection: Connection; canManage: boolean; canSync: boolean; busy: string | null; channel: Record<string, unknown> | null; onClose: () => void; onPause: () => void; onDisconnect: () => void; onSync: () => void; onDeleteBehavior: (value: string) => void; onAiEnrich: (value: boolean) => void }) {
+export default function GoogleSheetsSettings({ connection, canManage, canSync, busy, channel, onClose, onPause, onDisconnect, onSync, onDeleteBehavior, onAiEnrich, onAiPrompts }: { connection: Connection; canManage: boolean; canSync: boolean; busy: string | null; channel: Record<string, unknown> | null; onClose: () => void; onPause: () => void; onDisconnect: () => void; onSync: () => void; onDeleteBehavior: (value: string) => void; onAiEnrich: (value: boolean) => void; onAiPrompts: (value: Record<string, string>) => void }) {
   const [advanced, setAdvanced] = useState(false);
+  const [promptDraft, setPromptDraft] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    for (const plan of aiColumnsForTemplate(connection.templateType)) {
+      initial[plan.key] = connection.aiPrompts?.[plan.key] ?? AI_PROMPTS[plan.prompt];
+    }
+    return initial;
+  });
   const broken = connection.status === "error" || connection.status === "disconnected";
   const autoOn = connection.enabled && !broken;
   return (
@@ -45,6 +53,57 @@ export default function GoogleSheetsSettings({ connection, canManage, canSync, b
             </button>
           ) : null}
         </div>
+        {connection.aiEnrich !== false && (
+          <div className="rounded-xl border border-line p-4">
+            <p className="font-semibold">Prompt cho cột AI</p>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              Đây là câu lệnh Lexora ghi vào Sheet dưới dạng <code>=AI(&quot;câu lệnh&quot;;C6)</code>.
+              Google Sheets vẫn chạy AI, Lexora chỉ đồng bộ kết quả. Sửa xong bấm &ldquo;Áp dụng cho Sheet&rdquo;.
+            </p>
+            <div className="mt-3 space-y-3">
+              {aiColumnsForTemplate(connection.templateType).map((plan) => {
+                const inputId = `gs-ai-prompt-${plan.key}`;
+                const defaultPrompt = AI_PROMPTS[plan.prompt as AiPromptKey];
+                const value = promptDraft[plan.key] ?? defaultPrompt;
+                const isCustom = (connection.aiPrompts?.[plan.key] ?? "") !== "" && connection.aiPrompts?.[plan.key] !== defaultPrompt;
+                return (
+                  <div key={plan.key}>
+                    <label htmlFor={inputId} className="mb-1 block text-xs font-semibold">
+                      {plan.key}
+                    </label>
+                    <textarea
+                      id={inputId}
+                      rows={3}
+                      className="w-full rounded-xl border border-line p-2 font-mono text-xs"
+                      value={value}
+                      disabled={!canManage || !!busy}
+                      onChange={(event) => setPromptDraft((prev) => ({ ...prev, [plan.key]: event.target.value }))}
+                    />
+                    <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                      {isCustom ? <span className="text-[11px] text-amber-700">Đã tùy chỉnh</span> : <span className="text-[11px] text-muted">Mặc định</span>}
+                      <button
+                        type="button"
+                        className="text-[11px] underline"
+                        disabled={!canManage || !!busy || value === defaultPrompt}
+                        onClick={() => setPromptDraft((prev) => ({ ...prev, [plan.key]: defaultPrompt }))}
+                      >
+                        Khôi phục mặc định
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              className={`${secondary} mt-4 w-full`}
+              disabled={!canManage || !!busy}
+              onClick={() => onAiPrompts(promptDraft)}
+            >
+              {busy === "aiPrompts" ? "Đang áp dụng…" : "Áp dụng cho Sheet"}
+            </button>
+          </div>
+        )}
         <div>
           <label htmlFor="gs-delete-behavior" className="mb-2 block font-semibold">
             Khi xóa dòng trong Google Sheet

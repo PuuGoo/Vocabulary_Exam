@@ -4,6 +4,8 @@ export type Connection = {
   enabled: boolean; status: string; lastSyncedAt: string | null; lastSuccessfulSyncAt: string | null;
   /** Lexora prepared the native Google Sheets AI formula columns (default true). */
   aiEnrich?: boolean;
+  /** Admin-authored instruction text per AI column; null/absent = built-in default. */
+  aiPrompts?: Record<string, string> | null;
   lastError: string | null; wordCount: number; columnCount: number; channelExpiresAt: string | null;
 };
 export type SyncRun = {

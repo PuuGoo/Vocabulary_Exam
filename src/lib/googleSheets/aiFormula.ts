@@ -16,6 +16,63 @@ import type { GoogleSheetTemplate, GoogleSheetTemplateField } from "@/lib/google
 export type AiFunctionName = "AI" | "Gemini";
 export type AiPromptKey = "meaning" | "ipa" | "partOfSpeech" | "example" | "examplePronunciation" | "exampleMeaning" | "cefr" | "ieltsBand" | "pinyin" | "classifier" | "hsk";
 
+/**
+ * Admin-editable prompts, keyed by prompt field.
+ *
+ * These override the built-in defaults below and end up verbatim inside the
+ * Sheet's =AI("...";C2) formula. Google Sheets still owns generation: Lexora
+ * only writes the instruction text the admin chose.
+ */
+export type AiPromptOverrides = Partial<Record<AiPromptKey, string>>;
+
+/**
+ * Normalize a custom prompt, or null when it cannot be embedded safely.
+ *
+ * buildAiFormula escapes double quotes already, but a newline or a semicolon
+ * would still break the single argument list of =AI("prompt";C2). Trimming and
+ * collapsing whitespace keeps the stored value a valid, readable instruction
+ * instead of failing silently inside the Sheet.
+ */
+export function normalizeAiPrompt(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const collapsed = value.replace(/\s+/g, " ").trim();
+  if (!collapsed) return null;
+  // The formula is =AI("<prompt>";<cell>); a semicolon would end the argument.
+  if (collapsed.includes(";")) return null;
+  return collapsed;
+}
+
+/** Prompt text for a field: the admin's override when present, else the default. */
+export function resolveAiPrompt(key: AiPromptKey, overrides?: AiPromptOverrides | null): string {
+  const custom = normalizeAiPrompt(overrides?.[key]);
+  return custom ?? AI_PROMPTS[key];
+}
+
+const AI_PROMPT_KEYS = [
+  "meaning", "ipa", "partOfSpeech", "example", "examplePronunciation", "exampleMeaning",
+  "cefr", "ieltsBand", "pinyin", "classifier", "hsk",
+] as const satisfies readonly AiPromptKey[];
+
+/**
+ * Parse the stored prompt overrides JSON into a safe partial map.
+ *
+ * Unknown keys and unusable values are dropped rather than rejected: a stale
+ * row written by an older template must never make sync crash. An empty result
+ * means "use the built-in defaults everywhere".
+ */
+export function parseAiPromptOverrides(raw: string | null | undefined): AiPromptOverrides | null {
+  if (!raw) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw); } catch { return null; }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const result: AiPromptOverrides = {};
+  for (const key of AI_PROMPT_KEYS) {
+    const value = normalizeAiPrompt((parsed as Record<string, unknown>)[key]);
+    if (value) result[key] = value;
+  }
+  return Object.keys(result).length ? result : null;
+}
+
 /** Exact prompts, one per generated field. */
 export const AI_PROMPTS: Record<AiPromptKey, string> = {
   meaning: "Provide the concise Vietnamese meaning for the exact English word. Return only the concise Vietnamese meaning.",
@@ -107,7 +164,7 @@ export function buildAiFormula(functionName: AiFunctionName, prompt: string, inp
  * only ever lists vocabulary fields, and `templateForAi` re-validates the key
  * against the template's non-display-only fields before building anything.
  */
-export function buildAiColumnFormulas(template: GoogleSheetTemplate, functionName: AiFunctionName, plan: AiColumnPlan, rowCount: number, startRow: number = 2): string[] {
+export function buildAiColumnFormulas(template: GoogleSheetTemplate, functionName: AiFunctionName, plan: AiColumnPlan, rowCount: number, startRow: number = 2, promptOverrides?: AiPromptOverrides | null): string[] {
   const targetIndex = columnIndexOf(template, plan.key);
   const sourceIndex = columnIndexOf(template, plan.sourceKey);
   const formulas: string[] = [];
@@ -116,8 +173,9 @@ export function buildAiColumnFormulas(template: GoogleSheetTemplate, functionNam
   const target = template.fields[targetIndex];
   if (target.displayOnly || target.key === "__lexora_id") return formulas;
   const sourceLetter = columnLetterForIndex(sourceIndex);
+  const prompt = resolveAiPrompt(plan.prompt, promptOverrides);
   for (let row = startRow; row < startRow + rowCount; row += 1) {
-    formulas.push(buildAiFormula(functionName, AI_PROMPTS[plan.prompt], `${sourceLetter}${row}`));
+    formulas.push(buildAiFormula(functionName, prompt, `${sourceLetter}${row}`));
   }
   return formulas;
 }

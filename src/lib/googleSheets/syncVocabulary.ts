@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import { gridFromValuesRange, parseSheetGrid, type SheetGrid } from "@/lib/googleSheets/parser";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER } from "@/lib/googleSheets/template";
-import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters } from "@/lib/googleSheets/aiFormula";
+import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, parseAiPromptOverrides } from "@/lib/googleSheets/aiFormula";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
 import { draftToWordInsert, parseVocabularyRows, type ParsedWordDraft } from "@/lib/vocabImport/parse";
@@ -18,6 +18,8 @@ export type SyncConnection = {
   deleteBehavior: string;
   status: string;
   enabled: boolean;
+  /** Raw JSON from the DB column; parsed once into prompt overrides below. */
+  aiPrompts?: string | null;
 };
 
 export type SyncStats = {
@@ -74,6 +76,9 @@ export async function runVocabularySync(
   const [set] = await tx.select().from(vocabSets).where(eq(vocabSets.id, connection.setId)).limit(1);
   if (!set) throw new Error("Vocabulary set not found");
   const template = getGoogleSheetTemplate(set);
+  // Admin-authored instruction text for the =AI() formulas planted below.
+  // Falls back to the built-in defaults when the column is NULL.
+  const aiPromptOverrides = parseAiPromptOverrides(connection.aiPrompts);
   const parsedRows = parseSheetGrid(grid, template);
   const [existingWords, mappings] = await Promise.all([
     tx.select().from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id)),
@@ -119,7 +124,7 @@ export async function runVocabularySync(
       const letter = lettersByPlan.get(plan.key);
       if (!letter) continue;
       if ((sourceValues[plan.key] ?? "").trim() !== "") continue;
-      const [formula] = buildAiColumnFormulas(template, "AI", plan, 1, rowNumber);
+      const [formula] = buildAiColumnFormulas(template, "AI", plan, 1, rowNumber, aiPromptOverrides);
       if (!formula) continue;
       const cells = aiFormulasByRow.get(rowNumber) ?? [];
       cells.push({ letter, formula });
