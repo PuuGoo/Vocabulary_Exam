@@ -143,7 +143,12 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     // required), and the existing webhook + sync path persists them.
     if (aiEnrich) {
       try {
-        await writeAiColumnFormulas(api, created.spreadsheetId, template, Math.max(exportRows.length, AI_FORMULA_BUFFER_ROWS), aiPrompts);
+        // Only plant into rows BEYOND the exported vocabulary. Overwriting the
+        // exported cells would replace every existing meaning/example with a
+        // raw =AI() instruction and destroy the set that was just written.
+        const exportedRowCount = values.length - 1;
+        const bufferRows = Math.max(AI_FORMULA_BUFFER_ROWS - exportedRowCount, 0);
+        await writeAiColumnFormulas(api, created.spreadsheetId, template, bufferRows, aiPrompts, exportedRowCount + 2);
       } catch (error) {
         console.warn("[google-sheets] AI formula columns skipped:", error instanceof Error ? error.message : "unknown");
       }
@@ -252,17 +257,18 @@ async function writeSttFormula(api: GoogleWorkspaceApi, spreadsheetId: string, t
  * row's source cell (e.g. =AI("prompt";C2)), so Sheets fills row N from the
  * Word in row N. Materialized text, not the formula, is what sync persists.
  */
-async function writeAiColumnFormulas(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number, promptOverrides?: AiPromptOverrides | null): Promise<void> {
+async function writeAiColumnFormulas(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number, promptOverrides?: AiPromptOverrides | null, startRow: number = 2): Promise<void> {
   if (rowCount < 1) return;
   const letters = aiColumnLetters(template, template.templateType);
   if (!letters.size) return;
   for (const plan of aiColumnsForTemplate(template.templateType)) {
     const letter = letters.get(plan.key);
     if (!letter) continue;
-    const formulas = buildAiColumnFormulas(template, "AI", plan, rowCount, 2, promptOverrides);
+    const formulas = buildAiColumnFormulas(template, "AI", plan, rowCount, startRow, promptOverrides);
     if (!formulas.length) continue;
     const values: (string | number)[][] = formulas.map((formula) => [formula]);
-    const range = `'${template.sheetTitle.replace(/'/g, "''")}'!${letter}2:${letter}${rowCount + 1}`;
+    const endRow = startRow + rowCount - 1;
+    const range = `'${template.sheetTitle.replace(/'/g, "''")}'!${letter}${startRow}:${letter}${endRow}`;
     // parseFormulas: the cell must be stored as a real Sheets formula so Google
     // Sheets (not Lexora) executes it and later materializes the generated text.
     await api.writeValues(spreadsheetId, range, values as never, { parseFormulas: true });
@@ -324,10 +330,14 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
         conflicts: result.stats.conflicts.length, trigger,
         ...(result.stats.invalidRows.length ? { invalidRows: result.stats.invalidRows.slice(0, 25) } : {}),
         ...(result.stats.conflicts.length ? { conflictRows: result.stats.conflicts.slice(0, 25) } : {}),
+        // The admin UI needs the exact word ids that changed so it can refresh
+        // only the visible vocabulary rows after a webhook/manual sync.
+        ...(result.stats.changedWordIds.length ? { changedWordIds: result.stats.changedWordIds } : {}),
       },
     });
     await markConnectionSyncState(connectionId, { ok: true });
     await clearSyncPending(connectionId);
+    console.log(`[google-sheet-sync] connectionId=${connectionId} trigger=${trigger} rowsCreated=${result.stats.rowsCreated} rowsUpdated=${result.stats.rowsUpdated} rowsDeleted=${result.stats.rowsDeleted} changedWordIds=[${result.stats.changedWordIds.join(",")}] webhookReceived=${trigger === "webhook"}`);
     if (trigger !== "initial") await writeAdminAudit({ actorUserId: options?.actorUserId ?? connection.createdBy ?? 1, action: "google_sheet.sync", resourceType: "google_sheet_connection", resourceId: connectionId, metadata: { trigger, created: result.stats.rowsCreated, updated: result.stats.rowsUpdated, unchanged: result.stats.rowsUnchanged, deleted: result.stats.rowsDeleted, conflicts: result.stats.conflicts.length } });
     return { stats: result.stats, connectionId };
   } catch (error) {

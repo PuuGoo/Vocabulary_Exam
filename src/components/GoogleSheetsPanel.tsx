@@ -15,11 +15,12 @@ import GoogleSheetsSettings from "./google-sheets/GoogleSheetsSettings";
 import GoogleSheetsSyncHistory from "./google-sheets/GoogleSheetsSyncHistory";
 import GoogleSheetsSyncRunDetails from "./google-sheets/GoogleSheetsSyncRunDetails";
 import { toast } from "@/components/Toast";
+import { emitGoogleSheetSynced, hasVocabularyChanges } from "@/lib/googleSheets/syncEvent";
 
 type CreateResume = { autoCreate: boolean; failed: boolean; onHandled: () => void };
 type Dialog = "create" | "connect" | "pause" | "disconnect" | "recover" | "settings" | "history" | "changes" | "success" | null;
 
-export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, createResume }: { setId: number; canManage: boolean; canSync: boolean; isAdmin: boolean; createResume?: CreateResume | null }) {
+export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, createResume, onVocabularyChanged }: { setId: number; canManage: boolean; canSync: boolean; isAdmin: boolean; createResume?: CreateResume | null; onVocabularyChanged?: (wordIds: number[]) => void }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -46,6 +47,24 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
   const broken = !!connection && (connection.status === "error" || connection.status === "disconnected");
   const latestRun = runs.find((run) => run.status === "success") ?? runs[0] ?? null;
 
+  /**
+   * Notify the parent vocabulary page after a sync changed rows.
+   *
+   * This is deliberately not inside the polling effect: the parent must only
+   * reload when a NEW run finishes, never on every 30s status tick.
+   */
+  const notifyVocabularyChanged = useCallback((stats: { changedWordIds?: number[]; rowsCreated?: number; rowsUpdated?: number; rowsDeleted?: number; finishedAt?: string | null }) => {
+    const changedWordIds = Array.isArray(stats.changedWordIds) ? stats.changedWordIds.filter((id) => Number.isInteger(id)) : [];
+    const rowsCreated = Number(stats.rowsCreated ?? 0) || 0;
+    const rowsDeleted = Number(stats.rowsDeleted ?? 0) || 0;
+    const rowsUpdated = Number(stats.rowsUpdated ?? 0) || 0;
+    if (!hasVocabularyChanges({ changedWordIds, rowsCreated, rowsDeleted })) return;
+    // Direct parent callback is the primary path (spec item 8/11).
+    onVocabularyChanged?.(changedWordIds);
+    // Event covers the webhook path where the panel may not have re-rendered.
+    emitGoogleSheetSynced({ setId, connectionId: connection?.id ?? 0, changedWordIds, rowsCreated, rowsUpdated, rowsDeleted, finishedAt: stats.finishedAt ?? null });
+  }, [connection, onVocabularyChanged, setId]);
+
   const load = useCallback(async () => {
     try {
       const response = await fetch(`/api/admin/google-sheets/connections?setId=${setId}`);
@@ -70,7 +89,17 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
     try {
       const response = await fetch(`/api/admin/google-sheets/connections/${id}/runs`);
       const data = await response.json().catch(() => ({}));
-      setRuns(data.runs || []);
+      const rawRuns = Array.isArray(data.runs) ? data.runs : [];
+      // The backend stores the exact changed word ids in run metadata; surface
+      // them so a finished run can refresh the visible vocabulary rows.
+      setRuns(rawRuns.map((run: SyncRun) => {
+        let metadata: Record<string, unknown> = {};
+        try { metadata = run.metadata ? JSON.parse(run.metadata) : {}; } catch { metadata = {}; }
+        const changedWordIds = Array.isArray(metadata.changedWordIds)
+          ? metadata.changedWordIds.filter((id: unknown) => Number.isInteger(id))
+          : [];
+        return { ...run, changedWordIds };
+      }));
     } catch { toast("Không thể tải lịch sử đồng bộ."); } finally { setBusy(null); }
   }, []);
 
@@ -188,6 +217,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       setInvalid(invalidRows);
       const summary = `Đồng bộ xong: +${stats.rowsCreated || 0} tạo mới, ~${stats.rowsUpdated || 0} cập nhật, =${stats.rowsUnchanged || 0} giữ nguyên.`;
       toast(invalidRows.length ? `${summary} Bỏ qua ${invalidRows.length} dòng: ${invalidRows.slice(0, 2).map((row) => `dòng ${row.rowNumber} ${row.message}`).join("; ")}${invalidRows.length > 2 ? "…" : ""}` : summary);
+      notifyVocabularyChanged({ ...stats, finishedAt: new Date().toISOString() });
       await load();
       await loadRuns(connection.id);
     } catch { toast("Không thể kết nối để đồng bộ."); } finally { setBusy(null); }
@@ -301,11 +331,14 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
     if (seenRunRef.current === newest) return;
     seenRunRef.current = newest;
     setFeedback("↻ Đang cập nhật từ Google Sheets…");
+    // A NEW run finished (webhook/manual). If it changed vocabulary, ask the
+    // parent to reload the visible list now - no browser refresh, no Sync Now.
+    if (latestRun?.status === "success") notifyVocabularyChanged(latestRun);
     const timer = window.setTimeout(() => {
       setFeedback(`✓ Đã đồng bộ lúc ${formatClock(newest)}`);
     }, 900);
     return () => window.clearTimeout(timer);
-  }, [connection, broken, latestRun]);
+  }, [connection, broken, latestRun, notifyVocabularyChanged]);
 
   // Runs complete on the server; a light poll keeps the card truthful without
   // the admin ever pressing "Sync now".

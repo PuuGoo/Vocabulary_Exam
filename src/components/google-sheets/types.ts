@@ -12,6 +12,8 @@ export type SyncRun = {
   id: number; triggerType: string; startedAt: string; finishedAt: string | null; status: string;
   rowsCreated: number; rowsUpdated: number; rowsUnchanged: number; rowsDeleted: number;
   rowsSkipped?: number | null; validationErrorCount?: number | null; errorMessage: string | null; metadata?: string;
+  /** Word ids this run changed (from metadata); used to refresh the parent list. */
+  changedWordIds?: number[];
 };
 
 export type StatusView = "connected" | "syncing" | "paused" | "error" | "disconnected";

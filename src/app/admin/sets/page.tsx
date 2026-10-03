@@ -22,6 +22,7 @@ import { getChineseSettings } from "@/lib/languageSettings";
 import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 import WordDepthEditor from "@/components/WordDepthEditor";
 import GoogleSheetsPanel from "@/components/GoogleSheetsPanel";
+import { GOOGLE_SHEET_SYNCED_EVENT } from "@/lib/googleSheets/syncEvent";
 
 type SetSummary = { id: number; name: string; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -1039,6 +1040,46 @@ export default function AdminSetsPage() {
     }
   }
 
+  /**
+   * Re-read the open set's vocabulary after Google Sheets changed it.
+   *
+   * Unlike openDetail this keeps the current tab, search box, selection and
+   * unsaved form state, so an automatic sync never yanks the admin out of what
+   * they were doing. Only the server-owned data (words + set counters) is
+   * replaced, which is what makes a Sheet edit show up without a browser
+   * refresh or a route navigation.
+   */
+  const refreshDetailWords = useCallback(async (setId: number) => {
+    try {
+      const res = await fetch(`/api/sets/${setId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setDetail((current) => (current && current.id === setId ? { ...current, ...data.set } : current));
+    } catch {
+      // A failed refresh must never interrupt the admin; the next sync retries.
+    }
+  }, []);
+
+  // Google Sheets can finish a webhook sync while this page is open, with the
+  // panel unmounted or in another tab. Listening for the sync event means the
+  // visible vocabulary always converges, with no manual reload.
+  const openDetailIdRef = useRef<number | null>(detail?.id ?? null);
+  useEffect(() => {
+    openDetailIdRef.current = detail?.id ?? null;
+  }, [detail?.id]);
+
+  useEffect(() => {
+    function onSynced(event: Event) {
+      const payload = (event as CustomEvent<{ setId?: number }>).detail;
+      const setId = Number(payload?.setId ?? 0);
+      if (!Number.isInteger(setId) || setId < 1) return;
+      if (openDetailIdRef.current === setId) void refreshDetailWords(setId);
+      void loadSets();
+    }
+    window.addEventListener(GOOGLE_SHEET_SYNCED_EVENT, onSynced);
+    return () => window.removeEventListener(GOOGLE_SHEET_SYNCED_EVENT, onSynced);
+  }, [refreshDetailWords]);
+
   async function changePublication(setId: number, publicationStatus: "draft" | "published") {
     setSavingClass(true);
     try {
@@ -1948,7 +1989,7 @@ export default function AdminSetsPage() {
           </section>}
 
           {detailTab === "settings" && <>
-          <GoogleSheetsPanel setId={detail.id} createResume={googleSheetsResume && googleSheetsResume.setId === detail.id ? { autoCreate: googleSheetsResume.autoCreate, failed: googleSheetsResume.failed, onHandled: markGoogleSheetsResumeHandled } : null} isAdmin canManage={adminAccess.can("google_sheets.manage")} canSync={adminAccess.can("google_sheets.sync")} />
+          <GoogleSheetsPanel setId={detail.id} createResume={googleSheetsResume && googleSheetsResume.setId === detail.id ? { autoCreate: googleSheetsResume.autoCreate, failed: googleSheetsResume.failed, onHandled: markGoogleSheetsResumeHandled } : null} isAdmin canManage={adminAccess.can("google_sheets.manage")} canSync={adminAccess.can("google_sheets.sync")} onVocabularyChanged={() => { void refreshDetailWords(detail.id); void loadSets(); }} />
           {detail.languageCode === "zh-CN" && (() => { const chinese = getChineseSettings(detail); return <div className="mb-4 grid gap-3 rounded-xl border border-[#DCD8F3] bg-[#F8F7FF] p-4 sm:grid-cols-2">
             <div className="sm:col-span-2"><b className="text-sm text-ink">中文 · Cài đặt tiếng Trung</b><p className="mt-1 text-xs text-muted">Thay đổi được lưu ngay và áp dụng cho flashcard, bài điền và chia sẻ.</p></div>
             <label><span className={cx.label}>Hệ chữ</span><select className={`${cx.input} !mb-0`} value={chinese.scriptVariant} onChange={(event) => void saveChineseSettings({ scriptVariant: event.target.value as typeof chinese.scriptVariant })}><option value="simplified">Giản thể</option><option value="traditional">Phồn thể</option><option value="both">Cả hai</option></select></label>

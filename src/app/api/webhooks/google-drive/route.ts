@@ -97,6 +97,8 @@ export async function POST(req: NextRequest) {
   // OAuth) the connection is still pending and the daily cron picks it up.
   await markSyncPending(connection.id, "webhook");
   const result = await runPendingConnection(connection.id, "webhook");
+  // Safe diagnostics only: ids/status. No token, no OAuth material, no body.
+  console.log(`[google-drive-webhook] connectionId=${connection.id} trigger=webhook resourceState=${resourceState || "unknown"} changed=${changed || "none"} messageNumber=${hasMessageNumber ? messageNumber : "none"} sync=${result.status}`);
   if (result.status === "error") console.error(`[google-drive-webhook] connection ${connection.id} sync failed: ${result.error ?? "unknown"}`);
   return NextResponse.json({
     ok: true,
