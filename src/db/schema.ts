@@ -1011,6 +1011,9 @@ export const googleSheetConnections = pgTable(
     templateVersion: integer("template_version").notNull().default(1),
     syncDirection: varchar("sync_direction", { length: 32 }).notNull().default("google_to_lexora"),
     deleteBehavior: varchar("delete_behavior", { length: 16 }).notNull().default("archive"),
+    // Lexora plants native Google Sheets =AI()/=Gemini() formulas in the Sheet.
+    // This flag only controls that template choice; Lexora never calls an AI API.
+    aiEnrich: boolean("ai_enrich").notNull().default(true),
     enabled: boolean("enabled").notNull().default(true),
     status: varchar("status", { length: 16 }).notNull().default("connected"),
     lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),

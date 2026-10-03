@@ -15,7 +15,9 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const bodySchema = z.object({ setId: z.number().int().positive(), deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional() });
+// aiEnrich only controls whether Lexora plants the native Google Sheets AI
+// formulas in the new Sheet. Lexora never calls any AI API for this feature.
+const bodySchema = z.object({ setId: z.number().int().positive(), deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional(), aiEnrich: z.boolean().optional() });
 
 export async function POST(req: NextRequest) {
   const access = await requireAdminPermission("google_sheets.manage");
@@ -81,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   if (!isGoogleOAuthConfigured()) return createSheetJson({ status: 501, body: { error: "Google OAuth chưa được cấu hình trên máy chủ.", code: "NOT_CONFIGURED", retryable: false, setId } });
   try {
-    const result = await createGoogleSheetForSet(setId, { userId: access.userId, displayName: access.displayName });
+    const result = await createGoogleSheetForSet(setId, { userId: access.userId, displayName: access.displayName }, undefined, { aiEnrich: parsed.data.aiEnrich });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof GoogleSheetsError) {

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
 import { gridFromValuesRange, parseSheetGrid, type SheetGrid } from "@/lib/googleSheets/parser";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER } from "@/lib/googleSheets/template";
+import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters } from "@/lib/googleSheets/aiFormula";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
 import { draftToWordInsert, parseVocabularyRows, type ParsedWordDraft } from "@/lib/vocabImport/parse";
@@ -35,7 +36,16 @@ export type SyncStats = {
   unarchivedWordIds: number[];
 };
 
-export type SyncEngineResult = { stats: SyncStats; writeIds: boolean };
+export type SyncEngineResult = {
+  stats: SyncStats;
+  writeIds: boolean;
+  /**
+   * Google Sheets AI formulas for rows the Sheet just added. Lexora only relays
+   * them; Google Sheets generates the values and the webhook + sync path
+   * persists them. Never an AI API call from Lexora.
+   */
+  aiFormulaWrites?: Array<{ rowNumber: number; cells: Array<{ letter: string; formula: string }> }>;
+};
 
 type GridPort = { readGrid: (connection: SyncConnection) => Promise<SheetGrid> };
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -86,6 +96,11 @@ export async function runVocabularySync(
   let duplicateCount = draftsByRow.duplicateCount;
   // Each draft carries its own source row so blank/invalid rows never shift identity.
   const draftByRowNumber = new Map(draftsByRow.rows.map((draft) => [draft.rowNumber, draft]));
+  // New rows may still carry raw AI instructions in the AI-enabled columns.
+  // Those are returned (not persisted) so the caller can plant the formulas
+  // into the Sheet for the rows Google Sheets should generate. Lexora itself
+  // never calls an AI API: Google Sheets owns the generation.
+  const aiFormulasByRow = new Map<number, Array<{ letter: string; formula: string }>>();
 
   const idWrites: Array<{ rowNumber: number; sourceId: string }> = [];
   const createdDrafts: Array<{ rowNumber: number; sourceId: string; draft: ParsedWordDraft; fingerprint: string }> = [];
@@ -114,6 +129,18 @@ export async function runVocabularySync(
       const sourceId = resolvedSourceId || generateSourceId(new Set(seenSourceIds));
       if (!resolvedSourceId) idWrites.push({ rowNumber: row.rowNumber, sourceId });
       createdDrafts.push({ rowNumber: row.rowNumber, sourceId, draft, fingerprint });
+      // Collect the AI formulas for this new row so the caller can write them
+      // back to the Sheet (one formula per AI-enabled column, one row only).
+      for (const plan of aiColumnsForTemplate(template.templateType)) {
+        const letters = aiColumnLetters(template, template.templateType);
+        const letter = letters.get(plan.key);
+        if (!letter) continue;
+        const [formula] = buildAiColumnFormulas(template, "AI", plan, 1, row.rowNumber);
+        if (!formula) continue;
+        const cells = aiFormulasByRow.get(row.rowNumber) ?? [];
+        cells.push({ letter, formula });
+        aiFormulasByRow.set(row.rowNumber, cells);
+      }
       continue;
     }
 
@@ -194,5 +221,11 @@ export async function runVocabularySync(
     changedWordIds,
     unarchivedWordIds: [...unarchivedWordIds],
   };
-  return { stats, writeIds: idWrites.length > 0 };
+  return {
+    stats,
+    writeIds: idWrites.length > 0,
+    // Row-scoped AI formulas for newly created rows, ready to be written back
+    // to the Sheet. They are pure Google Sheets instructions; no AI API call.
+    aiFormulaWrites: [...aiFormulasByRow.entries()].map(([rowNumber, cells]) => ({ rowNumber, cells })),
+  };
 }

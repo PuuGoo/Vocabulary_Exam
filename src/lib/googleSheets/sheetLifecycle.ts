@@ -5,6 +5,7 @@ import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
 import { buildSttFormulaForRow, getGoogleSheetTemplate, SOURCE_ID_HEADER, sttColumnIndex, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, AI_HELP_SHEET_TITLE, buildAiHelpRows } from "@/lib/googleSheets/aiFormula";
 import { buildRangeA1, valuesForExport, columnLetter } from "@/lib/googleSheets/spreadsheet";
 import { computeWordFingerprint } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId } from "@/lib/googleSheets/identity";
@@ -65,6 +66,8 @@ async function releaseCreateLock(setId: number): Promise<void> {
   await db.delete(googleSheetCreateLocks).where(and(eq(googleSheetCreateLocks.setId, setId), eq(googleSheetCreateLocks.lockedBy, `create:${setId}`)));
 }
 
+export type CreateSheetOptions = { userId?: number; displayName?: string; aiEnrich?: boolean };
+
 export type CreateSheetResult = {
   connectionId: number;
   spreadsheetId: string;
@@ -79,7 +82,7 @@ export type CreateSheetResult = {
  * Main workflow: create a spreadsheet, write the current vocabulary into it,
  * save the connection + row mappings and start the watch channel.
  */
-export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOverride?: GoogleWorkspaceApi): Promise<CreateSheetResult> {
+export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOverride?: GoogleWorkspaceApi, options?: CreateSheetOptions): Promise<CreateSheetResult> {
   const [set] = await db.select().from(vocabSets).where(eq(vocabSets.id, setId)).limit(1);
   if (!set) throw new GoogleSheetsError("Không tìm thấy bộ từ vựng.", "SHEET_NOT_FOUND", { retryable: false });
   // A healthy existing connection is an idempotent no-op (mapped to a 200 by the
@@ -108,6 +111,9 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
   let connectionId: number | null = null;
   let created: Awaited<ReturnType<GoogleWorkspaceApi["createSpreadsheet"]>> | null = null;
   const template = getGoogleSheetTemplate(set);
+  // The admin-controlled switch decides whether Lexora plants the native Sheets AI formulas.
+  // Lexora itself never calls any AI API; Google Sheets owns generation.
+  const aiEnrich = options?.aiEnrich !== false;
   try {
     const api = apiOverride ?? await apiForUser(actor.userId);
     created = await api.createSpreadsheet({ title: `${set.name} – Google Sheet`, sheetTitle: template.sheetTitle });
@@ -126,6 +132,29 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
       await writeSttFormula(api, created.spreadsheetId, template, values.length);
     } catch (error) {
       console.warn("[google-sheets] STT formula skipped:", error instanceof Error ? error.message : "unknown");
+    }
+    // Plant Google Sheets' own AI formulas into the AI-enabled columns. This is
+    // a Sheets-side generation capability: Lexora only inserts the instructions.
+    // It never calls GEMINI_API_KEY, never posts to generativelanguage and
+    // never runs fetchIpaSingle/fetchIpaBatch here. Google Sheets then generates
+    // the values (with "Generate and Insert" / "Refresh and Insert" where
+    // required), and the existing webhook + sync path persists them.
+    if (aiEnrich && exportRows.length) {
+      try {
+        await writeAiColumnFormulas(api, created.spreadsheetId, template, exportRows.length);
+      } catch (error) {
+        console.warn("[google-sheets] AI formula columns skipped:", error instanceof Error ? error.message : "unknown");
+      }
+    }
+    // The "AI điền nội dung còn thiếu" help tab. It lives in its own tab so it
+    // can never be parsed as vocabulary, and it only explains Google Sheets'
+    // own AI action - no Gemini key, no Lexora AI call.
+    if (aiEnrich) {
+      try {
+        await ensureAiHelpSheet(api, created.spreadsheetId, template.templateType);
+      } catch (error) {
+        console.warn("[google-sheets] AI help sheet skipped:", error instanceof Error ? error.message : "unknown");
+      }
     }
     // Formatting is cosmetic. A bad request there (wrong field name, new API
     // value, quota) must never abandon the connection now that the vocabulary
@@ -213,6 +242,31 @@ async function writeSttFormula(api: GoogleWorkspaceApi, spreadsheetId: string, t
   await api.writeValues(spreadsheetId, range, values as never, { parseFormulas: true });
 }
 
+/**
+ * Insert native Google Sheets AI formulas into the AI-enabled columns.
+ *
+ * STT and __lexora_id are excluded: they are system-managed display/identity
+ * columns and never receive an AI formula. Each formula references its own
+ * row's source cell (e.g. =AI("prompt";C2)), so Sheets fills row N from the
+ * Word in row N. Materialized text, not the formula, is what sync persists.
+ */
+async function writeAiColumnFormulas(api: GoogleWorkspaceApi, spreadsheetId: string, template: GoogleSheetTemplate, rowCount: number): Promise<void> {
+  if (rowCount < 1) return;
+  const letters = aiColumnLetters(template, template.templateType);
+  if (!letters.size) return;
+  for (const plan of aiColumnsForTemplate(template.templateType)) {
+    const letter = letters.get(plan.key);
+    if (!letter) continue;
+    const formulas = buildAiColumnFormulas(template, "AI", plan, rowCount);
+    if (!formulas.length) continue;
+    const values: (string | number)[][] = formulas.map((formula) => [formula]);
+    const range = `'${template.sheetTitle.replace(/'/g, "''")}'!${letter}2:${letter}${rowCount + 1}`;
+    // parseFormulas: the cell must be stored as a real Sheets formula so Google
+    // Sheets (not Lexora) executes it and later materializes the generated text.
+    await api.writeValues(spreadsheetId, range, values as never, { parseFormulas: true });
+  }
+}
+
 export function exportValuesForWord(template: GoogleSheetTemplate, word: typeof words.$inferSelect): Record<string, string> {
   const values: Record<string, string> = {};
   for (const field of template.fields) {
@@ -244,6 +298,16 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
     const grid = await readSheetGrid(connection as SyncConnection, (spreadsheetId, range) => api.readValues(spreadsheetId, range));
     const result = await db.transaction(async (tx) => runVocabularySync(connection as SyncConnection, grid, tx));
     await writeBackSourceIds(api, connection, templateFor(connection), result.stats.idWrites);
+    // New rows added in the Sheet get their native Google Sheets AI formulas
+    // relayed back into the Sheet. Google Sheets then generates the content;
+    // Lexora never calls an AI API and never generates text itself.
+    if (result.aiFormulaWrites?.length && connection.aiEnrich !== false) {
+      try {
+        await writeRowAiFormulas(api, connection, result.aiFormulaWrites);
+      } catch (error) {
+        console.warn("[google-sheets] AI formula relay skipped:", error instanceof Error ? error.message : "unknown");
+      }
+    }
     await finishSyncRun(runId, "success", {
       rowsRead: result.stats.rowsRead, rowsCreated: result.stats.rowsCreated, rowsUpdated: result.stats.rowsUpdated,
       rowsDeleted: result.stats.rowsDeleted, rowsUnchanged: result.stats.rowsUnchanged, rowsSkipped: result.stats.rowsSkipped,
@@ -292,6 +356,42 @@ async function writeBackSourceIds(api: GoogleWorkspaceApi, connection: { spreads
   }
   const range = `'${connection.sheetTitle.replace(/'/g, "''")}'!${idColumn}${startRow}:${idColumn}${startRow + values.length - 1}`;
   await api.writeValues(connection.spreadsheetId, range, values as SheetsValue);
+}
+
+/**
+ * Relay native Google Sheets AI formulas into the rows the Sheet just gained.
+ *
+ * Only the newly created rows are touched: existing rows keep whatever the
+ * admin typed or Google generated, so a user edit is never replaced by a
+ * formula. Nothing here calls an AI API - these are Google Sheets instructions.
+ */
+async function writeRowAiFormulas(api: GoogleWorkspaceApi, connection: { spreadsheetId: string; sheetTitle: string }, writes: Array<{ rowNumber: number; cells: Array<{ letter: string; formula: string }> }>): Promise<void> {
+  const sheet = `'${connection.sheetTitle.replace(/'/g, "''")}'`;
+  for (const write of writes) {
+    for (const cell of write.cells) {
+      const range = `${sheet}!${cell.letter}${write.rowNumber}:${cell.letter}${write.rowNumber}`;
+      await api.writeValues(connection.spreadsheetId, range, [[cell.formula]] as never, { parseFormulas: true });
+    }
+  }
+}
+
+/**
+ * Create the "AI điền nội dung còn thiếu" help tab (best effort).
+ *
+ * It lives in its own tab so it can never be parsed as vocabulary rows. It only
+ * explains Google Sheets' own AI action: no Gemini key is ever requested, and
+ * Lexora itself never calls an AI API.
+ */
+async function ensureAiHelpSheet(api: GoogleWorkspaceApi, spreadsheetId: string, templateType: string): Promise<void> {
+  if (typeof api.addSheet !== "function") return;
+  const meta = await api.getSpreadsheetMetadata(spreadsheetId);
+  if (meta.sheets.some((sheet) => sheet.title === AI_HELP_SHEET_TITLE)) return;
+  const created = await api.addSheet(spreadsheetId, AI_HELP_SHEET_TITLE);
+  if (!created) return;
+  const rows = buildAiHelpRows(templateType);
+  const width = Math.max(1, ...rows.map((row) => row.length));
+  const normalized = rows.map((row) => Array.from({ length: width }, (_cell, index) => row[index] ?? ""));
+  await api.writeValues(spreadsheetId, `'${AI_HELP_SHEET_TITLE.replace(/'/g, "''")}'!A1:${String.fromCharCode(64 + Math.min(width, 26))}${normalized.length}`, normalized as never);
 }
 
 function templateFor(connection: { templateType: string; sheetTitle: string }): GoogleSheetTemplate {

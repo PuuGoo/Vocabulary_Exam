@@ -13,6 +13,9 @@ export const dynamic = "force-dynamic";
 const patchSchema = z.object({
   enabled: z.boolean().optional(),
   deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional(),
+  // Whether Lexora planted (or should plant) the native Sheets AI formulas.
+  // Purely a template switch: no AI API is ever called by Lexora.
+  aiEnrich: z.boolean().optional(),
   status: z.enum(["connected", "paused", "error", "disconnected"]).optional(),
 });
 
@@ -43,6 +46,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.enabled !== undefined) patch.enabled = parsed.data.enabled;
   if (parsed.data.deleteBehavior !== undefined) patch.deleteBehavior = parsed.data.deleteBehavior;
+  if (parsed.data.aiEnrich !== undefined) patch.aiEnrich = parsed.data.aiEnrich;
   if (parsed.data.status !== undefined) { patch.status = parsed.data.status; patch.enabled = parsed.data.status === "paused" ? false : parsed.data.status === "disconnected" ? false : true; }
   await db.update(googleSheetConnections).set(patch).where(eq(googleSheetConnections.id, connectionId));
   const [updated] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);

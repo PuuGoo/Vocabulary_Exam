@@ -47,6 +47,8 @@ export type GoogleWorkspaceApi = {
   createWatchChannel(options: { spreadsheetId: string; resourceId: string }): Promise<WatchChannel>;
   renewWatchChannel(options: { channelId: string; spreadsheetId: string; resourceId: string }): Promise<WatchChannel>;
   verifyAccess(spreadsheetId: string): Promise<boolean>;
+  /** Optional: add a new tab (used for the AI help sheet). Degrades gracefully. */
+  addSheet?: (spreadsheetId: string, sheetTitle: string) => Promise<{ sheetId: number; title: string } | null>;
 };
 
 export type GoogleWorkspaceApiFactory = (token: { accessToken: string; refreshToken: string | null; expiresAt: Date }) => GoogleWorkspaceApi;

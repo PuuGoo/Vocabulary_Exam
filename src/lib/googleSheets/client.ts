@@ -50,6 +50,22 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
       } catch (error) { throw classifyGoogleApiError(error); }
     },
 
+    async addSheet(spreadsheetId, sheetTitle) {
+      try {
+        const response = await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: { requests: [{ addSheet: { properties: { title: sheetTitle } } }] },
+        });
+        const reply = response.data.replies?.[0]?.addSheet?.properties;
+        if (!reply?.sheetId) return null;
+        return { sheetId: reply.sheetId, title: reply.title || sheetTitle };
+      } catch (error) {
+        // Best-effort: a missing/dupe tab must never fail spreadsheet creation.
+        console.warn("[google-sheets] addSheet skipped:", error instanceof Error ? error.message : "unknown");
+        return null;
+      }
+    },
+
     async readValues(spreadsheetId, rangeA1) {
       try {
         const response = await sheets.spreadsheets.values.get({ spreadsheetId, range: rangeA1, majorDimension: "ROWS", valueRenderOption: "UNFORMATTED_VALUE" });

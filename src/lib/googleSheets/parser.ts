@@ -17,6 +17,25 @@ export function mapHeadersToFieldKeys(headers: readonly string[], template: Goog
   return mapping;
 }
 
+/**
+ * A cell that is still a raw AI instruction (not yet generated text).
+ *
+ * Google Sheets' =AI()/=Gemini() cells return their generated value once the
+ * admin uses the supported "Generate and Insert" / "Refresh and Insert" action.
+ * Until then the cell still reads as formula source. Lexora must never persist
+ * that instruction as vocabulary text, and must never treat it as a user edit.
+ */
+export function isRawAiFormula(value: string): boolean {
+  const text = value.trim();
+  if (!text.startsWith("=")) return false;
+  return /^=(AI|Gemini)\(/i.test(text);
+}
+
+/** Strip a leading "=" only when the cell is an un-materialized AI formula. */
+export function readGeneratedValue(value: string): string {
+  return isRawAiFormula(value) ? "" : value;
+}
+
 function normalizeHeader(header: string): string {
   return header.normalize("NFC").trim().toLocaleLowerCase("vi").replace(/\s+/g, " ");
 }
@@ -39,7 +58,8 @@ export function parseSheetGrid(grid: SheetGrid, template: GoogleSheetTemplate): 
       if (key === STT_FIELD_KEY) return; // never enters the values map
       const raw = cells[columnIndex] ?? "";
       if (key === SOURCE_ID_HEADER) sourceId = String(raw ?? "").trim();
-      else values[key] = String(raw ?? "");
+      // Never persist an un-materialized AI formula as vocabulary text.
+      else values[key] = readGeneratedValue(String(raw ?? ""));
     });
     results.push({ rowNumber, sourceId, values });
   });
