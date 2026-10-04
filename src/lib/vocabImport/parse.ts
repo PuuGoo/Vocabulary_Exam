@@ -2,7 +2,7 @@ import type { words } from "@/db/schema";
 import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 import { normalizeText } from "@/lib/text";
 import { importWordKey } from "@/lib/importDedup";
-import { canonicalChineseRow, normalizeImportRow, type RawImportRow } from "@/lib/vocabImport/headerAliases";
+import { canonicalChineseRow, canonicalGeneralRow, normalizeImportRow, type RawImportRow } from "@/lib/vocabImport/headerAliases";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { normalizeCefrLevel, normalizeContentKind, normalizeContentStatus, normalizeRegister, splitListCell, stringifyListColumn } from "@/lib/vocabularyMeta";
 
@@ -99,7 +99,12 @@ export function parseVocabularyRows(
   rawRows.forEach((rawRow, index) => {
     const rowNumber = index + 2; // spreadsheet row 1 is the header
     let row: RawImportRow = normalizeImportRow(rawRow);
-    if (isChinese) row = canonicalChineseRow(row);
+    // normalizeImportRow only lower-cases the header keys, so a Sheet header like
+    // "Example Pronunciation" arrives as "example pronunciation". canonicalGeneralRow
+    // maps those friendly headers back onto the camelCase keys the draft below
+    // reads. Without it, a non-Chinese import silently dropped
+    // examplePronunciation / exampleMeaning (and any other multi-word header).
+    row = isChinese ? canonicalChineseRow(row) : canonicalGeneralRow(row);
     if (!Object.values(row).some((value) => value !== "")) return; // blank row
 
     const draft: ParsedWordDraft = {
