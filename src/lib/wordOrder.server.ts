@@ -59,7 +59,7 @@ export async function reorderWords(setId: number, orderedIds: readonly number[])
   });
 }
 
-export async function deleteWordsAndNormalize(ids: readonly number[]) {
+export async function deleteWordsAndNormalize(ids: readonly number[], beforeDelete?: (tx: WordOrderTx) => Promise<void>) {
   return db.transaction(async (tx) => {
     const selected = await tx.select({ id: words.id, setId: words.setId }).from(words).where(inArray(words.id, [...ids]));
     if (selected.length !== ids.length) return { kind: "stale" as const, deleted: 0 };
@@ -67,6 +67,7 @@ export async function deleteWordsAndNormalize(ids: readonly number[]) {
     await lockVocabularySets(tx, setIds);
     const lockedSelection = await tx.select({ id: words.id, setId: words.setId }).from(words).where(inArray(words.id, [...ids]));
     if (lockedSelection.length !== ids.length || lockedSelection.some((row) => !setIds.includes(row.setId))) return { kind: "stale" as const, deleted: 0 };
+    if (beforeDelete) await beforeDelete(tx);
     await tx.delete(words).where(inArray(words.id, [...ids]));
     for (const setId of setIds) await normalizeWordPositions(tx, setId);
     return { kind: "ok" as const, deleted: selected.length };

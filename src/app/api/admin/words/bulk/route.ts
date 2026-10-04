@@ -1,11 +1,14 @@
 import { z } from "zod";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { writeAdminAudit } from "@/lib/adminAudit";
-import { deleteWordsAndNormalize, moveWordsToSet } from "@/lib/wordOrder.server";
+import { moveWordsToSet } from "@/lib/wordOrder.server";
+import { deleteWordsWithSheetSync, sheetWordDeletionError } from "@/lib/googleSheets/deleteWords";
 import { db } from "@/db";
 import { vocabSets, words } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
 import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
+
+export const maxDuration = 60;
 
 async function authorizeWordFolders(ids: number[], permission: "vocab.delete" | "vocab.move", level: "editor" | "manager", access: Awaited<ReturnType<typeof requireAdminPermission>>) {
   if (isAuthorizationError(access)) return access;
@@ -28,7 +31,9 @@ export async function DELETE(request: Request) {
   if (!parsed.success) return Response.json({ error: "Danh sách từ cần xóa không hợp lệ." }, { status: 400 });
   const denied = await authorizeWordFolders([...new Set(parsed.data.ids)], "vocab.delete", "manager", access);
   if (denied) return denied;
-  const result = await deleteWordsAndNormalize([...new Set(parsed.data.ids)]);
+  let result;
+  try { result = await deleteWordsWithSheetSync([...new Set(parsed.data.ids)]); }
+  catch (error) { return sheetWordDeletionError(error); }
   if (result.kind === "stale") return Response.json({ error: "Danh sách từ đã thay đổi. Hãy tải lại trước khi xóa." }, { status: 409 });
   await writeAdminAudit({ actorUserId: access.userId, action: "vocab.words.bulk_delete", resourceType: "word", metadata: { count: result.deleted } });
   return Response.json({ ok: true, deleted: result.deleted });

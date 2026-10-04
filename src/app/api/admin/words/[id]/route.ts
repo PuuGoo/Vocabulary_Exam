@@ -6,9 +6,11 @@ import { vocabSets, words } from "@/db/schema";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { normalizeText } from "@/lib/text";
 import { getFillPatternValidationError } from "@/lib/fillAnswer";
-import { deleteWordsAndNormalize } from "@/lib/wordOrder.server";
+import { deleteWordsWithSheetSync, sheetWordDeletionError } from "@/lib/googleSheets/deleteWords";
 import { canonicalizePinyinDisplay } from "@/lib/pinyin";
 import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
+
+export const maxDuration = 60;
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireAdminPermission("vocab.delete");
@@ -19,7 +21,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const set = word ? await db.query.vocabSets.findFirst({ where: eq(vocabSets.id, word.setId) }) : null;
   const scoped = await requireAdminResourceAccess({ permission: "vocab.delete", folderId: set?.folderId, level: "manager", access });
   if (isAuthorizationError(scoped)) return scoped;
-  const result = await deleteWordsAndNormalize([wordId]);
+  let result;
+  try { result = await deleteWordsWithSheetSync([wordId]); }
+  catch (error) { return sheetWordDeletionError(error); }
   if (result.kind === "stale") return NextResponse.json({ error: "Không tìm thấy từ vựng." }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

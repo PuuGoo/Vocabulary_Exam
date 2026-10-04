@@ -68,6 +68,14 @@ and UI value are **not verified by this release**; the owner performs this test.
 
 ## Known limits requiring follow-up
 
+- Manual single/bulk word deletion now holds the connection sync lock, locates
+  mapped Sheet rows by source ID (not the cached row number), deletes descending
+  row ranges and verifies removal before committing the DB deletion. Google
+  failure rolls back DB deletion and is reported to the user. Sheet/DB changes
+  are not a distributed transaction: a crash after Google succeeds can leave the
+  web word until retry/reconciliation. User edits between read and write remain
+  subject to the concurrent-edit limitation below.
+
 - Manual web creation now appends a new vocabulary row to an active connected
   Sheet and records the same word/source identity. Existing rows are not exported
   wholesale. If delivery fails, the saved web word is retained and the UI warns;

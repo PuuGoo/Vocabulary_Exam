@@ -1233,7 +1233,10 @@ export default function AdminSetsPage() {
     if (!await confirmAction({ title: "Xóa từ khỏi bộ?", description: `“${label}” sẽ bị xóa khỏi bộ từ. Hành động này không thể hoàn tác.`, confirmLabel: "Xóa từ", tone: "danger" })) return;
     try {
       const res = await fetch(`/api/admin/words/${wordId}`, { method: "DELETE" });
-      if (!res.ok) return toast("Không thể xoá từ.");
+      if (!res.ok) {
+        const failure = await res.json().catch(() => ({}));
+        return toast(failure.error || "Không thể xoá từ.");
+      }
       setSelectedWordIds((current) => current.filter((id) => id !== wordId));
       setDetail((current) => current ? { ...current, words: current.words.filter((word) => word.id !== wordId).map((word, index) => ({ ...word, position: index + 1 })) } : current);
       toast("Đã xoá từ.");
