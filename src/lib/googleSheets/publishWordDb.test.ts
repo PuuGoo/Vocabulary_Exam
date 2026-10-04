@@ -57,6 +57,22 @@ test("web-created word appends once and webhook keeps the same database identity
     assert.equal((await publishCreatedWord(second, api)).status, "error");
     assert.equal((await db.select().from(words).where(eq(words.id, second.id))).length, 1);
     assert.equal((await db.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.wordId, second.id))).length, 0);
+    values.push(template.fields.map(field => field.key === "meaning" ? '=AI("meaning";C3)' : ""));
+    api.batchUpdate = async (_id, requests) => {
+      for (const request of requests) {
+        const range = (request as { insertDimension: { range: { startIndex: number } } }).insertDimension.range;
+        values.splice(range.startIndex, 0, []);
+      }
+    };
+    api.writeValues = async (_id, range, rows) => {
+      const rowNumber = Number(range.match(/!A(\d+)/)![1]);
+      values[rowNumber - 1] = rows[0];
+    };
+    assert.equal((await publishCreatedWord(second, api)).status, "synced");
+    assert.ok(values[2].includes("bye"));
+    assert.ok(values[3].some(value => String(value).startsWith("=AI(")));
+    const [secondMapping] = await db.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.wordId, second.id));
+    assert.equal(secondMapping.sheetRowNumber, 3);
   } finally {
     await db.delete(vocabSets).where(eq(vocabSets.id, set.id));
   }

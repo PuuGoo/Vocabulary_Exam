@@ -10,6 +10,7 @@ import { columnLetter, quoteSheetTitle } from "./spreadsheet";
 import { fingerprintDbWord } from "./fingerprint";
 import { resolveConnectedTab } from "./tabIdentity";
 import type { GoogleWorkspaceApi } from "./api";
+import { firstTemplateBufferRow } from "./newWordRow";
 
 export async function publishCreatedWord(word: typeof words.$inferSelect, apiOverride?: GoogleWorkspaceApi) {
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.setId, word.setId)).limit(1);
@@ -28,7 +29,7 @@ export async function publishCreatedWord(word: typeof words.$inferSelect, apiOve
     const tab = resolveConnectedTab(await api.getSpreadsheetMetadata(connection.spreadsheetId), connection.sheetId);
     const template = getGoogleSheetTemplate(set);
     const range = `${quoteSheetTitle(tab.title)}!A:${columnLetter((tab.columnCount ?? template.fields.length) - 1)}`;
-    const existing = await api.readValues(connection.spreadsheetId, range);
+    const existing = await api.readValues(connection.spreadsheetId, range, { renderOption: "FORMULA" });
     const headers = (existing[0] ?? []).map(value => String(value ?? ""));
     const fields = mapHeadersToFieldKeys(headers, template);
     const idColumn = [...fields].find(([, key]) => key === SOURCE_ID_HEADER)?.[0];
@@ -37,10 +38,19 @@ export async function publishCreatedWord(word: typeof words.$inferSelect, apiOve
     const existingIndex = existing.findIndex((row, index) => index > 0 && row[idColumn] === sourceId);
     let rowNumber = existingIndex + 1;
     if (existingIndex < 0) {
-      if (!api.appendValues) throw new Error("Google append is unavailable");
       const values = exportValuesForWord(template, word);
       const row = headers.map((_, index) => fields.get(index) === SOURCE_ID_HEADER ? sourceId : values[fields.get(index) ?? ""] ?? "");
-      rowNumber = await api.appendValues(connection.spreadsheetId, range, [row]);
+      const bufferRow = firstTemplateBufferRow(existing, headers);
+      if (bufferRow !== null) {
+        const currentRows = await api.readValues(connection.spreadsheetId, range, { renderOption: "FORMULA" });
+        if (JSON.stringify(currentRows) !== JSON.stringify(existing)) throw new Error("Sheet changed before insertion");
+        await api.batchUpdate(connection.spreadsheetId, [{ insertDimension: { range: { sheetId: tab.sheetId, dimension: "ROWS", startIndex: bufferRow - 1, endIndex: bufferRow }, inheritFromBefore: false } }]);
+        await api.writeValues(connection.spreadsheetId, `${quoteSheetTitle(tab.title)}!A${bufferRow}`, [row]);
+        rowNumber = bufferRow;
+      } else {
+        if (!api.appendValues) throw new Error("Google append is unavailable");
+        rowNumber = await api.appendValues(connection.spreadsheetId, range, [row]);
+      }
     }
     const fingerprint = fingerprintDbWord(template, word);
     await db.insert(googleSheetRowMappings).values({ connectionId: connection.id, wordId: word.id, sourceId, sheetRowNumber: rowNumber, sourceFingerprint: fingerprint, lastSyncedFingerprint: fingerprint });
