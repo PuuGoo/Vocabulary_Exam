@@ -11,6 +11,8 @@ import { fingerprintDbWord } from "./fingerprint";
 import { resolveConnectedTab } from "./tabIdentity";
 import type { GoogleWorkspaceApi } from "./api";
 import { firstTemplateBufferRow } from "./newWordRow";
+import { newWordAiUpdates } from "./newWordAi";
+import { parseAiPromptOverrides } from "./aiFormula";
 
 export async function publishCreatedWord(word: typeof words.$inferSelect, apiOverride?: GoogleWorkspaceApi) {
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.setId, word.setId)).limit(1);
@@ -50,6 +52,14 @@ export async function publishCreatedWord(word: typeof words.$inferSelect, apiOve
       } else {
         if (!api.appendValues) throw new Error("Google append is unavailable");
         rowNumber = await api.appendValues(connection.spreadsheetId, range, [row]);
+      }
+    }
+    if (connection.aiEnrich !== false) {
+      const formulaRows = await api.readValues(connection.spreadsheetId, range, { renderOption: "FORMULA" });
+      const updates = newWordAiUpdates(template, tab.title, formulaRows, sourceId, parseAiPromptOverrides(connection.aiPrompts));
+      if (updates.length) {
+        if (api.batchWriteValues) await api.batchWriteValues(connection.spreadsheetId, updates);
+        else for (const update of updates) await api.writeValues(connection.spreadsheetId, update.rangeA1, update.values, { parseFormulas: true });
       }
     }
     const fingerprint = fingerprintDbWord(template, word);

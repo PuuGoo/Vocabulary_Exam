@@ -73,6 +73,24 @@ test("web-created word appends once and webhook keeps the same database identity
     assert.ok(values[3].some(value => String(value).startsWith("=AI(")));
     const [secondMapping] = await db.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.wordId, second.id));
     assert.equal(secondMapping.sheetRowNumber, 3);
+    await db.update(googleSheetConnections).set({ aiEnrich: true, aiPrompts: JSON.stringify({ ipa: "CUSTOM IPA" }) }).where(eq(googleSheetConnections.id, connection.id));
+    const [third] = await db.insert(words).values({ setId: set.id, position: 3, term: "mitigate", meaning: "user meaning", example: "user example" }).returning();
+    const aiWrites: string[] = [];
+    api.batchWriteValues = async (_id, updates) => {
+      for (const update of updates) {
+        assert.equal(update.parseFormulas, true);
+        aiWrites.push(update.rangeA1);
+        const match = update.rangeA1.match(/!([A-Z]+)(\d+)/)!;
+        const column = [...match[1]].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+        values[Number(match[2]) - 1][column] = update.values[0][0];
+      }
+    };
+    assert.equal((await publishCreatedWord(third, api)).status, "synced");
+    assert.ok(aiWrites.length > 0);
+    const thirdRow = values.find(row => row.includes("mitigate"))!;
+    assert.equal(thirdRow[template.fields.findIndex(field => field.key === "meaning")], "user meaning");
+    assert.equal(thirdRow[template.fields.findIndex(field => field.key === "example")], "user example");
+    assert.match(String(thirdRow[template.fields.findIndex(field => field.key === "ipa")]), /CUSTOM IPA/);
   } finally {
     await db.delete(vocabSets).where(eq(vocabSets.id, set.id));
   }
