@@ -24,8 +24,9 @@ import WordDepthEditor from "@/components/WordDepthEditor";
 import GoogleSheetsPanel from "@/components/GoogleSheetsPanel";
 import { GOOGLE_SHEET_SYNCED_EVENT } from "@/lib/googleSheets/syncEvent";
 import { useVocabularySync } from "@/lib/googleSheets/useVocabularySync";
+import GoogleSheetCardLink from "@/components/google-sheets/GoogleSheetCardLink";
 
-type SetSummary = { id: number; name: string; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
+type SetSummary = { id: number; name: string; googleSheetUrl?: string | null; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
   id: number;
   position: number;
@@ -1018,7 +1019,7 @@ export default function AdminSetsPage() {
     finally { setExportingSetId(null); }
   }
 
-  async function openDetail(id: number, focusWordId?: number) {
+  async function openDetail(id: number, focusWordId?: number, initialTab: SetWorkspaceTab = "overview") {
     setPreviewSetId(null);
     setOpeningDetailId(id);
     try {
@@ -1026,7 +1027,7 @@ export default function AdminSetsPage() {
       if (!res.ok) return toast("Không thể mở bộ từ vựng.");
       const data = await res.json();
       setDetail(data.set);
-      setDetailTab(focusWordId ? "vocabulary" : "overview");
+      setDetailTab(focusWordId ? "vocabulary" : initialTab);
       setFocusedWordId(focusWordId ?? null);
       setEditSetName(data.set.name);
       setEditCategory(data.set.category || "");
@@ -1875,6 +1876,7 @@ export default function AdminSetsPage() {
               >
                 {openingDetailId === s.id ? "Đang mở..." : "Quản lý bộ từ"}
               </button>
+              {adminAccess.can("google_sheets.view") && <GoogleSheetCardLink url={s.googleSheetUrl} setName={s.name} onSetup={() => void openDetail(s.id, undefined, "settings")} loading={openingDetailId === s.id} disabled={openingDetailId !== null || movingSetId === s.id} />}
               {adminAccess.can("sharing.manage") && <button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setShareTarget({ targetType: "vocab_set", targetId: s.id, title: s.name, setType: s.type, languageCode: s.languageCode })}>Chia sẻ</button>}
               <div className="relative" data-preview-menu>
                 <button

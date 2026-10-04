@@ -13,6 +13,7 @@ import { ensurePersonalWorkspace, findVisibleFolderIdByLegacyPath, getFolderDisp
 import { buildToneExercise } from "@/lib/toneTrainer";
 import { buildSentenceCloze } from "@/lib/sentenceCloze";
 import { isNotNull } from "drizzle-orm";
+import { sheetCardUrl } from "@/lib/googleSheets/cardLink";
 
 export async function GET() {
   const session = await getSession();
@@ -77,6 +78,11 @@ export async function GET() {
   // fans one set out into one row per mapping, which is what rendered a
   // 5-word set as 6 identical set cards.
   const activeSetIds = rows.map((row) => row.id);
+  const sheetLinks = new Map<number, string | null>();
+  if (adminAccess?.can("google_sheets.view") && activeSetIds.length) {
+    const connections = await db.select({ setId: googleSheetConnections.setId, spreadsheetId: googleSheetConnections.spreadsheetId, sheetId: googleSheetConnections.sheetId, status: googleSheetConnections.status, externalState: googleSheetConnections.externalState }).from(googleSheetConnections).where(inArray(googleSheetConnections.setId, activeSetIds));
+    for (const connection of connections) sheetLinks.set(connection.setId, sheetCardUrl(connection));
+  }
   const archivedCountBySet = new Map<number, number>();
   if (activeSetIds.length) {
     const archivedRows = await db
@@ -102,6 +108,7 @@ export async function GET() {
   const now = Date.now();
   return NextResponse.json({ sets: rows.map((row) => ({
     ...row,
+    ...(adminAccess?.can("google_sheets.view") ? { googleSheetUrl: sheetLinks.get(row.id) ?? null } : {}),
     toneEligibleCount: eligibilityBySet.get(row.id)?.tone || 0,
     clozeEligibleCount: eligibilityBySet.get(row.id)?.cloze || 0,
     legacyCategory: row.category,
