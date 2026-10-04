@@ -11,6 +11,8 @@ import { canonicalizePinyinDisplay } from "@/lib/pinyin";
 import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { publishCreatedWord } from "@/lib/googleSheets/publishWord";
 
+export const maxDuration = 60;
+
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
   v1: z.string().trim().min(1),

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
+import { googleSheetConnections, googleSheetRowMappings, googleSheetSyncPending, vocabSets, words } from "@/db/schema";
 import { apiForUser, exportValuesForWord } from "./sheetLifecycle";
 import { acquireConnectionLock, releaseConnectionLock } from "./store";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER } from "./template";
@@ -13,6 +13,8 @@ import type { GoogleWorkspaceApi } from "./api";
 import { firstTemplateBufferRow } from "./newWordRow";
 import { newWordAiUpdates } from "./newWordAi";
 import { parseAiPromptOverrides } from "./aiFormula";
+import { newWordSttUpdates } from "./newWordStt";
+import { runPendingConnection } from "./reconcile";
 
 export async function publishCreatedWord(word: typeof words.$inferSelect, apiOverride?: GoogleWorkspaceApi) {
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.setId, word.setId)).limit(1);
@@ -54,9 +56,12 @@ export async function publishCreatedWord(word: typeof words.$inferSelect, apiOve
         rowNumber = await api.appendValues(connection.spreadsheetId, range, [row]);
       }
     }
-    if (connection.aiEnrich !== false) {
+    {
       const formulaRows = await api.readValues(connection.spreadsheetId, range, { renderOption: "FORMULA" });
-      const updates = newWordAiUpdates(template, tab.title, formulaRows, sourceId, parseAiPromptOverrides(connection.aiPrompts));
+      const updates = [
+        ...newWordSttUpdates(template, tab.title, formulaRows, sourceId),
+        ...(connection.aiEnrich !== false ? newWordAiUpdates(template, tab.title, formulaRows, sourceId, parseAiPromptOverrides(connection.aiPrompts)) : []),
+      ];
       if (updates.length) {
         if (api.batchWriteValues) await api.batchWriteValues(connection.spreadsheetId, updates);
         else for (const update of updates) await api.writeValues(connection.spreadsheetId, update.rangeA1, update.values, { parseFormulas: true });
@@ -68,6 +73,14 @@ export async function publishCreatedWord(word: typeof words.$inferSelect, apiOve
   } catch {
     return { status: "error" as const, warning: "Từ đã lưu trên web nhưng chưa xác nhận ghi sang Google Sheet. Kiểm tra kết nối trước khi thử lại; không tạo lại từ." };
   } finally {
-    if (locked) await releaseConnectionLock(connection.id);
+    if (locked) {
+      await releaseConnectionLock(connection.id);
+      if (!apiOverride) {
+        try {
+          const [pending] = await db.select().from(googleSheetSyncPending).where(eq(googleSheetSyncPending.connectionId, connection.id));
+          if (pending?.pending) await runPendingConnection(connection.id, "webhook");
+        } catch { }
+      }
+    }
   }
 }

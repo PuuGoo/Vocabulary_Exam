@@ -96,7 +96,12 @@ export async function POST(req: NextRequest) {
 
   // Persist first: if this invocation dies mid-sync (timeout, cold start, revoked
   // OAuth) the connection is still pending and the daily cron picks it up.
-  const result = await runPendingConnection(connection.id, "webhook");
+  let result = await runPendingConnection(connection.id, "webhook");
+  const lockDeadline = Date.now() + 15000;
+  while (result.status === "locked" && Date.now() < lockDeadline) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    result = await runPendingConnection(connection.id, "webhook");
+  }
   await renewWatchChannelIfExpiring(channel.connectionId);
   // Safe diagnostics only: ids/status. No token, no OAuth material, no body.
   console.log(`[google-drive-webhook] connectionId=${connection.id} trigger=webhook resourceState=${resourceState || "unknown"} changed=${changed || "none"} messageNumber=${hasMessageNumber ? messageNumber : "none"} sync=${result.status}`);

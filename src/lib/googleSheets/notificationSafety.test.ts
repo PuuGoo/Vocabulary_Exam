@@ -25,3 +25,11 @@ test("webhook rejects malformed sequence numbers and renews after processing", (
   assert.match(route, /if \(!hasMessageNumber\).*status: 400/);
   assert.ok(route.indexOf("await renewWatchChannelIfExpiring") > route.indexOf("await runPendingConnection"));
 });
+
+test("notifications blocked by web publishing are retried and drained after unlock", () => {
+  const route = readFileSync("src/app/api/webhooks/google-drive/route.ts", "utf8");
+  assert.match(route, /while \(result.status === "locked" && Date.now\(\) < lockDeadline\)/);
+  const publish = readFileSync("src/lib/googleSheets/publishWord.ts", "utf8");
+  assert.ok(publish.indexOf("await runPendingConnection") > publish.indexOf("await releaseConnectionLock"));
+  assert.match(publish, /if \(pending\?\.pending\)/);
+});
