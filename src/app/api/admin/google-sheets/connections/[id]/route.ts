@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 const patchSchema = z.object({
   enabled: z.boolean().optional(),
+  conflictPolicy: z.enum(["review", "sheet"]).optional(),
   deleteBehavior: z.enum(["archive", "delete", "ignore"]).optional(),
   // Whether Lexora planted (or should plant) the native Sheets AI formulas.
   // Purely a template switch: no AI API is ever called by Lexora.
@@ -49,6 +50,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (isAuthorizationError(scoped)) return scoped;
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.data.enabled !== undefined) patch.enabled = parsed.data.enabled;
+  if (parsed.data.conflictPolicy !== undefined) patch.conflictPolicy = parsed.data.conflictPolicy;
   if (parsed.data.deleteBehavior !== undefined) patch.deleteBehavior = parsed.data.deleteBehavior;
   if (parsed.data.aiEnrich !== undefined) patch.aiEnrich = parsed.data.aiEnrich;
   if (parsed.data.aiPrompts !== undefined) {

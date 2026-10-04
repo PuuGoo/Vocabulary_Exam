@@ -9,6 +9,7 @@
     "start": "next start",
     "test:rbac": "node --import tsx --test --test-concurrency=1 --test-force-exit src/lib/adminPermissions.test.ts src/lib/adminRbacArchitecture.test.ts src/lib/folderAuthorization.test.ts src/lib/folderAuthorizationArchitecture.test.ts",
     "test:language": "node --import tsx --test --test-concurrency=1 src/lib/languages.test.ts src/lib/adaptiveLearning.test.ts",
+    "test:google-sheets-reliability": "node --import tsx --test --test-force-exit src/lib/googleSheets/reliability.test.ts src/lib/googleSheets/reliabilityEngine.test.ts src/lib/googleSheets/uiRefreshWiring.test.ts src/lib/googleSheets/architecture.test.ts src/lib/googleSheets/syncEngine.test.ts src/lib/googleSheets/syncIntegration.test.ts",
     "android:sync": "cap sync android",
     "android:sync:production": "node scripts/sync-android.mjs",
     "android:open": "cap open android",

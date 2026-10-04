@@ -375,3 +375,26 @@ giải quyết duplicate cũ bằng cách giữ connection healthy/updated gần
 - Không drop/alter bảng cũ, không đổi PK của `words`.
 - Chạy: `node scripts/apply-google-sheets-migration.mjs` (hoặc `psql -f`).
 - Backup mở rộng thêm 4 collections (backward-compatible: backup cũ vẫn restore).
+# Reliability and conflict review
+
+Apply `drizzle/0039_google_sheet_conflict_policy.sql` before deploying this version
+(included in `npm run db:migrate:google-sheets`). Existing connections default to
+`review`; no connection is silently switched to Sheet-authoritative mode.
+
+The Google Sheets panel now offers version-checked per-row conflict resolution,
+before/after history, and an explicit confirmation to make Google Sheet the
+source of truth. Keeping the website version does not write vocabulary back to
+Google: it acknowledges that particular Sheet version until the Sheet changes.
+Resolution and repair require both sync and manage permissions. History records
+the prior vocabulary values, not learning progress; it is not an automatic undo.
+
+Runs with conflicts, invalid rows, duplicates, or blocked deletions have `partial`
+status. All-row removal, or removal of at least five rows and 25% of active rows,
+blocks deletion/archive. Restore Sheet rows or use explicit vocabulary management
+to remove words; automatic sync does not override this protection.
+
+The daily authenticated reconciliation job now also scans stale enabled connections,
+not only the pending queue. The existing Vercel Hobby daily schedule is unchanged;
+near-real-time delivery still uses webhooks and visible-page polling. A more frequent
+external scheduler may call the same cron route with the cron bearer secret, subject
+to hosting limits and Google quotas. The job processes a bounded batch per invocation.

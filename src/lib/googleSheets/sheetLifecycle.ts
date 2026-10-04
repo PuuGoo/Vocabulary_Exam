@@ -1,6 +1,6 @@
 import { and, asc, eq, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { googleSheetConnections, googleSheetCreateLocks, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
+import { googleSheetConnections, googleSheetCreateLocks, googleSheetRowMappings, googleSheetSyncRuns, vocabSets, words } from "@/db/schema";
 import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
@@ -18,6 +18,7 @@ import {
 } from "@/lib/googleSheets/store";
 import { writeAdminAudit } from "@/lib/adminAudit";
 import { GoogleSheetsError, safeGoogleErrorForLogs } from "@/lib/googleSheets/errors";
+import { syncIsPartial, type SyncRequest } from "./reliability";
 
 export type Actor = { userId: number; displayName?: string };
 
@@ -291,7 +292,7 @@ export type SyncOutcome = { stats: SyncStats; connectionId: number };
  * Run one sync for a connection (webhook, manual, cron or initial). Throws
  * SyncInProgressError when the connection-level lock is already held.
  */
-export async function syncConnection(connectionId: number, trigger: "manual" | "webhook" | "cron" | "initial" | "lexora", options?: { actorUserId?: number; apiOverride?: GoogleWorkspaceApi }): Promise<SyncOutcome> {
+export async function syncConnection(connectionId: number, trigger: "manual" | "webhook" | "cron" | "initial" | "lexora", options?: { actorUserId?: number; apiOverride?: GoogleWorkspaceApi } & SyncRequest): Promise<SyncOutcome> {
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);
   if (!connection) throw new GoogleSheetsError("Không tìm thấy kết nối Google Sheet.", "SHEET_NOT_FOUND", { retryable: false });
   if (!connection.enabled || connection.status === "disconnected") throw new GoogleSheetsError("Kết nối đang bị tạm dừng.", "INVALID_SCHEMA", { retryable: false });
@@ -300,11 +301,16 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
   await db.update(googleSheetConnections).set({ status: "syncing", updatedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
   const runId = await startSyncRun(connectionId, trigger);
   try {
-    const actorUserId = options?.actorUserId ?? connection.createdBy;
+    const actorUserId = connection.createdBy ?? options?.actorUserId;
     const api = options?.apiOverride ?? (actorUserId ? await apiForUser(actorUserId) : null);
     if (!api) throw new GoogleSheetsError("Thiếu tư cách xác thực Google.", "OAUTH_REQUIRED", { retryable: false });
+    if (options?.repairWatch) await ensureWatchChannel(api, connection, connection.spreadsheetId);
     const grid = await readSheetGrid(connection as SyncConnection, (spreadsheetId, range) => api.readValues(spreadsheetId, range));
-    const result = await db.transaction(async (tx) => runVocabularySync(connection as SyncConnection, grid, tx));
+    const result = await db.transaction(async (tx) => {
+      const outcome = await runVocabularySync(connection as SyncConnection, grid, tx, options);
+      await tx.update(googleSheetSyncRuns).set({ metadata: JSON.stringify({ changes: outcome.stats.changes, conflictRows: outcome.stats.conflicts, deletionBlocked: outcome.stats.deletionBlocked }) }).where(eq(googleSheetSyncRuns.id, runId));
+      return outcome;
+    });
     await writeBackSourceIds(api, connection, templateFor(connection), result.stats.idWrites);
     // New rows added in the Sheet get their native Google Sheets AI formulas
     // relayed back into the Sheet. Google Sheets then generates the content;
@@ -316,7 +322,7 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
         console.warn("[google-sheets] AI formula relay skipped:", error instanceof Error ? error.message : "unknown");
       }
     }
-    await finishSyncRun(runId, "success", {
+    await finishSyncRun(runId, syncIsPartial(result.stats) ? "partial" : "success", {
       rowsRead: result.stats.rowsRead, rowsCreated: result.stats.rowsCreated, rowsUpdated: result.stats.rowsUpdated,
       rowsDeleted: result.stats.rowsDeleted, rowsUnchanged: result.stats.rowsUnchanged, rowsSkipped: result.stats.rowsSkipped,
       duplicateCount: result.stats.duplicateCount, validationErrorCount: result.stats.validationErrorCount,
@@ -327,6 +333,9 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
         ? `Bỏ qua ${result.stats.invalidRows.length} dòng: ` + result.stats.invalidRows.slice(0, 10).map((row) => `dòng ${row.rowNumber} ${row.message}`).join("; ")
         : undefined,
       metadata: {
+        changes: result.stats.changes,
+        deletionBlocked: result.stats.deletionBlocked,
+        resolutions: options?.resolutions ?? [],
         conflicts: result.stats.conflicts.length, trigger,
         ...(result.stats.invalidRows.length ? { invalidRows: result.stats.invalidRows.slice(0, 25) } : {}),
         ...(result.stats.conflicts.length ? { conflictRows: result.stats.conflicts.slice(0, 25) } : {}),
@@ -335,7 +344,7 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
         ...(result.stats.changedWordIds.length ? { changedWordIds: result.stats.changedWordIds } : {}),
       },
     });
-    await markConnectionSyncState(connectionId, { ok: true });
+    await markConnectionSyncState(connectionId, { ok: true, partial: syncIsPartial(result.stats) });
     await clearSyncPending(connectionId);
     console.log(`[google-sheet-sync] connectionId=${connectionId} trigger=${trigger} rowsCreated=${result.stats.rowsCreated} rowsUpdated=${result.stats.rowsUpdated} rowsDeleted=${result.stats.rowsDeleted} changedWordIds=[${result.stats.changedWordIds.join(",")}] webhookReceived=${trigger === "webhook"}`);
     if (trigger !== "initial") await writeAdminAudit({ actorUserId: options?.actorUserId ?? connection.createdBy ?? 1, action: "google_sheet.sync", resourceType: "google_sheet_connection", resourceId: connectionId, metadata: { trigger, created: result.stats.rowsCreated, updated: result.stats.rowsUpdated, unchanged: result.stats.rowsUnchanged, deleted: result.stats.rowsDeleted, conflicts: result.stats.conflicts.length } });

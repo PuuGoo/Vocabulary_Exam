@@ -44,6 +44,7 @@ export async function GET(req: Request) {
       wordCount: countBySet.get(connection.setId) || 0,
       columnCount: template.fields.length,
       channelExpiresAt: channel?.expirationAt ?? null,
+      lastNotificationAt: channel?.lastMessageNumber ? channel.updatedAt : null,
       nextReconciliationAt: channel?.expirationAt ?? null,
     };
   });

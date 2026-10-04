@@ -47,7 +47,7 @@ export default function GoogleSheetsDetails({ connection, latestRun, feedback, i
   }, [menuOpen]);
   return (
     <div className="space-y-3">
-      <GoogleSheetsStatusCard status={view} feedback={feedback} />
+      <GoogleSheetsStatusCard status={view} feedback={latestRun?.status === "partial" ? "⚠ Đồng bộ một phần — cần xử lý" : feedback} />
       <div className="min-w-0 rounded-2xl border border-line bg-white p-4 sm:p-5">
         {/* Horizontal on desktop, stacked on mobile — never a horizontal scrollbar. */}
         <div className="flex min-w-0 flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -80,7 +80,7 @@ export default function GoogleSheetsDetails({ connection, latestRun, feedback, i
             </div>
           </div>
         </div>
-        <GoogleSheetsSyncHealth connection={connection} canManage={canManage} busy={busy} onRecover={onRecover} />
+        <GoogleSheetsSyncHealth connection={connection} canManage={canManage} busy={busy} onRecover={onRecover} partial={latestRun?.status === "partial"} />
         <div className="mt-5 flex flex-wrap gap-2 border-t border-line pt-4">
           <a className={`${primary} text-center`} href={connection.spreadsheetUrl} target="_blank" rel="noopener noreferrer">
             Mở Google Sheet ↗

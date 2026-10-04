@@ -3,6 +3,7 @@ import Modal from "@/components/Modal";
 import { SyncRun, formatDate } from "./types";
 import GoogleSheetsSyncStats from "./GoogleSheetsSyncStats";
 export function runStatus(value: string) {
+  if (value === "partial") return "Đồng bộ một phần — cần xử lý";
   if (value === "success") return "Đã đồng bộ";
   if (value === "running") return "Đang đồng bộ…";
   return "Đồng bộ đang gặp vấn đề";

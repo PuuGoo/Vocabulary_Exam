@@ -89,7 +89,7 @@ export async function startSyncRun(connectionId: number, triggerType: SyncTrigge
   return run.id;
 }
 
-export async function finishSyncRun(runId: number, status: "success" | "error", values?: {
+export async function finishSyncRun(runId: number, status: "success" | "partial" | "error", values?: {
   rowsRead?: number; rowsCreated?: number; rowsUpdated?: number; rowsDeleted?: number; rowsUnchanged?: number;
   rowsSkipped?: number; duplicateCount?: number; validationErrorCount?: number; errorMessage?: string; metadata?: Record<string, unknown>;
 }) {
@@ -109,10 +109,10 @@ export async function finishSyncRun(runId: number, status: "success" | "error", 
   }).where(eq(googleSheetSyncRuns.id, runId));
 }
 
-export async function markConnectionSyncState(connectionId: number, outcome: { ok: true } | { ok: false; error: string; retryable: boolean }) {
+export async function markConnectionSyncState(connectionId: number, outcome: { ok: true; partial?: boolean } | { ok: false; error: string; retryable: boolean }) {
   const now = new Date();
   if (outcome.ok) {
-    await db.update(googleSheetConnections).set({ status: "connected", lastSyncedAt: now, lastSuccessfulSyncAt: now, lastError: null, updatedAt: now }).where(eq(googleSheetConnections.id, connectionId));
+    await db.update(googleSheetConnections).set({ status: "connected", lastSyncedAt: now, ...(outcome.partial ? {} : { lastSuccessfulSyncAt: now }), lastError: null, updatedAt: now }).where(eq(googleSheetConnections.id, connectionId));
   } else {
     await db.update(googleSheetConnections).set({
       status: outcome.retryable ? "connected" : "error",

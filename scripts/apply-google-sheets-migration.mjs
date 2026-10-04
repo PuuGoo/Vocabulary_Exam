@@ -9,6 +9,7 @@ if (!connectionString || !/^postgres(ql)?:\/\//i.test(connectionString)) {
 
 const client = postgres(connectionString, { max: 1 });
 try {
+  const reliabilitySql = await readFile(new URL("../drizzle/0039_google_sheet_conflict_policy.sql", import.meta.url), "utf8");
   const sqlText = await readFile(new URL("../drizzle/0033_google_sheets_sync.sql", import.meta.url), "utf8");
   await client.begin((transaction) => transaction.unsafe(sqlText));
   console.log("Applied 0033_google_sheets_sync.sql");
@@ -28,6 +29,8 @@ try {
   const aiPromptsSql = await readFile(new URL("../drizzle/0038_google_sheet_ai_prompts.sql", import.meta.url), "utf8");
   await client.begin((transaction) => transaction.unsafe(aiPromptsSql));
   console.log("Applied 0038_google_sheet_ai_prompts.sql");
+  await client.begin((transaction) => transaction.unsafe(reliabilitySql));
+  console.log("Applied 0039_google_sheet_conflict_policy.sql");
 
   const [integrity] = await client.unsafe(`
     SELECT

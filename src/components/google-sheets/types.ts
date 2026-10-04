@@ -1,4 +1,6 @@
 export type Connection = {
+  conflictPolicy?: "review" | "sheet";
+  lastNotificationAt?: string | null;
   id: number; setId: number; spreadsheetId: string; spreadsheetUrl: string; spreadsheetName: string;
   sheetTitle: string; templateType: string; templateVersion: number; deleteBehavior: string;
   enabled: boolean; status: string; lastSyncedAt: string | null; lastSuccessfulSyncAt: string | null;

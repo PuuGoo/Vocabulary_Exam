@@ -16,6 +16,7 @@ import GoogleSheetsSyncHistory from "./google-sheets/GoogleSheetsSyncHistory";
 import GoogleSheetsSyncRunDetails from "./google-sheets/GoogleSheetsSyncRunDetails";
 import { toast } from "@/components/Toast";
 import { emitGoogleSheetSynced, hasVocabularyChanges } from "@/lib/googleSheets/syncEvent";
+import GoogleSheetsReliability from "./google-sheets/GoogleSheetsReliability";
 
 type CreateResume = { autoCreate: boolean; failed: boolean; onHandled: () => void };
 type Dialog = "create" | "connect" | "pause" | "disconnect" | "recover" | "settings" | "history" | "changes" | "success" | null;
@@ -45,7 +46,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
   const seenRunRef = useRef<string | null>(null);
   const connection = connections.find((item) => item.setId === setId) ?? null;
   const broken = !!connection && (connection.status === "error" || connection.status === "disconnected");
-  const latestRun = runs.find((run) => run.status === "success") ?? runs[0] ?? null;
+  const latestRun = runs[0] ?? null;
 
   /**
    * Notify the parent vocabulary page after a sync changed rows.
@@ -215,7 +216,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       const stats = data.stats || {};
       const invalidRows: Array<{ rowNumber: number; message: string }> = Array.isArray(stats.invalidRows) ? stats.invalidRows : [];
       setInvalid(invalidRows);
-      const summary = `Đồng bộ xong: +${stats.rowsCreated || 0} tạo mới, ~${stats.rowsUpdated || 0} cập nhật, =${stats.rowsUnchanged || 0} giữ nguyên.`;
+      const summary = `${data.status === "partial" ? "Đồng bộ một phần" : "Đồng bộ xong"}: +${stats.rowsCreated || 0} tạo mới, ~${stats.rowsUpdated || 0} cập nhật, =${stats.rowsUnchanged || 0} giữ nguyên. ${stats.conflicts?.length || 0} xung đột; ${stats.deletionBlocked || 0} dòng được bảo vệ khỏi xóa.`;
       toast(invalidRows.length ? `${summary} Bỏ qua ${invalidRows.length} dòng: ${invalidRows.slice(0, 2).map((row) => `dòng ${row.rowNumber} ${row.message}`).join("; ")}${invalidRows.length > 2 ? "…" : ""}` : summary);
       notifyVocabularyChanged({ ...stats, finishedAt: new Date().toISOString() });
       await load();
@@ -333,9 +334,9 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
     setFeedback("↻ Đang cập nhật từ Google Sheets…");
     // A NEW run finished (webhook/manual). If it changed vocabulary, ask the
     // parent to reload the visible list now - no browser refresh, no Sync Now.
-    if (latestRun?.status === "success") notifyVocabularyChanged(latestRun);
+    if (latestRun?.status === "success" || latestRun?.status === "partial") notifyVocabularyChanged(latestRun);
     const timer = window.setTimeout(() => {
-      setFeedback(`✓ Đã đồng bộ lúc ${formatClock(newest)}`);
+      setFeedback(latestRun?.status === "partial" ? "⚠ Đồng bộ một phần — cần xử lý" : latestRun?.status === "success" ? `✓ Đã đồng bộ lúc ${formatClock(newest)}` : "⚠ Đồng bộ đang gặp vấn đề");
     }, 900);
     return () => window.clearTimeout(timer);
   }, [connection, broken, latestRun, notifyVocabularyChanged]);
@@ -387,6 +388,8 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
           canManage={canManage}
         />
       )}
+
+      {connection && <GoogleSheetsReliability connection={connection} run={latestRun} canManage={canManage} canSync={canSync} onUpdated={async () => { await load(); await loadRuns(connection.id); onVocabularyChanged?.([]); emitGoogleSheetSynced({ setId, connectionId: connection.id, changedWordIds: [], rowsCreated: 0, rowsUpdated: 1, rowsDeleted: 0, finishedAt: new Date().toISOString() }); }} />}
 
       {dialog === "create" && (
         <GoogleSheetsCreateDialog busy={busy === "create"} phase={createPhase} aiEnrich={aiEnrichChoice} onAiEnrich={setAiEnrichChoice} onClose={() => setDialog(null)} onCreate={() => void createSheet()} />

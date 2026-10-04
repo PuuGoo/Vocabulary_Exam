@@ -13,7 +13,7 @@ test("the panel accepts an onVocabularyChanged callback and fires it after a syn
   assert.match(panel, /onVocabularyChanged\?: \(wordIds: number\[\]\) => void/, "the panel exposes the callback prop");
   assert.match(panel, /onVocabularyChanged\?\.\(changedWordIds\)/, "the callback is invoked with the changed word ids");
   assert.match(panel, /notifyVocabularyChanged\(\{ \.\.\.stats, finishedAt/, "manual sync notifies the parent");
-  assert.match(panel, /if \(latestRun\?\.status === "success"\) notifyVocabularyChanged\(latestRun\)/, "a newly finished run notifies the parent");
+  assert.match(panel, /if \(latestRun\?\.status === "success" \|\| latestRun\?\.status === "partial"\) notifyVocabularyChanged\(latestRun\)/, "successful and partial runs notify the parent");
   // Spec item 12: the 30s poll is status-only and must never refresh
   // vocabulary data. It only reloads connection/runs; the vocabulary parent is
   // notified only when a NEW run finishes.

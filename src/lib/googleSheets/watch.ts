@@ -30,6 +30,7 @@ export async function ensureWatchChannel(
     expirationAt: channel.expirationAt,
     // Only the digest is stored; the raw token is dropped here.
     channelTokenHash: channel.channelToken ? hashChannelToken(channel.channelToken) : null,
+    lastMessageNumber: null,
     // A notification referencing a channel we cannot verify (legacy row with no
     // token) must not silently pass, so expose that state explicitly.
     status: "active",

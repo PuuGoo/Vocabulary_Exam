@@ -30,7 +30,12 @@ export function useVocabularySync(setId: number | undefined, vocabularyVisible: 
                 const failure = await result.json().catch(() => ({}));
                 throw new Error(failure.error || "Google Sheets sync failed.");
               }
-              if (result.ok) errorRef.current = "";
+              if (result.ok) {
+                const outcome = await result.json();
+                const message = outcome.status === "partial" ? "Google Sheets đồng bộ một phần. Mở Cài đặt bộ để xử lý xung đột hoặc dòng bị bỏ qua." : "";
+                if (message && errorRef.current !== message) toast(message);
+                errorRef.current = message;
+              }
             }
           }
         }

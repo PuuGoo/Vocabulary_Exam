@@ -9,6 +9,7 @@ import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity"
 import { draftToWordInsert, parseVocabularyRows, type ParsedWordDraft } from "@/lib/vocabImport/parse";
 import { appendWords } from "@/lib/wordOrder.server";
 import { importWordKey } from "@/lib/importDedup";
+import { blocksBulkDeletion, matchingResolution, type ConflictDetail, type SyncRequest, type WordChange } from "./reliability";
 
 export type SyncConnection = {
   id: number;
@@ -16,6 +17,7 @@ export type SyncConnection = {
   spreadsheetId: string;
   sheetTitle: string;
   deleteBehavior: string;
+  conflictPolicy?: string;
   status: string;
   enabled: boolean;
   /** Raw JSON from the DB column; parsed once into prompt overrides below. */
@@ -35,7 +37,9 @@ export type SyncStats = {
    * Structured conflicts. The UI renders sourceId / word / fieldsChanged
    * directly, so nothing has to be parsed back out of a message string.
    */
-  conflicts: Array<{ rowNumber: number; sourceId: string; word: string; fieldsChanged: string[]; message: string }>;
+  conflicts: ConflictDetail[];
+  changes: WordChange[];
+  deletionBlocked: number;
   invalidRows: Array<{ rowNumber: number; message: string }>;
   idWrites: Array<{ rowNumber: number; sourceId: string }>;
   changedWordIds: number[];
@@ -76,6 +80,7 @@ export async function runVocabularySync(
   connection: SyncConnection,
   grid: SheetGrid,
   tx: Tx,
+  options?: SyncRequest,
 ): Promise<SyncEngineResult> {
   const [set] = await tx.select().from(vocabSets).where(eq(vocabSets.id, connection.setId)).limit(1);
   if (!set) throw new Error("Vocabulary set not found");
@@ -85,7 +90,7 @@ export async function runVocabularySync(
   const aiPromptOverrides = parseAiPromptOverrides(connection.aiPrompts);
   const parsedRows = parseSheetGrid(grid, template);
   const [existingWords, mappings] = await Promise.all([
-    tx.select().from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id)),
+    tx.select().from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id)).for("update"),
     tx.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.connectionId, connection.id)),
   ]);
 
@@ -114,10 +119,12 @@ export async function runVocabularySync(
   const idWrites: Array<{ rowNumber: number; sourceId: string }> = [];
   const createdDrafts: Array<{ rowNumber: number; sourceId: string; draft: ParsedWordDraft; fingerprint: string }> = [];
   const updatedDrafts: Array<{ rowNumber: number; wordId: number; draft: ParsedWordDraft; fingerprint: string }> = [];
-  const conflicts: Array<{ rowNumber: number; sourceId: string; word: string; fieldsChanged: string[]; message: string }> = [];
+  const conflicts: ConflictDetail[] = [];
+  const changes: WordChange[] = [];
   const unchangedWordIds = new Set<number>();
   const unarchivedWordIds = new Set<number>();
   const seenSourceIds = new Set<string>();
+  const appliedResolutions = new Set<string>();
 
   // Spec item 5: user-entered data always wins. AI formulas are only planted
   // into cells the admin has not filled in yet. Without this guard a manual
@@ -139,6 +146,7 @@ export async function runVocabularySync(
   for (const row of parsedRows) {
     if (!Object.values(row.values).some((value) => value !== "" && value != null)) continue; // blank row
     const resolvedSourceId = readSourceIdCell(row.sourceId);
+    if (resolvedSourceId) seenSourceIds.add(`present:${resolvedSourceId}`);
     const draft = draftByRowNumber.get(row.rowNumber);
     if (!draft) {
       // The row is not valid vocabulary yet (Word or Meaning is still blank).
@@ -187,18 +195,34 @@ export async function runVocabularySync(
     const dbValues = templateValuesForWord(template, word);
     const dbFingerprint = fingerprintDbWord(template, dbValues);
     const lastSynced = mapping?.lastSyncedFingerprint ?? null;
-    if (dbFingerprint === fingerprint && (!lastSynced || lastSynced === fingerprint)) { unchangedWordIds.add(word.id); continue; }
+    const resolution = matchingResolution(options?.resolutions, mapping?.sourceId ?? "", fingerprint, dbFingerprint);
+    const requested = options?.resolutions?.find((item) => item.sourceId === mapping?.sourceId);
+    if (requested && !resolution) throw new Error("Dữ liệu đã thay đổi từ lúc mở so sánh. Hãy đồng bộ lại và kiểm tra trước khi xác nhận.");
+    if (requested && resolution) appliedResolutions.add(requested.sourceId);
+    if (resolution === "website" && mapping) {
+      if (connection.conflictPolicy === "sheet") throw new Error("Hãy tắt chế độ Sheet là nguồn chính trước khi giữ bản website.");
+      await tx.update(googleSheetRowMappings).set({ sourceFingerprint: fingerprint, lastSyncedFingerprint: dbFingerprint, updatedAt: new Date() }).where(eq(googleSheetRowMappings.id, mapping.id));
+      changes.push({ wordId: word.id, word: String(word.term ?? word.v1 ?? ""), action: "keep_website", before: dbValues, after: dbValues });
+      unchangedWordIds.add(word.id);
+      continue;
+    }
+    if (connection.conflictPolicy !== "sheet" && !resolution && mapping?.sourceFingerprint === fingerprint && lastSynced === dbFingerprint) { unchangedWordIds.add(word.id); continue; }
+    if (dbFingerprint === fingerprint) {
+      if (mapping && lastSynced !== fingerprint) await tx.update(googleSheetRowMappings).set({ sourceFingerprint: fingerprint, lastSyncedFingerprint: fingerprint, updatedAt: new Date() }).where(eq(googleSheetRowMappings.id, mapping.id));
+      unchangedWordIds.add(word.id); continue;
+    }
     // Conflict requires BOTH sides to have moved since the last sync:
     // DB != lastSynced AND Sheet != lastSynced. When the DB still equals
     // lastSynced, the Sheet is simply the side that changed - that is the
     // normal Google-Sheet-edits-the-vocabulary workflow, so it is an UPDATE.
-    if (lastSynced && dbFingerprint !== lastSynced && fingerprint !== lastSynced) {
+    if (lastSynced && dbFingerprint !== lastSynced && fingerprint !== lastSynced && connection.conflictPolicy !== "sheet" && resolution !== "sheet") {
       const fieldsChanged = changedFingerprintFields(template, dbValues, { ...row.values } as Record<string, string>);
       conflicts.push({
         rowNumber: row.rowNumber,
         sourceId: mapping?.sourceId ?? resolvedSourceId ?? "",
         word: String(row.values.term ?? row.values.v1 ?? ""),
         fieldsChanged,
+        sheetFingerprint: fingerprint, dbFingerprint, before: dbValues, after: row.values,
         message: `Cột ${SOURCE_ID_HEADER}=${mapping?.sourceId} đã bị sửa trực tiếp trong Lexora; Sheet và DB đã phân kỳ.`,
       });
       continue;
@@ -206,6 +230,7 @@ export async function runVocabularySync(
     updatedDrafts.push({ rowNumber: row.rowNumber, wordId: word.id, draft, fingerprint });
   }
 
+  if ((options?.resolutions ?? []).some((item) => !appliedResolutions.has(item.sourceId))) throw new Error("Dòng cần xử lý không còn hợp lệ hoặc đã bị xóa khỏi Sheet. Hãy đồng bộ lại.");
   const createdRows = createdDrafts.length ? await appendWords(tx, set.id, createdDrafts.map((entry) => draftToWordInsert(entry.draft))) : [];
   const changedWordIds: number[] = [];
 
@@ -223,11 +248,15 @@ export async function runVocabularySync(
   }
 
   for (const entry of updatedDrafts) {
-    await tx.update(words).set(draftToWordInsert(entry.draft)).where(eq(words.id, entry.wordId));
+    const previous = wordById.get(entry.wordId)!;
+    changes.push({ wordId: entry.wordId, word: String(previous.term ?? previous.v1 ?? ""), action: "update", before: templateValuesForWord(template, previous), after: templateValuesForWord(template, draftToWordInsert(entry.draft)) });
+    const draftValues = draftToWordInsert(entry.draft);
+    const patch = Object.fromEntries(template.fields.filter((field) => !field.displayOnly && field.key !== SOURCE_ID_HEADER).map((field) => [field.key, draftValues[field.key as keyof typeof draftValues]]));
+    await tx.update(words).set(patch).where(eq(words.id, entry.wordId));
     const mapping = mappingByWordId.get(entry.wordId);
     if (mapping) {
       await tx.update(googleSheetRowMappings)
-        .set({ sheetRowNumber: entry.rowNumber, lastSyncedFingerprint: entry.fingerprint, updatedAt: new Date() })
+        .set({ sheetRowNumber: entry.rowNumber, sourceFingerprint: entry.fingerprint, lastSyncedFingerprint: entry.fingerprint, updatedAt: new Date() })
         .where(eq(googleSheetRowMappings.id, mapping.id));
     }
     changedWordIds.push(entry.wordId);
@@ -237,9 +266,16 @@ export async function runVocabularySync(
   // opt-in and only used when explicitly configured.
   let rowsDeleted = 0;
   const activeSourceIds = new Set(createdDrafts.map((entry) => entry.sourceId).concat([...mappingBySourceId.keys()].filter((sourceId) => seenSourceIds.has(sourceId))));
+  for (const mapping of mappings) if (seenSourceIds.has(`present:${mapping.sourceId}`)) activeSourceIds.add(mapping.sourceId);
+  const activeMappings = mappings.filter((mapping) => mapping.wordId && !mapping.deletedAt);
+  const missing = activeMappings.filter((mapping) => !activeSourceIds.has(mapping.sourceId));
+  const deletionBlocked = connection.deleteBehavior !== "ignore" && blocksBulkDeletion(activeMappings.length, missing.length) ? missing.length : 0;
   for (const mapping of mappings) {
+    if (deletionBlocked) break;
     if (!mapping.wordId || activeSourceIds.has(mapping.sourceId) || mapping.deletedAt) continue;
     if (connection.deleteBehavior === "ignore") continue;
+    const previous = wordById.get(mapping.wordId);
+    if (previous) changes.push({ wordId: mapping.wordId, word: String(previous.term ?? previous.v1 ?? ""), action: connection.deleteBehavior === "delete" ? "delete" : "archive", before: templateValuesForWord(template, previous), after: {} });
     if (connection.deleteBehavior === "delete") {
       await tx.delete(words).where(eq(words.id, mapping.wordId));
       await tx.delete(googleSheetRowMappings).where(eq(googleSheetRowMappings.id, mapping.id));
@@ -260,6 +296,8 @@ export async function runVocabularySync(
     duplicateCount,
     validationErrorCount: invalidRows.length,
     conflicts,
+    changes,
+    deletionBlocked,
     invalidRows,
     idWrites,
     changedWordIds,

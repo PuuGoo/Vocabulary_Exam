@@ -7,6 +7,7 @@ import { googleSheetConnections, vocabSets } from "@/db/schema";
 import { syncConnection } from "@/lib/googleSheets/sheetLifecycle";
 import { GoogleSheetsError } from "@/lib/googleSheets/errors";
 import { checkRateLimit, recordRateLimitHit } from "@/lib/rateLimit";
+import { syncRequestSchema, syncIsPartial } from "@/lib/googleSheets/reliability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,15 @@ const RATE_LIMIT = { windowMs: 60 * 1000, maxAttempts: 6 };
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const access = await requireAdminPermission("google_sheets.sync");
   if (isAuthorizationError(access)) return access;
+  const body = await _req.text();
+  let input: unknown = {};
+  try { input = body ? JSON.parse(body) : {}; } catch { return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 }); }
+  const parsed = syncRequestSchema.safeParse(input);
+  if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
+  if (parsed.data.repairWatch || parsed.data.resolutions?.length) {
+    const manage = await requireAdminPermission("google_sheets.manage");
+    if (isAuthorizationError(manage)) return manage;
+  }
   const connectionId = Number(params.id);
   if (!Number.isInteger(connectionId) || connectionId < 1) return NextResponse.json({ error: "Không tìm thấy kết nối." }, { status: 404 });
   const limitKey = `google-sheet-sync:${access.userId}`;
@@ -31,8 +41,8 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (isAuthorizationError(scoped)) return scoped;
   if (!connection.enabled || connection.status === "disconnected") return NextResponse.json({ error: "Kết nối đang bị tạm dừng.", code: "PAUSED" }, { status: 409 });
   try {
-    const result = await syncConnection(connectionId, "manual", { actorUserId: access.userId });
-    return NextResponse.json({ ok: true, connectionId, stats: result.stats });
+    const result = await syncConnection(connectionId, "manual", { actorUserId: access.userId, ...parsed.data });
+    return NextResponse.json({ ok: true, status: syncIsPartial(result.stats) ? "partial" : "success", connectionId, stats: result.stats });
   } catch (error) {
     if (error instanceof Error && error.name === "SyncInProgressError") return NextResponse.json({ error: "Đồng bộ đang chạy.", code: "SYNC_IN_PROGRESS" }, { status: 409 });
     if (error instanceof GoogleSheetsError) {
