@@ -12,6 +12,7 @@ import { writeAdminAudit } from "@/lib/adminAudit";
 import { serializeLanguageSettings } from "@/lib/languageSettings";
 import { findVisibleFolderIdByLegacyPath, getFolderDisplayPath, getFolderLegacyPath, requireAdminResourceAccess } from "@/lib/folderAuthorization";
 import { loadWordContent } from "@/lib/wordContent";
+import { visibleWordPositions } from "@/lib/googleSheets/displayOrder";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -55,6 +56,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     }
     wordList = archived.size ? allWords.filter((word) => !archived.has(word.id)) : allWords;
   }
+  wordList = visibleWordPositions(wordList);
   const progress: Record<number, boolean> = {};
   if (wordList.length > 0) {
     const progressRows = await db
