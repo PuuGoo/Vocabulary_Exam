@@ -1,4 +1,6 @@
 export type Connection = {
+  managedByLexora?: boolean;
+  externalState?: string;
   conflictPolicy?: "review" | "sheet";
   lastNotificationAt?: string | null;
   id: number; setId: number; spreadsheetId: string; spreadsheetUrl: string; spreadsheetName: string;
@@ -31,7 +33,8 @@ export const STATUS_LABEL: Record<StatusView, { label: string; dot: string; clas
 /** The backend keeps its own status values; the admin only ever reads these sentences. */
 export function statusView(connection: Connection | null): StatusView {
   if (!connection) return "disconnected";
-  if (connection.status === "disconnected") return "disconnected";
+  if (["disconnected", "archived", "replaced"].includes(connection.status)) return "disconnected";
+  if (connection.status === "missing") return "error";
   if (!connection.enabled && connection.status === "connected") return "paused";
   if (connection.status === "syncing") return "syncing";
   if (connection.status === "paused") return "paused";

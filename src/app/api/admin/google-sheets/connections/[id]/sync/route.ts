@@ -23,7 +23,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   try { input = body ? JSON.parse(body) : {}; } catch { return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 }); }
   const parsed = syncRequestSchema.safeParse(input);
   if (!parsed.success) return NextResponse.json({ error: "Dữ liệu không hợp lệ." }, { status: 400 });
-  if (parsed.data.repairWatch || parsed.data.resolutions?.length) {
+  if (parsed.data.repairWatch || parsed.data.resolutions?.length || parsed.data.deletionApproval || parsed.data.updateApproval) {
     const manage = await requireAdminPermission("google_sheets.manage");
     if (isAuthorizationError(manage)) return manage;
   }
@@ -46,7 +46,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   } catch (error) {
     if (error instanceof Error && error.name === "SyncInProgressError") return NextResponse.json({ error: "Đồng bộ đang chạy.", code: "SYNC_IN_PROGRESS" }, { status: 409 });
     if (error instanceof GoogleSheetsError) {
-      const status = error.code === "OAUTH_REQUIRED" || error.code === "OAUTH_REVOKED" ? 401 : error.code === "SHEET_NOT_FOUND" ? 404 : 502;
+      const status = error.status === 409 ? 409 : error.code === "OAUTH_REQUIRED" || error.code === "OAUTH_REVOKED" ? 401 : error.code === "SHEET_NOT_FOUND" ? 404 : 502;
       return NextResponse.json({ error: error.message, code: error.code, retryable: error.retryable }, { status });
     }
     console.error("[google-sheets] sync failed", error instanceof Error ? error.message : "unknown");

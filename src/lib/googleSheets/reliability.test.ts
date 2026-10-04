@@ -39,5 +39,5 @@ test("server reconciliation preserves partial status instead of claiming full su
   const source = readFileSync("src/lib/googleSheets/reconcile.ts", "utf8");
   assert.match(source, /syncIsPartial\(result.stats\) \? "partial" : "synced"/);
   assert.match(source, /lastSyncedAt/);
-  assert.match(source, /ne\(googleSheetConnections.status, "paused"\)/);
+  assert.match(source, /inArray\(googleSheetConnections.status, \["connected", "syncing"\]\)/);
 });

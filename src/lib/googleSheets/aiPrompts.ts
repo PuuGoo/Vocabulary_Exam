@@ -6,8 +6,9 @@ import {
   type AiPromptOverrides,
 } from "@/lib/googleSheets/aiFormula";
 import { quoteSheetTitle } from "@/lib/googleSheets/spreadsheet";
-import { isRawAiFormula } from "@/lib/googleSheets/parser";
+import { isRawAiFormula, mapHeadersToFieldKeys } from "@/lib/googleSheets/parser";
 import type { GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { GoogleSheetsError } from "./errors";
 
 /**
  * Apply admin-authored AI prompt wording to an EXISTING Google Sheet.
@@ -74,7 +75,7 @@ function buildRuns(letters: readonly string[], pendingByRow: ReadonlyMap<number,
 
 export function planAiPromptApplication(options: {
   template: GoogleSheetTemplate;
-  /** Raw grid rows (row 1 = header) as read with valueRenderOption=FORMULA. */
+  /** Body rows only, starting at spreadsheet row 2. */
   formulaRows: SheetsValue;
   promptOverrides: AiPromptOverrides | null;
 }): { updates: SheetsBatchValueUpdate[]; stats: AiPromptApplyStats; sheetTitle: string } {
@@ -160,9 +161,18 @@ export async function applyAiPromptsToSheet(options: {
   const scanRange = `${sheetTitle}!A1:${String.fromCharCode(64 + Math.min(template.fields.length, 26))}${SCAN_CHUNK_ROWS + 1}`;
   const formulaRows = await api.readValues(spreadsheetId, scanRange, { renderOption: "FORMULA" });
 
-  const { updates, stats } = planAiPromptApplication({ template, formulaRows, promptOverrides });
+  const headers = (formulaRows[0] ?? []).map(value => String(value ?? ""));
+  const mapped = mapHeadersToFieldKeys(headers, template);
+  const fields = headers.map((header, index) => {
+    const key = mapped.get(index);
+    return template.fields.find(field => field.key === key) ?? { key: `__unmanaged_${index}`, header, width: 100, wrap: false, displayOnly: true };
+  });
+  const actualTemplate = { ...template, fields };
+  const { updates, stats } = planAiPromptApplication({ template: actualTemplate, formulaRows: formulaRows.slice(1), promptOverrides });
   let writeRequests = 0;
   if (updates.length) {
+    const currentRows = await api.readValues(spreadsheetId, scanRange, { renderOption: "FORMULA" });
+    if (JSON.stringify(currentRows) !== JSON.stringify(formulaRows)) throw new GoogleSheetsError("Sheet đã thay đổi trong lúc áp dụng prompt. Hãy kiểm tra rồi thử lại; Lexora chưa ghi đè nội dung.", "INVALID_SCHEMA", { status: 409, retryable: false });
     if (typeof api.batchWriteValues === "function") {
       // Chunk to stay well under the request-payload limit on large sheets.
       for (let offset = 0; offset < updates.length; offset += 100) {

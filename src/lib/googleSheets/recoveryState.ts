@@ -18,12 +18,12 @@ export function isActiveConnectionState(connection: ConnectionState): boolean {
 
 /** Paused on purpose (not broken): never a new spreadsheet, not an error either. */
 export function isPausedConnectionState(connection: ConnectionState): boolean {
-  return connection.status === "paused" || (!connection.enabled && connection.status !== "error" && connection.status !== "disconnected");
+  return connection.status === "paused" || (!connection.enabled && !["error", "disconnected", "missing", "archived", "replaced"].includes(connection.status));
 }
 
 /** Broken wiring (error / disconnected): needs recovery, not a 409. */
 export function isBrokenConnectionState(connection: ConnectionState): boolean {
-  return connection.status === "error" || connection.status === "disconnected";
+  return ["error", "disconnected", "missing", "archived", "replaced"].includes(connection.status);
 }
 
 /**

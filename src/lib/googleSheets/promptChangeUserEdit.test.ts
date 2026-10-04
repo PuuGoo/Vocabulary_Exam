@@ -11,14 +11,14 @@ import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
 import { runVocabularySync } from "@/lib/googleSheets/syncVocabulary";
 
-const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
+const enabled = process.env.GOOGLE_SHEETS_TEST_DB === "1" && Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
 
 /**
  * Spec item 17: prompt change -> Google materializes -> sync -> user edits the
  * materialized text -> user text wins. The old AI output must never come back.
  */
 test("prompt change -> materialized text -> user edit keeps the user value", { skip: !enabled, timeout: 90000 }, async () => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   try {
     const [admin] = await sql`select id from users where username = 'admin' limit 1`;
     if (!admin) return;

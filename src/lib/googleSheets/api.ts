@@ -43,15 +43,12 @@ export type SpreadsheetMetadata = { sheets: Array<{ sheetId: number; title: stri
  */
 export const WATCH_CHANNEL_EXPIRATION_MS = 1000 * 60 * 60 * 23;
 
-/**
- * A channel is renewed lazily when it has less than this much life left, and
- * by the daily cron on the same condition. It is comfortably larger than the
- * daily cron interval so a channel is never left to expire unattended.
- */
 export const WATCH_CHANNEL_RENEW_THRESHOLD_MS = 1000 * 60 * 60 * 6;
 
 /** Thin, testable abstraction over the Google Sheets + Drive APIs. */
 export type GoogleWorkspaceApi = {
+  trashSpreadsheet?: (spreadsheetId: string) => Promise<void>;
+  stopWatchChannel?: (channelId: string, resourceId: string) => Promise<void>;
   createSpreadsheet(options: { title: string; sheetTitle: string }): Promise<CreatedSpreadsheet>;
   readValues(spreadsheetId: string, rangeA1: string, options?: { renderOption?: SheetsRenderOption }): Promise<SheetsValue>;
   writeValues(spreadsheetId: string, rangeA1: string, values: SheetsValue, options?: { parseFormulas?: boolean }): Promise<void>;

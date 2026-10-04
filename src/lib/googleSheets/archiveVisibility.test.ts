@@ -61,7 +61,7 @@ async function seed(): Promise<Fixture> {
   return { connectionId: conn.id, setId: set.id, wordIds: inserted.map((w) => w.id), sourceIds, set: set as never };
 }
 
-test("archived rows disappear from the admin read path (bug: delete in Sheet, admin still showed 5)", async () => {
+test("archived rows disappear from the admin read path (bug: delete in Sheet, admin still showed 5)", { skip: process.env.GOOGLE_SHEETS_TEST_DB !== "1" }, async () => {
   const fixture = await seed();
   try {
     const header = getGoogleSheetTemplate(fixture.set).fields.map((f) => f.header);
@@ -96,7 +96,7 @@ test("archived rows disappear from the admin read path (bug: delete in Sheet, ad
   }
 });
 
-test("a row restored in the Sheet is un-archived and reappears in the admin", async () => {
+test("a row restored in the Sheet is un-archived and reappears in the admin", { skip: process.env.GOOGLE_SHEETS_TEST_DB !== "1" }, async () => {
   const fixture = await seed();
   try {
     const tpl = getGoogleSheetTemplate(fixture.set);
@@ -105,7 +105,9 @@ test("a row restored in the Sheet is un-archived and reappears in the admin", as
     const state = { id: fixture.connectionId, setId: fixture.setId, spreadsheetId: "x", sheetTitle: tpl.sheetTitle, deleteBehavior: "archive", status: "connected", enabled: true };
 
     // 1. delete everything
-    await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header]), tx));
+    const preview = await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header]), tx));
+    assert.equal(preview.stats.deletionBlocked, 5);
+    await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header]), tx, { deletionApproval: preview.stats.deletionReview!.fingerprint }));
     const archived = await db.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.connectionId, fixture.connectionId));
     assert.equal(archived.filter((m) => m.deletedAt).length, 5);
 
@@ -131,7 +133,7 @@ test("a row restored in the Sheet is un-archived and reappears in the admin", as
   }
 });
 
-test("archiving a Sheet row never touches learning data", async () => {
+test("archiving a Sheet row never touches learning data", { skip: process.env.GOOGLE_SHEETS_TEST_DB !== "1" }, async () => {
   const fixture = await seed();
   try {
     const tpl = getGoogleSheetTemplate(fixture.set);

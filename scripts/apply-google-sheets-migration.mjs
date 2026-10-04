@@ -31,6 +31,9 @@ try {
   console.log("Applied 0038_google_sheet_ai_prompts.sql");
   await client.begin((transaction) => transaction.unsafe(reliabilitySql));
   console.log("Applied 0039_google_sheet_conflict_policy.sql");
+  const workspaceSql = await readFile(new URL("../drizzle/0040_google_sheet_workspace.sql", import.meta.url), "utf8");
+  await client.begin((transaction) => transaction.unsafe(workspaceSql));
+  console.log("Applied 0040_google_sheet_workspace.sql");
 
   const [integrity] = await client.unsafe(`
     SELECT

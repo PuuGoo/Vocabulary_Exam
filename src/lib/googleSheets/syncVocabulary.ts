@@ -1,13 +1,15 @@
 import { asc, eq } from "drizzle-orm";
+import { blocksBulkUpdate, bulkDeletionThresholds, deletionReviewFingerprint, type DeletionReview, type UpdateReview } from "./bulkReview";
+import { GoogleSheetsError } from "./errors";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from "@/db/schema";
-import { gridFromValuesRange, parseSheetGrid, type SheetGrid } from "@/lib/googleSheets/parser";
+import { gridFromValuesRange, mapHeadersToFieldKeys, parseSheetGrid, type SheetGrid } from "@/lib/googleSheets/parser";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, parseAiPromptOverrides } from "@/lib/googleSheets/aiFormula";
 import { changedFingerprintFields, fingerprintDbWord, fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
 import { draftToWordInsert, parseVocabularyRows, type ParsedWordDraft } from "@/lib/vocabImport/parse";
-import { appendWords } from "@/lib/wordOrder.server";
+import { appendWords, lockVocabularySets } from "@/lib/wordOrder.server";
 import { importWordKey } from "@/lib/importDedup";
 import { blocksBulkDeletion, matchingResolution, type ConflictDetail, type SyncRequest, type WordChange } from "./reliability";
 
@@ -40,6 +42,9 @@ export type SyncStats = {
   conflicts: ConflictDetail[];
   changes: WordChange[];
   deletionBlocked: number;
+  deletionReview?: DeletionReview;
+  updateBlocked?: number;
+  updateReview?: UpdateReview;
   invalidRows: Array<{ rowNumber: number; message: string }>;
   idWrites: Array<{ rowNumber: number; sourceId: string }>;
   changedWordIds: number[];
@@ -82,6 +87,7 @@ export async function runVocabularySync(
   tx: Tx,
   options?: SyncRequest,
 ): Promise<SyncEngineResult> {
+  await lockVocabularySets(tx, [connection.setId]);
   const [set] = await tx.select().from(vocabSets).where(eq(vocabSets.id, connection.setId)).limit(1);
   if (!set) throw new Error("Vocabulary set not found");
   const template = getGoogleSheetTemplate(set);
@@ -95,8 +101,18 @@ export async function runVocabularySync(
   ]);
 
   const mappingBySourceId = new Map(mappings.map((mapping) => [mapping.sourceId, mapping]));
+  const reviewFingerprint = deletionReviewFingerprint({ connectionId: connection.id, spreadsheetId: connection.spreadsheetId, deleteBehavior: connection.deleteBehavior, grid, words: existingWords, mappings: [...mappings].sort((left, right) => left.id - right.id) });
+  if (options?.deletionApproval && options.deletionApproval !== reviewFingerprint) {
+    throw new GoogleSheetsError("Dữ liệu đã thay đổi sau khi xem xét. Hãy đồng bộ lại và kiểm tra danh sách mới.", "INVALID_SCHEMA", { status: 409, retryable: false });
+  }
+  if (options?.updateApproval && options.updateApproval !== reviewFingerprint) throw new GoogleSheetsError("Dữ liệu đã thay đổi sau khi xem xét. Hãy đồng bộ lại trước khi xác nhận cập nhật.", "INVALID_SCHEMA", { status: 409, retryable: false });
   const mappingByWordId = new Map(mappings.filter((mapping) => mapping.wordId != null).map((mapping) => [mapping.wordId as number, mapping]));
   const wordById = new Map(existingWords.map((word) => [word.id, word]));
+  const wordsByKey = new Map<string, typeof existingWords>();
+  for (const word of existingWords) {
+    const key = importWordKey(word, set.type);
+    wordsByKey.set(key, [...(wordsByKey.get(key) ?? []), word]);
+  }
 
   const existingKeys = existingWords.map((word) => importWordKey({ term: word.term, v1: word.v1, v2: word.v2, v3: word.v3 }, set.type));
   const draftsByRow = parseVocabularyRows(
@@ -124,6 +140,7 @@ export async function runVocabularySync(
   const unchangedWordIds = new Set<number>();
   const unarchivedWordIds = new Set<number>();
   const seenSourceIds = new Set<string>();
+  const claimedWordIds = new Set<number>();
   const appliedResolutions = new Set<string>();
 
   // Spec item 5: user-entered data always wins. AI formulas are only planted
@@ -146,6 +163,7 @@ export async function runVocabularySync(
   for (const row of parsedRows) {
     if (!Object.values(row.values).some((value) => value !== "" && value != null)) continue; // blank row
     const resolvedSourceId = readSourceIdCell(row.sourceId);
+    if (row.sourceId.trim() && !resolvedSourceId) throw new GoogleSheetsError("ID dòng không hợp lệ. Hãy sửa ID trước khi đồng bộ.", "INVALID_SCHEMA", { retryable: false });
     if (resolvedSourceId) seenSourceIds.add(`present:${resolvedSourceId}`);
     const draft = draftByRowNumber.get(row.rowNumber);
     if (!draft) {
@@ -165,11 +183,36 @@ export async function runVocabularySync(
     if (seenSourceIds.has(identityKey)) { duplicateCount += 1; continue; }
     seenSourceIds.add(identityKey);
 
-    const mapping = resolvedSourceId ? mappingBySourceId.get(resolvedSourceId) : undefined;
+    let mapping = resolvedSourceId ? mappingBySourceId.get(resolvedSourceId) : undefined;
     const fallbackKey = importWordKey({ term: draft.term, v1: draft.v1, v2: draft.v2, v3: draft.v3 }, set.type);
-    const fallbackWord = existingWords.find((candidate) => importWordKey({ term: candidate.term, v1: candidate.v1, v2: candidate.v2, v3: candidate.v3 }, set.type) === fallbackKey);
+    const fallbackMatches = wordsByKey.get(fallbackKey) ?? [];
+    if (!mapping && fallbackMatches.length > 1) throw new GoogleSheetsError("Có nhiều từ cùng danh tính. Hãy xử lý trùng trước khi đồng bộ.", "INVALID_SCHEMA", { retryable: false });
+    const fallbackWord = fallbackMatches[0];
     const fingerprint = fingerprintSheetValues(template, { ...row.values } as Record<string, string>);
     const word = mapping?.wordId != null ? wordById.get(mapping.wordId) : fallbackWord;
+    if (word && claimedWordIds.has(word.id)) throw new GoogleSheetsError("Nhiều dòng đang trỏ tới cùng một từ. Hãy kiểm tra ID và dòng trùng.", "INVALID_SCHEMA", { retryable: false });
+    if (word) claimedWordIds.add(word.id);
+
+    if (word && !mapping) {
+      const existingMapping = mappingByWordId.get(word.id);
+      if (existingMapping && resolvedSourceId && existingMapping.sourceId !== resolvedSourceId) {
+        throw new GoogleSheetsError("ID trên Sheet khác ID đã liên kết với từ. Không tự thay đổi danh tính dòng.", "INVALID_SCHEMA", { retryable: false });
+      }
+      if (existingMapping) {
+        mapping = existingMapping;
+        if (!resolvedSourceId) idWrites.push({ rowNumber: row.rowNumber, sourceId: mapping.sourceId });
+      } else {
+        const sourceId = resolvedSourceId || generateSourceId(new Set([...mappingBySourceId.keys(), ...seenSourceIds]));
+        const baseline = fingerprintDbWord(template, word);
+        const [createdMapping] = await tx.insert(googleSheetRowMappings).values({ connectionId: connection.id, wordId: word.id, sourceId, sheetRowNumber: row.rowNumber, sourceFingerprint: baseline, lastSyncedFingerprint: baseline }).returning();
+        mapping = createdMapping;
+        mappings.push(createdMapping);
+        mappingBySourceId.set(sourceId, createdMapping);
+        mappingByWordId.set(word.id, createdMapping);
+        if (!resolvedSourceId) idWrites.push({ rowNumber: row.rowNumber, sourceId });
+      }
+      seenSourceIds.add(mapping.sourceId);
+    }
 
     if (!word) {
       const sourceId = resolvedSourceId || generateSourceId(new Set(seenSourceIds));
@@ -202,7 +245,7 @@ export async function runVocabularySync(
     if (resolution === "website" && mapping) {
       if (connection.conflictPolicy === "sheet") throw new Error("Hãy tắt chế độ Sheet là nguồn chính trước khi giữ bản website.");
       await tx.update(googleSheetRowMappings).set({ sourceFingerprint: fingerprint, lastSyncedFingerprint: dbFingerprint, updatedAt: new Date() }).where(eq(googleSheetRowMappings.id, mapping.id));
-      changes.push({ wordId: word.id, word: String(word.term ?? word.v1 ?? ""), action: "keep_website", before: dbValues, after: dbValues });
+      changes.push({ wordId: word.id, sourceId: mapping.sourceId, rowNumber: row.rowNumber, fieldsChanged: changedFingerprintFields(template, dbValues, row.values), word: String(word.term ?? word.v1 ?? ""), action: "keep_website", before: dbValues, after: dbValues });
       unchangedWordIds.add(word.id);
       continue;
     }
@@ -247,9 +290,19 @@ export async function runVocabularySync(
     changedWordIds.push(word.id);
   }
 
-  for (const entry of updatedDrafts) {
+  const updateBlocked = !options?.updateApproval && blocksBulkUpdate(existingWords.length, updatedDrafts.length) ? updatedDrafts.length : 0;
+  const proposedUpdates: WordChange[] = updatedDrafts.map(entry => {
     const previous = wordById.get(entry.wordId)!;
-    changes.push({ wordId: entry.wordId, word: String(previous.term ?? previous.v1 ?? ""), action: "update", before: templateValuesForWord(template, previous), after: templateValuesForWord(template, draftToWordInsert(entry.draft)) });
+    const before = templateValuesForWord(template, previous);
+    const after = templateValuesForWord(template, draftToWordInsert(entry.draft));
+    return { wordId: entry.wordId, sourceId: mappingByWordId.get(entry.wordId)?.sourceId, rowNumber: entry.rowNumber, fieldsChanged: changedFingerprintFields(template, before, after), word: String(previous.term ?? previous.v1 ?? ""), action: "update", before, after };
+  });
+  const updateReview: UpdateReview | undefined = updateBlocked ? { fingerprint: reviewFingerprint, activeCount: existingWords.length, changedCount: updateBlocked, rows: proposedUpdates } : undefined;
+  for (const entry of updateBlocked ? [] : updatedDrafts) {
+    const previous = wordById.get(entry.wordId)!;
+    const before = templateValuesForWord(template, previous);
+    const after = templateValuesForWord(template, draftToWordInsert(entry.draft));
+    changes.push({ wordId: entry.wordId, sourceId: mappingByWordId.get(entry.wordId)?.sourceId, rowNumber: entry.rowNumber, fieldsChanged: changedFingerprintFields(template, before, after), word: String(previous.term ?? previous.v1 ?? ""), action: "update", before, after });
     const draftValues = draftToWordInsert(entry.draft);
     const patch = Object.fromEntries(template.fields.filter((field) => !field.displayOnly && field.key !== SOURCE_ID_HEADER).map((field) => [field.key, draftValues[field.key as keyof typeof draftValues]]));
     await tx.update(words).set(patch).where(eq(words.id, entry.wordId));
@@ -269,27 +322,40 @@ export async function runVocabularySync(
   for (const mapping of mappings) if (seenSourceIds.has(`present:${mapping.sourceId}`)) activeSourceIds.add(mapping.sourceId);
   const activeMappings = mappings.filter((mapping) => mapping.wordId && !mapping.deletedAt);
   const missing = activeMappings.filter((mapping) => !activeSourceIds.has(mapping.sourceId));
-  const deletionBlocked = connection.deleteBehavior !== "ignore" && blocksBulkDeletion(activeMappings.length, missing.length) ? missing.length : 0;
+  const requiresDeletionReview = connection.deleteBehavior !== "ignore" && blocksBulkDeletion(activeMappings.length, missing.length, bulkDeletionThresholds());
+  const deletionBlocked = requiresDeletionReview && !options?.deletionApproval ? missing.length : 0;
+  const deletionReview: DeletionReview | undefined = deletionBlocked ? {
+    fingerprint: reviewFingerprint,
+    activeCount: activeMappings.length,
+    missingCount: missing.length,
+    rows: missing.map(mapping => ({ sourceId: mapping.sourceId, wordId: mapping.wordId!, word: String(wordById.get(mapping.wordId!)?.term ?? wordById.get(mapping.wordId!)?.v1 ?? "") })),
+  } : undefined;
   for (const mapping of mappings) {
     if (deletionBlocked) break;
     if (!mapping.wordId || activeSourceIds.has(mapping.sourceId) || mapping.deletedAt) continue;
     if (connection.deleteBehavior === "ignore") continue;
     const previous = wordById.get(mapping.wordId);
-    if (previous) changes.push({ wordId: mapping.wordId, word: String(previous.term ?? previous.v1 ?? ""), action: connection.deleteBehavior === "delete" ? "delete" : "archive", before: templateValuesForWord(template, previous), after: {} });
-    if (connection.deleteBehavior === "delete") {
-      await tx.delete(words).where(eq(words.id, mapping.wordId));
-      await tx.delete(googleSheetRowMappings).where(eq(googleSheetRowMappings.id, mapping.id));
-      changedWordIds.push(mapping.wordId);
-    } else {
-      await tx.update(googleSheetRowMappings).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(googleSheetRowMappings.id, mapping.id));
-    }
+    if (previous) changes.push({ wordId: mapping.wordId, sourceId: mapping.sourceId, rowNumber: mapping.sheetRowNumber, fieldsChanged: Object.keys(templateValuesForWord(template, previous)), word: String(previous.term ?? previous.v1 ?? ""), action: connection.deleteBehavior === "delete" ? "delete" : "archive", before: templateValuesForWord(template, previous), after: {} });
+    await tx.update(googleSheetRowMappings).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(googleSheetRowMappings.id, mapping.id));
+    changedWordIds.push(mapping.wordId);
     rowsDeleted += 1;
+  }
+
+  if (deletionReview || updateReview) {
+    const finalWords = await tx.select().from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id)).for("update");
+    const finalMappings = await tx.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.connectionId, connection.id));
+    const projectedGrid = { headers: [...grid.headers], rows: grid.rows.map(row => [...row]) };
+    const idColumn = [...mapHeadersToFieldKeys(grid.headers, template)].find(([, key]) => key === SOURCE_ID_HEADER)?.[0];
+    if (idColumn !== undefined) for (const write of idWrites) projectedGrid.rows[write.rowNumber - 2][idColumn] = write.sourceId;
+    const finalFingerprint = deletionReviewFingerprint({ connectionId: connection.id, spreadsheetId: connection.spreadsheetId, deleteBehavior: connection.deleteBehavior, grid: projectedGrid, words: finalWords, mappings: [...finalMappings].sort((left, right) => left.id - right.id) });
+    if (deletionReview) deletionReview.fingerprint = finalFingerprint;
+    if (updateReview) updateReview.fingerprint = finalFingerprint;
   }
 
   const stats: SyncStats = {
     rowsRead: parsedRows.length,
     rowsCreated: createdRows.length,
-    rowsUpdated: updatedDrafts.length,
+    rowsUpdated: updateBlocked ? 0 : updatedDrafts.length,
     rowsUnchanged: unchangedWordIds.size,
     rowsDeleted,
     rowsSkipped: invalidRows.length,
@@ -298,6 +364,9 @@ export async function runVocabularySync(
     conflicts,
     changes,
     deletionBlocked,
+    deletionReview,
+    updateBlocked,
+    updateReview,
     invalidRows,
     idWrites,
     changedWordIds,

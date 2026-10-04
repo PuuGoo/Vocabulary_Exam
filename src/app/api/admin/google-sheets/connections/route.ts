@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { isAuthorizationError, requireAdminPermission } from "@/lib/adminAuthorization";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels, vocabSets, words } from "@/db/schema";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { parseAiPromptOverrides } from "@/lib/googleSheets/aiFormula";
+import { getVisibleFolderIds } from "@/lib/folderAuthorization";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,11 +25,16 @@ export async function GET(req: Request) {
     db.select().from(googleSheetSyncChannels).where(inArray(googleSheetSyncChannels.connectionId, connections.map((connection) => connection.id))),
   ]);
   const setById = new Map(sets.map((set) => [set.id, set]));
+  const visibleFolders = new Set(await getVisibleFolderIds(access));
+  const visibleConnections = connections.filter((connection) => {
+    const folderId = setById.get(connection.setId)?.folderId;
+    return folderId != null && visibleFolders.has(folderId);
+  });
   const countBySet = new Map<number, number>();
   for (const row of wordRows) countBySet.set(row.setId, (countBySet.get(row.setId) || 0) + 1);
-  const channelByConnection = new Map(channels.map((channel) => [channel.connectionId, channel]));
+  const channelByConnection = new Map(channels.filter(channel => channel.status === "active").map((channel) => [channel.connectionId, channel]));
 
-  const items = connections.map((connection) => {
+  const items = visibleConnections.map((connection) => {
     const set = setById.get(connection.setId);
     const template = getGoogleSheetTemplate({ type: set?.type || "ielts_vocab", languageCode: set?.languageCode || "en" });
     const channel = channelByConnection.get(connection.id);

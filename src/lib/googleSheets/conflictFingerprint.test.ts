@@ -11,12 +11,12 @@ import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
 import { runVocabularySync } from "@/lib/googleSheets/syncVocabulary";
 
-const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
+const enabled = process.env.GOOGLE_SHEETS_TEST_DB === "1" && Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
 
 type Fixture = { setId: number; connectionId: number; wordId: number; sourceId: string };
 
 async function seed(extra: Record<string, unknown> = {}): Promise<{ sql: ReturnType<typeof postgres>; fixture: Fixture }> {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   const [admin] = await sql`select id from users where username = 'admin' limit 1`;
   if (!admin) throw new Error("no admin user");
   const [set] = await db.insert(vocabSets).values({

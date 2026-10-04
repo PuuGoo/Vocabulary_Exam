@@ -1,4 +1,5 @@
 import { SOURCE_ID_HEADER, STT_FIELD_KEY, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
+import { GENERAL_HEADERS, CHINESE_HEADERS } from "@/lib/vocabImport/headerAliases";
 
 export type SheetGrid = { headers: string[]; rows: string[][] };
 
@@ -10,9 +11,12 @@ export function mapHeadersToFieldKeys(headers: readonly string[], template: Goog
     // STT is presentation only: it is deliberately not mapped, so it can never
     // reach the vocabulary import model, the fingerprint or the database.
     if (field.displayOnly) return;
-    const normalizedField = normalizeHeader(field.header);
-    const index = normalizedHeaders.findIndex((header) => header === normalizedField);
-    if (index >= 0) mapping.set(index, field.key);
+    const importerKey = ({ ipaV1: "ipa_v1", ipaV2: "ipa_v2", ipaV3: "ipa_v3" } as Record<string, string>)[field.key] ?? field.key;
+    const chineseAliases = template.templateType === "language_vocab_mandarin" ? (CHINESE_HEADERS as Readonly<Record<string, readonly string[]>>)[importerKey] ?? [] : [];
+    const aliases = new Set([field.header, field.key, ...(GENERAL_HEADERS[importerKey] ?? []), ...chineseAliases].map(normalizeHeader));
+    const indices = normalizedHeaders.flatMap((header, index) => aliases.has(header) ? [index] : []);
+    if (indices.length > 1) throw new Error(`Nhiều cột cùng ánh xạ tới ${field.header}. Hãy giữ một cột trước khi đồng bộ.`);
+    if (indices.length) mapping.set(indices[0], field.key);
   });
   return mapping;
 }
@@ -42,6 +46,8 @@ function normalizeHeader(header: string): string {
 
 /** Row 1 is the header; every subsequent row is keyed by canonical field. */
 export function parseSheetGrid(grid: SheetGrid, template: GoogleSheetTemplate): Array<{ rowNumber: number; sourceId: string; values: Record<string, string> }> {
+  const populatedHeaders = grid.headers.map(normalizeHeader).filter(Boolean);
+  if (new Set(populatedHeaders).size !== populatedHeaders.length) throw new Error("Tên cột trùng nhau. Hãy sửa tiêu đề trước khi đồng bộ để tránh đọc sai dữ liệu.");
   const fieldByColumn = mapHeadersToFieldKeys(grid.headers, template);
   // The sheet may (or may not) carry a display-only STT column at A; identity
   // only cares that __lexora_id is present somewhere in the header row.

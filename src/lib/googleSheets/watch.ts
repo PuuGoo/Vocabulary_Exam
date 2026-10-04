@@ -1,4 +1,6 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { replaceWatchSafely } from "./watchReplacement";
+import { acquireConnectionLock, releaseConnectionLock } from "./store";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels } from "@/db/schema";
 import { WATCH_CHANNEL_RENEW_THRESHOLD_MS } from "@/lib/googleSheets/api";
@@ -18,10 +20,8 @@ export async function ensureWatchChannel(
   connection: { id: number; spreadsheetId: string; createdBy: number | null },
   resourceId: string,
 ) {
-  const [existing] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.connectionId, connection.id)).limit(1);
-  const channel = existing
-    ? await api.renewWatchChannel({ channelId: existing.channelId, spreadsheetId: connection.spreadsheetId, resourceId: existing.resourceId || resourceId })
-    : await api.createWatchChannel({ spreadsheetId: connection.spreadsheetId, resourceId });
+  const [existing] = await db.select().from(googleSheetSyncChannels).where(and(eq(googleSheetSyncChannels.connectionId, connection.id), eq(googleSheetSyncChannels.status, "active"))).limit(1);
+  const persist = async (channel: Awaited<ReturnType<GoogleWorkspaceApi["createWatchChannel"]>>) => {
   const values = {
     connectionId: connection.id,
     channelId: channel.channelId,
@@ -38,6 +38,13 @@ export async function ensureWatchChannel(
   };
   if (existing) await db.update(googleSheetSyncChannels).set(values).where(eq(googleSheetSyncChannels.id, existing.id));
   else await db.insert(googleSheetSyncChannels).values(values);
+  };
+  if (existing) {
+    const result = await replaceWatchSafely(api, { channelId: existing.channelId, spreadsheetId: connection.spreadsheetId, resourceId: existing.resourceId || resourceId }, persist);
+    return result.channel;
+  }
+  const channel = await api.createWatchChannel({ spreadsheetId: connection.spreadsheetId, resourceId });
+  await persist(channel);
   return channel;
 }
 
@@ -60,10 +67,16 @@ export async function renewGoogleWatchChannels(
 ): Promise<ChannelRenewalResult[]> {
   const thresholdHours = options?.thresholdHours ?? WATCH_CHANNEL_RENEW_THRESHOLD_MS / (60 * 60 * 1000);
   const includeTokenless = options?.includeTokenless !== false;
-  const rows = await db.select().from(googleSheetSyncChannels).orderBy(googleSheetSyncChannels.expirationAt).limit(options?.maxRows ?? 500);
+  const rows = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.status, "active")).orderBy(googleSheetSyncChannels.expirationAt).limit(options?.maxRows ?? 500);
   const threshold = new Date(Date.now() + thresholdHours * 60 * 60 * 1000);
   const results: ChannelRenewalResult[] = [];
   for (const channel of rows) {
+    let locked = false;
+    try {
+    await acquireConnectionLock(channel.connectionId, "renew_watch");
+    locked = true;
+    const [currentChannel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.id, channel.id)).limit(1);
+    if (!currentChannel || currentChannel.status !== "active" || currentChannel.channelId !== channel.channelId) continue;
     const missingToken = !channel.channelTokenHash;
     if (!includeTokenless || !missingToken) {
       if (channel.expirationAt && channel.expirationAt > threshold) { results.push({ connectionId: channel.connectionId, renewed: false, skipped: "not_expiring_soon" }); continue; }
@@ -77,12 +90,18 @@ export async function renewGoogleWatchChannels(
     if (!token?.refreshToken) { results.push({ connectionId: channel.connectionId, renewed: false, skipped: "oauth_revoked" }); continue; }
     try {
       const api = apiFactory(token);
-      const renewed = await api.renewWatchChannel({ channelId: channel.channelId, spreadsheetId: connection.spreadsheetId, resourceId: channel.resourceId });
-      await db.update(googleSheetSyncChannels).set({ channelId: renewed.channelId, resourceId: renewed.resourceId || channel.resourceId, resourceUri: renewed.resourceUri, expirationAt: renewed.expirationAt, channelTokenHash: renewed.channelToken ? hashChannelToken(renewed.channelToken) : null, status: "active", updatedAt: new Date() }).where(eq(googleSheetSyncChannels.id, channel.id));
+      const { channel: renewed } = await replaceWatchSafely(api, { channelId: channel.channelId, spreadsheetId: connection.spreadsheetId, resourceId: channel.resourceId }, async renewed => {
+        await db.update(googleSheetSyncChannels).set({ channelId: renewed.channelId, resourceId: renewed.resourceId || channel.resourceId, resourceUri: renewed.resourceUri, expirationAt: renewed.expirationAt, channelTokenHash: renewed.channelToken ? hashChannelToken(renewed.channelToken) : null, lastMessageNumber: null, status: "active", updatedAt: new Date() }).where(eq(googleSheetSyncChannels.id, channel.id));
+      });
       if (options?.actorUserId) await writeAdminAudit({ actorUserId: options.actorUserId, action: "google_sheet.channel_renew", resourceType: "google_sheet_connection", resourceId: connection.id, metadata: { channelId: renewed.channelId } });
       results.push({ connectionId: channel.connectionId, renewed: true });
     } catch (error) {
       results.push({ connectionId: channel.connectionId, renewed: false, error: error instanceof Error ? error.message : "renew_failed" });
+    }
+    } catch (error) {
+      results.push({ connectionId: channel.connectionId, renewed: false, error: error instanceof Error ? error.message : "renew_failed" });
+    } finally {
+      if (locked) await releaseConnectionLock(channel.connectionId);
     }
   }
   return results;
@@ -105,8 +124,11 @@ export async function renewWatchChannelIfExpiring(
   options?: { thresholdMs?: number; apiFactory?: GoogleWorkspaceApiFactory },
 ): Promise<{ renewed: boolean; reason?: string }> {
   const thresholdMs = options?.thresholdMs ?? WATCH_CHANNEL_RENEW_THRESHOLD_MS;
+  let locked = false;
   try {
-    const [channel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.connectionId, connectionId)).limit(1);
+    await acquireConnectionLock(connectionId, "renew_watch");
+    locked = true;
+    const [channel] = await db.select().from(googleSheetSyncChannels).where(and(eq(googleSheetSyncChannels.connectionId, connectionId), eq(googleSheetSyncChannels.status, "active"))).limit(1);
     if (!channel) return { renewed: false, reason: "no_channel" };
     const expiresSoon = !channel.expirationAt || channel.expirationAt.getTime() - Date.now() <= thresholdMs;
     if (!expiresSoon) return { renewed: false, reason: "not_expiring_soon" };
@@ -118,7 +140,7 @@ export async function renewWatchChannelIfExpiring(
     if (!token?.refreshToken) return { renewed: false, reason: "oauth_revoked" };
 
     const api = (options?.apiFactory ?? createGoogleWorkspaceApi)(token);
-    const renewed = await api.renewWatchChannel({ channelId: channel.channelId, spreadsheetId: connection.spreadsheetId, resourceId: channel.resourceId });
+    await replaceWatchSafely(api, { channelId: channel.channelId, spreadsheetId: connection.spreadsheetId, resourceId: channel.resourceId }, async renewed => {
     await db
       .update(googleSheetSyncChannels)
       .set({
@@ -127,13 +149,17 @@ export async function renewWatchChannelIfExpiring(
         resourceUri: renewed.resourceUri,
         expirationAt: renewed.expirationAt,
         channelTokenHash: renewed.channelToken ? hashChannelToken(renewed.channelToken) : null,
+        lastMessageNumber: null,
         status: "active",
         updatedAt: new Date(),
       })
       .where(eq(googleSheetSyncChannels.id, channel.id));
+    });
     return { renewed: true };
   } catch (error) {
     console.warn("[google-sheets] lazy channel renewal skipped:", error instanceof Error ? error.message : "unknown");
     return { renewed: false, reason: "renew_failed" };
+  } finally {
+    if (locked) await releaseConnectionLock(connectionId);
   }
 }

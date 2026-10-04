@@ -208,7 +208,7 @@ test("the recover endpoint exists, is authorized and never creates a spreadsheet
 
 test("recovery verifies access, repairs mappings/channel, re-enables and syncs - and never duplicates", () => {
   const recovery = readFileSync("src/lib/googleSheets/recovery.ts", "utf8");
-  assert.match(recovery, /verifyAccess\(connection\.spreadsheetId\)/, "step 1: verify the existing spreadsheet");
+  assert.match(recovery, /metadata = await api.getSpreadsheetMetadata\(connection\.spreadsheetId\)/, "step 1: verify access without losing classified errors");
   assert.match(recovery, /getSpreadsheetMetadata\(connection\.spreadsheetId\)/, "step 2: refresh sheet/tab metadata");
   assert.match(recovery, /googleSheetRowMappings/, "step 3: repair row mappings");
   assert.match(recovery, /ensureWatchChannel\(/, "step 4: repair the Drive watch channel");
@@ -221,8 +221,10 @@ test("recovery verifies access, repairs mappings/channel, re-enables and syncs -
 
 test("a genuinely gone spreadsheet surfaces SHEET_NOT_FOUND so a new one may be offered", () => {
   const recovery = readFileSync("src/lib/googleSheets/recovery.ts", "utf8");
-  assert.match(recovery, /new GoogleSheetsError\("Không thể truy cập Google Sheet cũ\. Bạn có thể tạo Sheet mới\.", "SHEET_NOT_FOUND"/);
-  assert.match(recovery, /status: "error", enabled: false/, "the unusable row is marked, not silently kept 'connected'");
+  assert.match(recovery, /externalFailureState\(error\)/);
+  assert.match(recovery, /set\(\{ \.\.\.failure, lastVerifiedAt:/, "classified external state is persisted");
+  const state = readFileSync("src/lib/googleSheets/externalState.ts", "utf8");
+  assert.match(state, /error.code === "SHEET_NOT_FOUND".*enabled: false, status: "missing"/);
 });
 
 // ---------------------------------------------------------------- UI agreement

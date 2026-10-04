@@ -9,8 +9,10 @@ import { createFakeGoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { connectionView } from "@/lib/googleSheets/recoveryState";
 import { recoverGoogleSheetConnection } from "@/lib/googleSheets/recovery";
 import { GoogleSheetsError } from "@/lib/googleSheets/errors";
+import { getGoogleSheetTemplate } from "./template";
+import { valuesForExport } from "./spreadsheet";
 
-const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
+const enabled = process.env.GOOGLE_SHEETS_TEST_DB === "1" && Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
 
 /**
  * Live-Postgres acceptance for the recovery flow.
@@ -21,7 +23,7 @@ const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOK
  * a genuinely missing spreadsheet surfaces SHEET_NOT_FOUND.
  */
 test("recovery repairs an existing connection in place on real Postgres", { skip: !enabled, timeout: 180000 }, async () => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   let setId = 0;
   let connectionId = 0;
   let wordId = 0;
@@ -53,7 +55,8 @@ test("recovery repairs an existing connection in place on real Postgres", { skip
       assert.ok(created.spreadsheetId);
     });
     // Point the fake at our spreadsheet id by seeding it through a write.
-    await api.writeValues(spreadsheetId, "'Từ vựng IELTS'!A1:B2", [["__lexora_id", "Word"], ["", "mitigate"]]);
+    const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
+    await api.writeValues(spreadsheetId, "'Từ vựng IELTS'!A1", valuesForExport(template, [{ sourceId: "v_recover123", values: { term: "mitigate", meaning: "giảm nhẹ" } }]));
 
     const result = await recoverGoogleSheetConnection(connectionId, { userId: admin.id }, api);
     assert.equal(result.recovered, true);
@@ -111,7 +114,7 @@ test("recovery repairs an existing connection in place on real Postgres", { skip
  * fake and proves the lock table accepts a setId that has no connection.
  */
 test("create acquires its lock before any connection row exists", { skip: !enabled, timeout: 180000 }, async () => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   let setId = 0;
   let connectionId = 0;
   const base = Date.now();
@@ -179,7 +182,7 @@ test("create acquires its lock before any connection row exists", { skip: !enabl
  * the very first failure.
  */
 test("the create lock is released even when the Google API call fails", { skip: !enabled, timeout: 180000 }, async () => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   let setId = 0;
   const base = Date.now();
   try {
@@ -285,7 +288,7 @@ test("create refreshes an expired access token through the real Google client", 
 });
 
 test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplicate", { skip: !enabled, timeout: 180000 }, async () => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   let setId = 0;
   let connectionId = 0;
   const base = Date.now();
@@ -303,7 +306,7 @@ test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplic
     connectionId = conn.id;
 
     // A fake API that has never seen this spreadsheet reports no access.
-    const api = createFakeGoogleWorkspaceApi();
+    const api = createFakeGoogleWorkspaceApi({ getSpreadsheetMetadata: async () => { throw new GoogleSheetsError("Missing file", "SHEET_NOT_FOUND"); } });
     await assert.rejects(
       () => recoverGoogleSheetConnection(connectionId, { userId: admin.id }, api),
       (error: unknown) => error instanceof GoogleSheetsError && error.code === "SHEET_NOT_FOUND",
@@ -312,9 +315,9 @@ test("a spreadsheet that no longer exists surfaces SHEET_NOT_FOUND, not a duplic
 
     // The row is marked broken rather than left pretending to be connected.
     const [after] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);
-    assert.equal(after.status, "error");
+    assert.equal(after.status, "missing");
     assert.equal(after.enabled, false);
-    assert.ok(after.lastError, "an actionable error is recorded");
+    assert.equal(after.externalState, "missing", "the missing resource state is recorded");
   } finally {
     try {
       await sql.begin(async (tx) => {

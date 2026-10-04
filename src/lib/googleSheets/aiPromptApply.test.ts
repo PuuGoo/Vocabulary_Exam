@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planAiPromptApplication } from "@/lib/googleSheets/aiPrompts";
+import { applyAiPromptsToSheet, planAiPromptApplication } from "@/lib/googleSheets/aiPrompts";
+import { createFakeGoogleWorkspaceApi, type SheetsBatchValueUpdate } from "./api";
+
+test("API prompt apply excludes the header and targets actual reordered columns", async () => {
+  const writes: SheetsBatchValueUpdate[] = [];
+  const api = createFakeGoogleWorkspaceApi({
+    readValues: async () => [["Meaning", "__lexora_id", "STT", "Word"], ['=AI("old";D2)', "v_12345678", "1", "hello"], ["protected", "v_87654321", "2", "bye"]],
+    batchWriteValues: async (_id, updates) => { writes.push(...updates); },
+  });
+  const result = await applyAiPromptsToSheet({ api, spreadsheetId: "sheet", template, promptOverrides: { meaning: "NEW" } });
+  assert.equal(result.stats.rowsScanned, 2);
+  assert.equal(result.stats.updatedFormulaCells, 1);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].rangeA1, /!A2:A2$/);
+  assert.match(String(writes[0].values[0][0]), /D2/);
+  assert.equal(writes[0].values.length, 1);
+});
+
+test("prompt apply refuses a user edit made after the initial formula read", async () => {
+  let reads = 0;
+  let writes = 0;
+  const api = createFakeGoogleWorkspaceApi({
+    readValues: async () => {
+      reads += 1;
+      return [["Word", "Meaning"], ["hello", reads === 1 ? '=AI("old";A2)' : "user edit"]];
+    },
+    batchWriteValues: async () => { writes += 1; },
+  });
+  await assert.rejects(applyAiPromptsToSheet({ api, spreadsheetId: "sheet", template, promptOverrides: { meaning: "NEW" } }), /Sheet đã thay đổi/);
+  assert.equal(writes, 0);
+});
 import { aiColumnsForTemplate, buildAiFormula, resolveAiPrompt } from "@/lib/googleSheets/aiFormula";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
 

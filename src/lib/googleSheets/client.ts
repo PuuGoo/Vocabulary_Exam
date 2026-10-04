@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import type { GoogleWorkspaceApi, SheetsValue, SpreadsheetMetadata, WatchChannel } from "@/lib/googleSheets/api";
 import { classifyGoogleApiError } from "@/lib/googleSheets/errors";
 import { WATCH_CHANNEL_EXPIRATION_MS } from "@/lib/googleSheets/api";
+import { valueRequestBatches, valueWriteChunks } from "./valueBatches";
 
 export { WATCH_CHANNEL_EXPIRATION_MS };
 
@@ -31,6 +32,14 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
   const drive = google.drive({ version: "v3", auth });
 
   const api: GoogleWorkspaceApi = {
+    async trashSpreadsheet(spreadsheetId) {
+      try { await drive.files.update({ fileId: spreadsheetId, supportsAllDrives: true, requestBody: { trashed: true }, fields: "id,trashed" }); }
+      catch (error) { throw classifyGoogleApiError(error); }
+    },
+    async stopWatchChannel(channelId, resourceId) {
+      try { await drive.channels.stop({ requestBody: { id: channelId, resourceId } }); }
+      catch (error) { throw classifyGoogleApiError(error); }
+    },
     async createSpreadsheet({ title, sheetTitle }) {
       try {
         const response = await sheets.spreadsheets.create({
@@ -90,12 +99,12 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
         // stored as a real Sheets formula rather than its text.
         const valueInputOption = options?.parseFormulas ? "USER_ENTERED" : "RAW";
         // One request per chunk keeps 10k+ rows within quota instead of N calls.
-        for (let offset = 0; offset < values.length; offset += WRITE_CHUNK_ROWS) {
+        for (const chunk of valueWriteChunks(rangeA1, values, WRITE_CHUNK_ROWS)) {
           await sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: rangeA1,
+            range: chunk.range,
             valueInputOption,
-            requestBody: { values: values.slice(offset, offset + WRITE_CHUNK_ROWS) },
+            requestBody: { values: chunk.values },
           });
         }
       } catch (error) { throw classifyGoogleApiError(error); }
@@ -109,13 +118,12 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
         // 981 rows x 8 AI columns stays a single request instead of thousands.
         // USER_ENTERED is mandatory: RAW would store "=AI(...)" as plain text
         // instead of a live formula. This flow only ever writes formula strings.
-        await sheets.spreadsheets.values.batchUpdate({
-          spreadsheetId,
-          requestBody: {
-            valueInputOption: "USER_ENTERED",
-            data: updates.map((update) => ({ range: update.rangeA1, values: update.values })),
-          },
-        });
+        for (const parseFormulas of [false, true]) {
+          const group = updates.filter((update) => !!update.parseFormulas === parseFormulas).flatMap((update) => valueWriteChunks(update.rangeA1, update.values, WRITE_CHUNK_ROWS));
+          for (const data of valueRequestBatches(group)) {
+            await sheets.spreadsheets.values.batchUpdate({ spreadsheetId, requestBody: { valueInputOption: parseFormulas ? "USER_ENTERED" : "RAW", data } });
+          }
+        }
       } catch (error) { throw classifyGoogleApiError(error); }
     },
 
@@ -168,13 +176,13 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
     },
 
     async renewWatchChannel({ channelId, spreadsheetId, resourceId }) {
-      // Stop the old channel first so Google does not keep notifying a stale id.
+      const replacement = await api.createWatchChannel({ spreadsheetId, resourceId });
       try {
         await drive.channels.stop({ requestBody: { id: channelId, resourceId } });
       } catch {
         // An already-expired channel cannot be stopped; renewal still proceeds.
       }
-      return api.createWatchChannel({ spreadsheetId, resourceId });
+      return replacement;
     },
 
     async verifyAccess(spreadsheetId) {

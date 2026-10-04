@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetSyncChannels } from "@/db/schema";
-import { markSyncPending, recordNotificationState } from "@/lib/googleSheets/store";
+import { recordNotificationState } from "@/lib/googleSheets/store";
 import { runPendingConnection } from "@/lib/googleSheets/reconcile";
 import { verifyChannelToken } from "@/lib/googleSheets/channelToken";
 import { renewWatchChannelIfExpiring } from "@/lib/googleSheets/watch";
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
 
   const [channel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.channelId, channelId)).limit(1);
   if (!channel) return NextResponse.json({ ok: true, ignored: "unknown_channel" }, { status: 202 });
+  if (channel.status !== "active") return NextResponse.json({ ok: true, ignored: "inactive_channel" }, { status: 202 });
 
   // The token must match the digest stored when the channel was created.
   // Legacy rows (created before this fix) have no digest and can never pass,
@@ -61,7 +62,8 @@ export async function POST(req: NextRequest) {
   }
 
   const messageNumber = Number(rawMessageNumber || "0");
-  const hasMessageNumber = Number.isFinite(messageNumber) && messageNumber > 0;
+  const hasMessageNumber = /^\d+$/.test(rawMessageNumber) && Number.isSafeInteger(messageNumber) && messageNumber > 0;
+  if (!hasMessageNumber) return NextResponse.json({ error: "Invalid message number." }, { status: 400 });
   // Idempotency: Google message numbers start at 1 and only increase — they
   // are not necessarily sequential, so only reject <= lastMessageNumber.
   if (hasMessageNumber && channel.lastMessageNumber != null && messageNumber <= channel.lastMessageNumber) {
@@ -76,7 +78,6 @@ export async function POST(req: NextRequest) {
   // cheapest moment to top it up. The daily cron is the safety net, but with a
   // once-a-day schedule (Vercel Hobby) it cannot be the only renewal path —
   // otherwise a channel could expire in the gap between two cron runs.
-  await renewWatchChannelIfExpiring(channel.connectionId);
   // A `sync` notification only confirms the channel is alive: record it, then
   // stop. Google sends it when a watch starts, before any content change.
   if (resourceState === "sync") {
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, connectionId: channel.connectionId, resourceState: "sync", acknowledged: true }, { status: 202 });
   }
 
-  const state = await recordNotificationState(channelId, resourceId, hasMessageNumber ? messageNumber : (channel.lastMessageNumber ?? 1) + 1);
+  const state = await recordNotificationState(channelId, resourceId, messageNumber, "webhook");
   if (!state) return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
 
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, channel.connectionId)).limit(1);
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest) {
 
   // Persist first: if this invocation dies mid-sync (timeout, cold start, revoked
   // OAuth) the connection is still pending and the daily cron picks it up.
-  await markSyncPending(connection.id, "webhook");
   const result = await runPendingConnection(connection.id, "webhook");
+  await renewWatchChannelIfExpiring(channel.connectionId);
   // Safe diagnostics only: ids/status. No token, no OAuth material, no body.
   console.log(`[google-drive-webhook] connectionId=${connection.id} trigger=webhook resourceState=${resourceState || "unknown"} changed=${changed || "none"} messageNumber=${hasMessageNumber ? messageNumber : "none"} sync=${result.status}`);
   if (result.status === "error") console.error(`[google-drive-webhook] connection ${connection.id} sync failed: ${result.error ?? "unknown"}`);

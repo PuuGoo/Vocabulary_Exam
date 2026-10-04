@@ -11,10 +11,10 @@ import { generateSourceId } from "@/lib/googleSheets/identity";
 import { gridFromValuesRange } from "@/lib/googleSheets/parser";
 import { runVocabularySync } from "@/lib/googleSheets/syncVocabulary";
 
-const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
+const enabled = process.env.GOOGLE_SHEETS_TEST_DB === "1" && Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
 
 test("acceptance #17 on real Postgres: sync edits content but never resets learning data", { skip: !enabled, timeout: 90000 }, async (t) => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   let setId = 0;
   let wordId = 0;
   let connectionId = 0;
@@ -107,7 +107,9 @@ test("acceptance #17 on real Postgres: sync edits content but never resets learn
     const same = (await sql`select id from words where id=${wordId}`)[0];
     assert.equal(same.id, wordId, "reorder must keep the same wordId");
 
-    const remove = await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header, []]), tx));
+    const preview = await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header, []]), tx));
+    assert.equal(preview.stats.deletionBlocked, 1);
+    const remove = await db.transaction((tx) => runVocabularySync(state, gridFromValuesRange([header, []]), tx, { deletionApproval: preview.stats.deletionReview!.fingerprint }));
     assert.equal(remove.stats.rowsDeleted, 1, "removed row must be archived");
     const survivors = await sql`select id from words where set_id=${setId}`;
     assert.equal(survivors.length, 1, "archive must NOT delete the word row");

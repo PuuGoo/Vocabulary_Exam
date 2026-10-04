@@ -50,7 +50,7 @@ async function cleanup(setId: number, connectionId: number) {
   await db.delete(vocabSets).where(eq(vocabSets.id, setId));
 }
 
-test("a half-filled Sheet row is reported as an explicit validation error, not a silent skip", async () => {
+test("a half-filled Sheet row is reported as an explicit validation error, not a silent skip", { skip: process.env.GOOGLE_SHEETS_TEST_DB !== "1" }, async () => {
   const { set, conn, adminId } = await seed();
   try {
     const tpl = getGoogleSheetTemplate(set as never);
@@ -81,7 +81,7 @@ test("a half-filled Sheet row is reported as an explicit validation error, not a
   }
 });
 
-test("a completed row still syncs normally alongside an incomplete one", async () => {
+test("a completed row still syncs normally alongside an incomplete one", { skip: process.env.GOOGLE_SHEETS_TEST_DB !== "1" }, async () => {
   const { set, conn } = await seed();
   try {
     const tpl = getGoogleSheetTemplate(set as never);

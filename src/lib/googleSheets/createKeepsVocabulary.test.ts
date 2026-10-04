@@ -8,7 +8,7 @@ import { vocabSets, words } from "@/db/schema";
 import { createFakeGoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { createGoogleSheetForSet } from "@/lib/googleSheets/sheetLifecycle";
 
-const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
+const enabled = process.env.GOOGLE_SHEETS_TEST_DB === "1" && Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY);
 
 /**
  * Reported bug: creating a Google Sheet from a vocabulary set that already has
@@ -17,7 +17,7 @@ const enabled = Boolean(process.env.DATABASE_URL && process.env.GOOGLE_SHEET_TOK
  * raw AI instructions instead of the user's vocabulary.
  */
 test("create keeps existing vocabulary and only plants AI formulas below it", { skip: !enabled, timeout: 120000 }, async () => {
-  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", connect_timeout: 30 });
+  const sql = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: process.env.GOOGLE_SHEETS_TEST_DB_SSL === "0" ? false : "require", connect_timeout: 30 });
   let setId = 0;
   try {
     const [admin] = await sql`select id from users where username = 'admin' limit 1`;

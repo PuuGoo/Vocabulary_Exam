@@ -1,7 +1,11 @@
 import { and, asc, eq, lt } from "drizzle-orm";
+import { externalFailureState } from "./externalState";
+import { resolveConnectedTab } from "./tabIdentity";
+import { verifiedSourceIdWriteRanges } from "./sourceIdWrites";
+import { blankAiWrites } from "./blankAiWrites";
 import { db } from "@/db";
 import { googleSheetConnections, googleSheetCreateLocks, googleSheetRowMappings, googleSheetSyncRuns, vocabSets, words } from "@/db/schema";
-import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
+import type { GoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
 import { buildSttFormulaForRow, getGoogleSheetTemplate, SOURCE_ID_HEADER, sttColumnIndex, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
@@ -127,6 +131,7 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     }));
     const values = valuesForExport(template, exportRows);
     const rangeA1 = buildRangeA1(template.sheetTitle, template.fields.length, values.length);
+    await api.batchUpdate(created.spreadsheetId, [{ updateSheetProperties: { properties: { sheetId: created.sheetId, gridProperties: { rowCount: Math.max(values.length + 200, 1000), columnCount: Math.max(template.fields.length, 26) } }, fields: "gridProperties(rowCount,columnCount)" } }]);
     await api.writeValues(created.spreadsheetId, rangeA1, values);
     // STT is a spreadsheet-side display number: a single relative formula filled
     // down the column renumbers itself whenever rows are added, deleted or
@@ -177,6 +182,9 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
       setId,
       createdBy: actor.userId,
       spreadsheetId: created.spreadsheetId,
+      managedByLexora: true,
+      externalState: "accessible",
+      lastVerifiedAt: new Date(),
       spreadsheetUrl: created.spreadsheetUrl,
       spreadsheetName: created.spreadsheetName,
       sheetId: created.sheetId,
@@ -216,7 +224,7 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
         spreadsheetName: created.spreadsheetName, sheetId: created.sheetId, sheetTitle: created.sheetTitle,
         rangeA1: buildRangeA1(template.sheetTitle, template.fields.length, 1), templateType: template.templateType,
         templateVersion: template.templateVersion, syncDirection: "google_to_lexora", deleteBehavior: "archive",
-        enabled: false, status: "error", lastError: safeGoogleErrorForLogs(error),
+        managedByLexora: true, enabled: false, status: "error", lastError: safeGoogleErrorForLogs(error),
       }).returning({ id: googleSheetConnections.id }).then((rows) => rows[0]?.id ?? null).catch(() => null);
     }
     throw error;
@@ -298,20 +306,43 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
   if (!connection.enabled || connection.status === "disconnected") throw new GoogleSheetsError("Kết nối đang bị tạm dừng.", "INVALID_SCHEMA", { retryable: false });
 
   await acquireConnectionLock(connectionId, trigger);
-  await db.update(googleSheetConnections).set({ status: "syncing", updatedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
-  const runId = await startSyncRun(connectionId, trigger);
+  try {
+    const [current] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);
+    if (!current?.enabled || ["disconnected", "archived", "replaced", "missing", "paused"].includes(current.status)) {
+      throw new GoogleSheetsError("Kết nối không còn hoạt động.", "INVALID_SCHEMA", { retryable: false });
+    }
+    Object.assign(connection, current);
+  } catch (error) {
+    await releaseConnectionLock(connectionId);
+    throw error;
+  }
+  let runId: number;
+  try {
+    await db.update(googleSheetConnections).set({ status: "syncing", updatedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
+    runId = await startSyncRun(connectionId, trigger);
+  } catch (error) {
+    await releaseConnectionLock(connectionId);
+    throw error;
+  }
+  const readStartedAt = new Date();
   try {
     const actorUserId = connection.createdBy ?? options?.actorUserId;
     const api = options?.apiOverride ?? (actorUserId ? await apiForUser(actorUserId) : null);
     if (!api) throw new GoogleSheetsError("Thiếu tư cách xác thực Google.", "OAUTH_REQUIRED", { retryable: false });
     if (options?.repairWatch) await ensureWatchChannel(api, connection, connection.spreadsheetId);
+    const tab = resolveConnectedTab(await api.getSpreadsheetMetadata(connection.spreadsheetId), connection.sheetId);
+    if (tab.title !== connection.sheetTitle) {
+      connection.sheetTitle = tab.title;
+      connection.rangeA1 = buildRangeA1(tab.title, templateFor(connection).fields.length, 50000);
+      await db.update(googleSheetConnections).set({ sheetTitle: tab.title, rangeA1: connection.rangeA1, lastVerifiedAt: new Date(), externalState: "accessible", updatedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
+    }
     const grid = await readSheetGrid(connection as SyncConnection, (spreadsheetId, range) => api.readValues(spreadsheetId, range));
     const result = await db.transaction(async (tx) => {
       const outcome = await runVocabularySync(connection as SyncConnection, grid, tx, options);
-      await tx.update(googleSheetSyncRuns).set({ metadata: JSON.stringify({ changes: outcome.stats.changes, conflictRows: outcome.stats.conflicts, deletionBlocked: outcome.stats.deletionBlocked }) }).where(eq(googleSheetSyncRuns.id, runId));
+      await tx.update(googleSheetSyncRuns).set({ metadata: JSON.stringify({ changes: outcome.stats.changes, changedWordIds: outcome.stats.changedWordIds, conflictRows: outcome.stats.conflicts, deletionBlocked: outcome.stats.deletionBlocked, deletionReview: outcome.stats.deletionReview, updateBlocked: outcome.stats.updateBlocked, updateReview: outcome.stats.updateReview }) }).where(eq(googleSheetSyncRuns.id, runId));
       return outcome;
     });
-    await writeBackSourceIds(api, connection, templateFor(connection), result.stats.idWrites);
+    await writeBackSourceIds(api, connection, templateFor(connection), grid, result.stats.idWrites);
     // New rows added in the Sheet get their native Google Sheets AI formulas
     // relayed back into the Sheet. Google Sheets then generates the content;
     // Lexora never calls an AI API and never generates text itself.
@@ -335,6 +366,11 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
       metadata: {
         changes: result.stats.changes,
         deletionBlocked: result.stats.deletionBlocked,
+        deletionReview: result.stats.deletionReview,
+        updateBlocked: result.stats.updateBlocked,
+        updateReview: result.stats.updateReview,
+        updateApproval: options?.updateApproval,
+        deletionApproval: options?.deletionApproval,
         resolutions: options?.resolutions ?? [],
         conflicts: result.stats.conflicts.length, trigger,
         ...(result.stats.invalidRows.length ? { invalidRows: result.stats.invalidRows.slice(0, 25) } : {}),
@@ -345,7 +381,7 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
       },
     });
     await markConnectionSyncState(connectionId, { ok: true, partial: syncIsPartial(result.stats) });
-    await clearSyncPending(connectionId);
+    await clearSyncPending(connectionId, readStartedAt);
     console.log(`[google-sheet-sync] connectionId=${connectionId} trigger=${trigger} rowsCreated=${result.stats.rowsCreated} rowsUpdated=${result.stats.rowsUpdated} rowsDeleted=${result.stats.rowsDeleted} changedWordIds=[${result.stats.changedWordIds.join(",")}] webhookReceived=${trigger === "webhook"}`);
     if (trigger !== "initial") await writeAdminAudit({ actorUserId: options?.actorUserId ?? connection.createdBy ?? 1, action: "google_sheet.sync", resourceType: "google_sheet_connection", resourceId: connectionId, metadata: { trigger, created: result.stats.rowsCreated, updated: result.stats.rowsUpdated, unchanged: result.stats.rowsUnchanged, deleted: result.stats.rowsDeleted, conflicts: result.stats.conflicts.length } });
     return { stats: result.stats, connectionId };
@@ -354,7 +390,12 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
     const retryable = error instanceof GoogleSheetsError ? error.retryable : true;
     await finishSyncRun(runId, "error", { errorMessage: message });
     await markConnectionSyncState(connectionId, { ok: false, error: message, retryable });
-    await markSyncPending(connectionId, "retry");
+    const externalFailure = externalFailureState(error);
+    if (externalFailure.externalState) {
+      await db.update(googleSheetConnections).set({ ...externalFailure, lastVerifiedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
+    }
+    if (retryable) await markSyncPending(connectionId, "retry");
+    else await clearSyncPending(connectionId, readStartedAt);
     throw error;
   } finally {
     await releaseConnectionLock(connectionId);
@@ -363,20 +404,12 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
   }
 }
 
-async function writeBackSourceIds(api: GoogleWorkspaceApi, connection: { spreadsheetId: string; sheetTitle: string }, template: GoogleSheetTemplate, idWrites: Array<{ rowNumber: number; sourceId: string }>) {
+async function writeBackSourceIds(api: GoogleWorkspaceApi, connection: SyncConnection, template: GoogleSheetTemplate, original: Awaited<ReturnType<typeof readSheetGrid>>, idWrites: Array<{ rowNumber: number; sourceId: string }>) {
   if (!idWrites.length) return;
-  const idColumn = columnLetter(template.fields.findIndex((field) => field.key === SOURCE_ID_HEADER));
-  const sorted = [...idWrites].sort((left, right) => left.rowNumber - right.rowNumber);
-  const startRow = sorted[0].rowNumber;
-  const values: (string | number)[][] = [];
-  let cursor = startRow;
-  for (const write of sorted) {
-    while (cursor < write.rowNumber) { values.push([""]); cursor += 1; }
-    values.push([write.sourceId]);
-    cursor += 1;
-  }
-  const range = `'${connection.sheetTitle.replace(/'/g, "''")}'!${idColumn}${startRow}:${idColumn}${startRow + values.length - 1}`;
-  await api.writeValues(connection.spreadsheetId, range, values as SheetsValue);
+  const current = await readSheetGrid(connection, (spreadsheetId, range) => api.readValues(spreadsheetId, range));
+  const updates = verifiedSourceIdWriteRanges(connection.sheetTitle, template, original, current, idWrites);
+  if (api.batchWriteValues) await api.batchWriteValues(connection.spreadsheetId, updates);
+  else for (const update of updates) await api.writeValues(connection.spreadsheetId, update.rangeA1, update.values);
 }
 
 /**
@@ -388,12 +421,11 @@ async function writeBackSourceIds(api: GoogleWorkspaceApi, connection: { spreads
  */
 async function writeRowAiFormulas(api: GoogleWorkspaceApi, connection: { spreadsheetId: string; sheetTitle: string }, writes: Array<{ rowNumber: number; cells: Array<{ letter: string; formula: string }> }>): Promise<void> {
   const sheet = `'${connection.sheetTitle.replace(/'/g, "''")}'`;
-  for (const write of writes) {
-    for (const cell of write.cells) {
-      const range = `${sheet}!${cell.letter}${write.rowNumber}:${cell.letter}${write.rowNumber}`;
-      await api.writeValues(connection.spreadsheetId, range, [[cell.formula]] as never, { parseFormulas: true });
-    }
-  }
+  const formulas = await api.readValues(connection.spreadsheetId, `${sheet}!A:AZ`, { renderOption: "FORMULA" });
+  const updates = blankAiWrites(connection.sheetTitle, formulas, writes);
+  if (!updates.length) return;
+  if (api.batchWriteValues) await api.batchWriteValues(connection.spreadsheetId, updates);
+  else for (const update of updates) await api.writeValues(connection.spreadsheetId, update.rangeA1, update.values, { parseFormulas: true });
 }
 
 /**

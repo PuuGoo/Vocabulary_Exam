@@ -45,7 +45,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
 
   const seenRunRef = useRef<string | null>(null);
   const connection = connections.find((item) => item.setId === setId) ?? null;
-  const broken = !!connection && (connection.status === "error" || connection.status === "disconnected");
+  const broken = !!connection && ["error", "disconnected", "missing", "archived", "replaced"].includes(connection.status);
   const latestRun = runs[0] ?? null;
 
   /**
@@ -368,7 +368,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
         />
       )}
 
-      {connection && (connection.status === "error" || connection.status === "disconnected") && (
+      {connection && broken && (
         <GoogleSheetsBrokenCard connection={connection} canManage={canManage} busy={busy !== null} canCreate={canCreateNew} onRecover={() => { setRecoverResult(connection.lastError || ""); setDialog("recover"); }} onCreateNew={() => setDialog("create")} />
       )}
 

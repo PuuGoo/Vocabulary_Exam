@@ -7,6 +7,11 @@ import { generateSourceId, isValidSourceId, fallbackIdentityForRow } from "./ide
 import { parseSheetGrid, gridFromValuesRange, mapHeadersToFieldKeys } from "./parser";
 import { createSyncPlan, planRow } from "./diff";
 
+test("duplicate normalized headers fail rather than choosing an arbitrary column", () => {
+  const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
+  assert.throws(() => parseSheetGrid({ headers: [SOURCE_ID_HEADER, "Word", "Meaning", " meaning "], rows: [] }, template), /Tên cột trùng/);
+});
+
 test("spreadsheet URL parser extracts ids from common Google Sheets links", () => {
   assert.equal(parseSpreadsheetUrl("https://docs.google.com/spreadsheets/d/abc123XYZ_-9/edit#gid=0"), "abc123XYZ_-9");
   assert.equal(parseSpreadsheetUrl("https://docs.google.com/spreadsheets/d/abc123XYZ_-9"), "abc123XYZ_-9");

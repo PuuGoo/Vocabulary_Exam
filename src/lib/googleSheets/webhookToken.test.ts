@@ -71,7 +71,7 @@ test("6. resource state sync is acknowledged without running a diff", () => {
 test("7. resource state update with changed=content triggers a sync", () => {
   const webhook = readFileSync("src/app/api/webhooks/google-drive/route.ts", "utf8");
   assert.match(webhook, /x-goog-changed/, "must read the changed header");
-  assert.match(webhook, /markSyncPending\(connection\.id, "webhook"\)/, "update notifications must mark pending before syncing");
+  assert.match(webhook, /await recordNotificationState\(channelId, resourceId, messageNumber, "webhook"\)/, "update notifications must atomically persist pending work with the sequence number");
   assert.match(webhook, /runPendingConnection\(connection\.id, "webhook"\)/, "update notifications must run the shared sync");
   assert.match(webhook, /changed: changed \|\| null/, "the response must echo the changed header for diagnostics");
 });

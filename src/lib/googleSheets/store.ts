@@ -1,4 +1,4 @@
-import { asc, and, eq, inArray, lt, sql } from "drizzle-orm";
+import { asc, and, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
@@ -56,7 +56,11 @@ export async function markSyncPending(connectionId: number, reason: string) {
     });
 }
 
-export async function clearSyncPending(connectionId: number) {
+export async function clearSyncPending(connectionId: number, through?: Date) {
+  if (through) {
+    await db.update(googleSheetSyncPending).set({ pending: false, pendingAt: null, updatedAt: new Date() }).where(and(eq(googleSheetSyncPending.connectionId, connectionId), lte(googleSheetSyncPending.pendingAt, through)));
+    return;
+  }
   await db
     .insert(googleSheetSyncPending)
     .values({ connectionId, pending: false, pendingAt: null, updatedAt: new Date() })
@@ -67,21 +71,30 @@ export async function takePendingConnections(limit: number) {
   return db
     .select({ connectionId: googleSheetSyncPending.connectionId })
     .from(googleSheetSyncPending)
-    .where(eq(googleSheetSyncPending.pending, true))
+    .innerJoin(googleSheetConnections, eq(googleSheetConnections.id, googleSheetSyncPending.connectionId))
+    .where(and(eq(googleSheetSyncPending.pending, true), eq(googleSheetConnections.enabled, true), inArray(googleSheetConnections.status, ["connected", "syncing"])))
+    .orderBy(asc(googleSheetSyncPending.pendingAt), asc(googleSheetSyncPending.connectionId))
     .limit(limit);
 }
 
-export async function recordNotificationState(channelId: string, resourceId: string, messageNumber: number) {
-  const [channel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.channelId, channelId)).limit(1);
-  if (!channel) return null;
-  // Out-of-order and duplicate notifications must not trigger a second sync.
-  if (channel.resourceId && channel.resourceId !== resourceId) return null;
-  if (channel.lastMessageNumber != null && messageNumber <= channel.lastMessageNumber) return null;
-  await db
-    .update(googleSheetSyncChannels)
-    .set({ lastMessageNumber: messageNumber, resourceId: channel.resourceId || resourceId, updatedAt: new Date() })
-    .where(eq(googleSheetSyncChannels.id, channel.id));
-  return channel;
+export async function recordNotificationState(channelId: string, resourceId: string, messageNumber: number, pendingReason?: string) {
+  return db.transaction(async (tx) => {
+    const [channel] = await tx.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.channelId, channelId)).limit(1);
+    if (!channel) return null;
+    if (channel.resourceId && channel.resourceId !== resourceId) return null;
+    if (channel.lastMessageNumber != null && messageNumber <= channel.lastMessageNumber) return null;
+    const advanced = await tx
+      .update(googleSheetSyncChannels)
+      .set({ lastMessageNumber: messageNumber, resourceId: channel.resourceId || resourceId, updatedAt: new Date() })
+      .where(and(eq(googleSheetSyncChannels.id, channel.id), eq(googleSheetSyncChannels.channelId, channelId), eq(googleSheetSyncChannels.status, "active"), sql`(${googleSheetSyncChannels.lastMessageNumber} is null or ${googleSheetSyncChannels.lastMessageNumber} < ${messageNumber})`)).returning();
+    if (advanced[0] && pendingReason) {
+      const now = new Date();
+      await tx.insert(googleSheetSyncPending)
+        .values({ connectionId: channel.connectionId, pending: true, pendingReason, pendingAt: now, updatedAt: now })
+        .onConflictDoUpdate({ target: googleSheetSyncPending.connectionId, set: { pending: true, pendingReason, pendingAt: now, updatedAt: now } });
+    }
+    return advanced[0] ?? null;
+  });
 }
 
 export async function startSyncRun(connectionId: number, triggerType: SyncTrigger) {

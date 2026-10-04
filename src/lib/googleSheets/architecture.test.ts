@@ -44,6 +44,7 @@ test("STT is display-only: it never reaches the database or the fingerprint", ()
 
 test("sync engine never writes learning tables", () => {
   const source = readFileSync("src/lib/googleSheets/syncVocabulary.ts", "utf8");
+  assert.ok(source.indexOf("await lockVocabularySets(tx, [connection.setId])") < source.indexOf('for("update")'), "set lock must precede word locks, matching append/reorder lock order");
   for (const forbidden of ["wordProgress", "mistakes", "wordSkillProgress", "userWordSkillProgress", "setReviewProgress", "userWordSkillEvents", "reviewSessions"]) {
     assert.ok(!new RegExp(`\\.update\\(${forbidden}\\)`).test(source), `sync engine must not update ${forbidden}`);
     assert.ok(!new RegExp(`\\.delete\\(${forbidden}\\)`).test(source), `sync engine must not delete ${forbidden}`);
@@ -55,6 +56,8 @@ test("sync engine never writes learning tables", () => {
 });
 
 test("delete behavior defaults to archive and never hard-deletes learning data", () => {
+  const engine = readFileSync("src/lib/googleSheets/syncVocabulary.ts", "utf8");
+  assert.doesNotMatch(engine, /tx.delete\(words\)/, "deleting a parent word would cascade into learning records");
   const store = readFileSync("src/db/schema.ts", "utf8");
   assert.match(store, /deleteBehavior: varchar\("delete_behavior", \{ length: 16 \}\)\.notNull\(\)\.default\("archive"\)/);
   const lifecycle = readFileSync("src/lib/googleSheets/sheetLifecycle.ts", "utf8");
@@ -68,7 +71,12 @@ test("webhook authenticates the channel token, never the notification body", () 
   assert.match(source, /x-goog-resource-state/, "the webhook must read the resource state header");
   assert.match(source, /resourceState === "sync"/, "a sync notification must be acknowledged without a diff");
   assert.match(source, /202/, "webhook must answer 202 whether or not the sync succeeded");
-  assert.match(source, /markSyncPending\(connection\.id, "webhook"\)/, "pending state must be persisted before syncing");
+  assert.match(source, /await recordNotificationState\(channelId, resourceId, messageNumber, "webhook"\)/, "pending state must be persisted with the accepted notification");
+  assert.ok(source.indexOf('messageNumber, "webhook")') < source.indexOf("await runPendingConnection"));
+  const store = readFileSync("src/lib/googleSheets/store.ts", "utf8");
+  const notification = store.slice(store.indexOf("export async function recordNotificationState"), store.indexOf("export async function startSyncRun"));
+  assert.match(notification, /db.transaction/);
+  assert.match(notification, /tx.insert\(googleSheetSyncPending\)/);
   assert.match(source, /runPendingConnection/, "the webhook runs the sync itself, which is what keeps sync near-real-time without a high-frequency cron");
   assert.ok(!source.includes("syncConnection"), "the webhook must go through the shared lock-guarded helper, not sync a connection directly");
   assert.ok(!/isValidWebhookToken|HMAC\(.*body|createHmac.*body/i.test(source), "the notification body is empty for files.watch and must never be authenticated");

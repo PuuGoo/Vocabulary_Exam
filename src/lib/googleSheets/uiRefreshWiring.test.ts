@@ -48,9 +48,10 @@ test("vocabulary sync stays active outside settings and checks on return", () =>
   const page = readFileSync("src/app/admin/sets/page.tsx", "utf8");
   const hook = readFileSync("src/lib/googleSheets/useVocabularySync.ts", "utf8");
   assert.match(page, /useVocabularySync\(detail\?\.id, detailTab === "vocabulary"/);
-  assert.match(hook, /method: "POST"/);
-  assert.match(hook, /item\.enabled/);
-  assert.match(hook, /canSync &&/);
+  assert.doesNotMatch(hook, /method: "POST"/);
+  assert.doesNotMatch(hook, /\/sync`/);
+  assert.match(hook, /connection\.lastSyncedAt/);
+  assert.match(hook, /previous\.revision !== revision/);
   assert.match(hook, /window\.addEventListener\("focus"/);
   assert.match(hook, /document\.addEventListener\("visibilitychange"/);
   assert.match(hook, /window\.removeEventListener\("focus"/);

@@ -1,0 +1,32 @@
+name: Google Sheets reconciliation
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: google-sheets-reconcile
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Renew watches and reconcile missed changes
+        env:
+          RECONCILE_URL: ${{ vars.GOOGLE_SHEETS_RECONCILE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CRON_SECRET" || "$RECONCILE_URL" != https://*/api/cron/google-sheets/reconcile ]]; then
+            echo 'Configure CRON_SECRET and the HTTPS GOOGLE_SHEETS_RECONCILE_URL repository variable.'
+            exit 1
+          fi
+          curl --silent --show-error --fail --max-time 330 \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            "$RECONCILE_URL" --output result.json
+          jq -e 'has("renewal") and has("results") and ([.renewal[] | select(.error != null)] | length == 0) and ([.results[] | select(.status == "error")] | length == 0)' result.json > /dev/null

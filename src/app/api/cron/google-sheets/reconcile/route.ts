@@ -16,7 +16,7 @@ export const maxDuration = 300;
  */
 export async function GET(request: Request) {
   if (!isValidCronAuthorization(request.headers.get("authorization"), process.env.CRON_SECRET)) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const renewal = await renewGoogleWatchChannels();
   const results = await reconcilePendingGoogleSheets({ trigger: "cron", limit: 50 });
-  const renewal = await renewGoogleWatchChannels(undefined, { thresholdHours: 26 });
   return Response.json({ processed: results.length, results, renewal });
 }

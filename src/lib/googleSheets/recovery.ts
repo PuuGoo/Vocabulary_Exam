@@ -5,11 +5,13 @@ import type { GoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { apiForUser, exportValuesForWord, syncConnection } from "@/lib/googleSheets/sheetLifecycle";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { buildRangeA1 } from "@/lib/googleSheets/spreadsheet";
-import { fingerprintDbWord } from "@/lib/googleSheets/fingerprint";
-import { generateSourceId } from "@/lib/googleSheets/identity";
+import { planMappingRepair } from "./mappingRepair";
+import { quoteSheetTitle } from "./spreadsheet";
 import { ensureWatchChannel } from "@/lib/googleSheets/watch";
 import { writeAdminAudit } from "@/lib/adminAudit";
 import { GoogleSheetsError } from "@/lib/googleSheets/errors";
+import { externalFailureState } from "./externalState";
+import { acquireConnectionLock, releaseConnectionLock } from "./store";
 
 /**
  * Connection-state helpers + the recovery flow for Google Sheets.
@@ -82,52 +84,42 @@ export async function recoverGoogleSheetConnection(
   actor: { userId: number },
   apiOverride?: GoogleWorkspaceApi,
 ): Promise<RecoveryResult> {
+  await acquireConnectionLock(connectionId, "recover");
+  let recoveryLockHeld = true;
+  try {
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, connectionId)).limit(1);
   if (!connection) throw new GoogleSheetsError("Không tìm thấy kết nối Google Sheet.", "SHEET_NOT_FOUND", { retryable: false });
+  if (["archived", "replaced"].includes(connection.status)) throw new GoogleSheetsError("Kết nối đã được lưu trữ hoặc thay thế. Không thể bật lại.", "INVALID_SCHEMA", { retryable: false });
 
   const api = apiOverride ?? await apiForUser(actor.userId);
 
   // 1) Does the existing spreadsheet still exist and do we still have access?
-  let accessible: boolean;
+  let metadata: Awaited<ReturnType<GoogleWorkspaceApi["getSpreadsheetMetadata"]>>;
   try {
-    accessible = await api.verifyAccess(connection.spreadsheetId);
+    metadata = await api.getSpreadsheetMetadata(connection.spreadsheetId);
   } catch (error) {
-    if (error instanceof GoogleSheetsError && error.code === "SHEET_NOT_FOUND") accessible = false;
-    else throw error;
-  }
-  if (!accessible) {
-    await db.update(googleSheetConnections)
-      .set({ status: "error", enabled: false, lastError: "Google Sheet không còn tồn tại hoặc đã mất quyền truy cập.", lastErrorAt: new Date(), updatedAt: new Date() })
-      .where(eq(googleSheetConnections.id, connectionId));
-    throw new GoogleSheetsError("Không thể truy cập Google Sheet cũ. Bạn có thể tạo Sheet mới.", "SHEET_NOT_FOUND", { retryable: false });
+    const failure = externalFailureState(error);
+    if (failure.externalState) {
+      await db.update(googleSheetConnections).set({ ...failure, lastVerifiedAt: new Date(), updatedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
+    }
+    throw error;
   }
 
   // 2) Refresh metadata (tab may have been renamed or recreated).
   const [set] = await db.select().from(vocabSets).where(eq(vocabSets.id, connection.setId)).limit(1);
   if (!set) throw new GoogleSheetsError("Không tìm thấy bộ từ vựng.", "SHEET_NOT_FOUND", { retryable: false });
-  const metadata = await api.getSpreadsheetMetadata(connection.spreadsheetId);
-  const tab = metadata.sheets.find((sheet) => sheet.sheetId === connection.sheetId)
-    ?? metadata.sheets.find((sheet) => sheet.title === connection.sheetTitle)
-    ?? metadata.sheets[0];
+  const tab = metadata.sheets.find((sheet) => sheet.sheetId === connection.sheetId);
   if (!tab) throw new GoogleSheetsError("Không tìm thấy tab của Google Sheet.", "INVALID_SCHEMA", { retryable: false });
   const template = getGoogleSheetTemplate(set);
 
   // 3) Repair row mappings for words that never got one (wiring failed mid-create).
   const wordRows = await db.select().from(words).where(eq(words.setId, connection.setId)).orderBy(asc(words.position), asc(words.id));
-  const existingMappings = await db.select({ wordId: googleSheetRowMappings.wordId })
+  const existingMappings = await db.select({ wordId: googleSheetRowMappings.wordId, sourceId: googleSheetRowMappings.sourceId })
     .from(googleSheetRowMappings).where(eq(googleSheetRowMappings.connectionId, connectionId));
-  const mappedWordIds = new Set(existingMappings.flatMap((row) => (row.wordId == null ? [] : [row.wordId])));
-  const missing = wordRows.filter((word) => !mappedWordIds.has(word.id));
-  let mappingsCreated = 0;
-  if (missing.length) {
-    await db.insert(googleSheetRowMappings).values(missing.map((word) => {
-      const fingerprint = fingerprintDbWord(template, word as unknown as Record<string, unknown>);
-      // sheetRowNumber 0 = "unknown position"; the first sync resolves it from
-      // the __lexora_id column it writes back into the sheet.
-      return { connectionId, wordId: word.id, sourceId: generateSourceId(), sheetRowNumber: 0, sourceFingerprint: fingerprint, lastSyncedFingerprint: fingerprint };
-    }));
-    mappingsCreated = missing.length;
-  }
+  const values = await api.readValues(connection.spreadsheetId, `${quoteSheetTitle(tab.title)}!A:Z`);
+  const plannedMappings = planMappingRepair({ values, template, setType: set.type, words: wordRows, mappings: existingMappings });
+  const mappingsCreated = plannedMappings.length;
+  if (plannedMappings.length) await db.insert(googleSheetRowMappings).values(plannedMappings.map(mapping => ({ ...mapping, connectionId })));
 
   // 4) Repair the Drive watch channel (fresh channel id + token when the old one
   //    is missing, expired or tokenless).
@@ -138,6 +130,8 @@ export async function recoverGoogleSheetConnection(
   await db.update(googleSheetConnections).set({
     enabled: true,
     status: "connected",
+    externalState: "accessible",
+    lastVerifiedAt: new Date(),
     sheetId: tab.sheetId,
     sheetTitle: tab.title,
     rangeA1: buildRangeA1(tab.title, template.fields.length, Math.max(1, wordRows.length)),
@@ -157,6 +151,8 @@ export async function recoverGoogleSheetConnection(
   // 6) One sync so sheet and DB converge after recovery. A failure here is not
   //    fatal: the connection stays usable and the next manual/webhook sync retries.
   let stats: RecoveryResult["stats"];
+  await releaseConnectionLock(connectionId);
+  recoveryLockHeld = false;
   try {
     const outcome = await syncConnection(connectionId, "initial", { actorUserId: actor.userId, apiOverride: api });
     stats = { rowsCreated: outcome.stats.rowsCreated, rowsUpdated: outcome.stats.rowsUpdated, rowsUnchanged: outcome.stats.rowsUnchanged, rowsDeleted: outcome.stats.rowsDeleted };
@@ -179,4 +175,7 @@ export async function recoverGoogleSheetConnection(
     stats,
     message: "Đã khôi phục kết nối Google Sheet.",
   };
+  } finally {
+    if (recoveryLockHeld) await releaseConnectionLock(connectionId);
+  }
 }

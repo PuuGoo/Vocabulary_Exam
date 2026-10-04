@@ -175,6 +175,14 @@ Header aliases tương thích importer CSV/XLSX hiện có (`Word/Từ/Term`, `C
   **không** gồm row number/formatting/metadata.
 - Đổi meaning → UPDATE cùng `wordId`; sort/move/insert row → không tạo duplicate.
 
+## Automated validation safety
+
+`npm run test:google-sheets` discovers all Google Sheets test files and explicitly
+disables production database access and dotenv loading. Database acceptance tests
+are reported as skipped, not passed. Run those separately only with a dedicated
+test database and `GOOGLE_SHEETS_TEST_DB=1`; never enable that flag against the
+production `.env`. This command does not prove real Google webhook delivery.
+
 ## 9. Delete policy
 
 `connection.deleteBehavior`:
@@ -182,7 +190,7 @@ Header aliases tương thích importer CSV/XLSX hiện có (`Word/Từ/Term`, `C
 | Giá trị | Hành vi |
 |---|---|
 | `archive` (default) | Gắn `deletedAt` ở mapping, **không** xóa `words`/learning data |
-| `delete` | Hard delete `words` (opt-in) |
+| `delete` | Xóa khỏi danh sách đang học bằng mapping tombstone; giữ bản ghi từ và dữ liệu học để tránh cascade |
 | `ignore` | Không đổi DB |
 
 UI hiển thị rõ chính sách.
@@ -272,8 +280,16 @@ GET /api/admin/google-sheets/oauth/callback  → storeGoogleToken
   2. **Renew watch channel** — channel mới có lifetime ~23h; renew khi còn < 6h (`WATCH_CHANNEL_RENEW_THRESHOLD_MS`);
      channel tokenless (legacy trước fix) cũng được tạo lại ngay trong lần chạy cron kế tiếp.
   Renew **lười (lazy)**: mỗi webhook hợp lệ cũng gọi `renewWatchChannelIfExpiring()` nên channel thường được
-  gia hạn ngay khi có tương tác, không phụ thuộc cron.
+  gia hạn ngay khi có tương tác. Cách này không bảo vệ Sheet không có tương tác: daily cron một mình không đủ.
   Auth: `Authorization: Bearer CRON_SECRET`.
+- **Bắt buộc có lịch dưới 6 giờ để tránh khoảng trống watch:** workflow
+  `.github/workflows/google-sheets-reconcile.yml` gọi lại cùng endpoint mỗi giờ ở phút 17.
+  Cấu hình repository secret `CRON_SECRET` giống Vercel và repository variable
+  `GOOGLE_SHEETS_RECONCILE_URL=https://vocabulary-exam.vercel.app/api/cron/google-sheets/reconcile`.
+  Workflow chỉ hoạt động sau khi nằm trên default branch và Actions được bật; chạy `workflow_dispatch`
+  để kiểm chứng lần đầu. GitHub có thể trì hoãn schedule; theo dõi các lần chạy thất bại hoặc bị bỏ lỡ.
+  Daily Vercel cron vẫn là dự phòng, không phải bảo đảm gia hạn đúng hạn.
+  Endpoint gia hạn watch trước khi đối soát dữ liệu để sync chậm không làm hết thời gian gia hạn.
 - **Near-real-time đến từ webhook, không phải từ cron.** Webhook Drive nhận sheet, mark pending
   rồi chạy sync ngay trong request (`maxDuration = 60`). Nếu invocation chết giữa chừng,
   timeout, hoặc OAuth bị thu hồi — cờ `pending` đã ghi trước đó nên cron daily tự dọn.
@@ -390,8 +406,23 @@ the prior vocabulary values, not learning progress; it is not an automatic undo.
 
 Runs with conflicts, invalid rows, duplicates, or blocked deletions have `partial`
 status. All-row removal, or removal of at least five rows and 25% of active rows,
-blocks deletion/archive. Restore Sheet rows or use explicit vocabulary management
-to remove words; automatic sync does not override this protection.
+blocks deletion/archive. The review panel lists affected word and source IDs.
+An authorized manager may explicitly continue with that reviewed snapshot, or
+cancel and restore rows in Google Sheets. Approval is bound to the connection,
+spreadsheet, delete policy, complete read grid, words and mappings. If these have
+changed, the server rejects the approval before vocabulary writes and requires a
+fresh review. Automatic/webhook sync never supplies an approval.
+
+Operators can configure `GOOGLE_SHEETS_BULK_DELETE_MIN_ROWS` (positive integer,
+default `5`) and `GOOGLE_SHEETS_BULK_DELETE_FRACTION` (greater than zero, at most
+`1`, default `0.25`). Invalid values use defaults. All-row removal always requires
+review regardless of thresholds. Thresholds currently guard deletion/archive;
+large content updates use a separate review with old/new values. Configure
+`GOOGLE_SHEETS_BULK_UPDATE_MIN_ROWS` (default `20`) and
+`GOOGLE_SHEETS_BULK_UPDATE_FRACTION` (default `0.5`). Both conditions must hold.
+The manager's update approval is bound to the reviewed Sheet and database
+snapshot; a newer edit invalidates it. Blocked updates are reported as partial,
+not successful updates. Ordinary small edits remain automatic.
 
 The daily authenticated reconciliation job now also scans stale enabled connections,
 not only the pending queue. The existing Vercel Hobby daily schedule is unchanged;

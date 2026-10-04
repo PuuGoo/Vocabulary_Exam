@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   varchar,
   boolean,
   uniqueIndex,
@@ -1012,6 +1013,10 @@ export const googleSheetConnections = pgTable(
     syncDirection: varchar("sync_direction", { length: 32 }).notNull().default("google_to_lexora"),
     deleteBehavior: varchar("delete_behavior", { length: 16 }).notNull().default("archive"),
     conflictPolicy: varchar("conflict_policy", { length: 16 }).notNull().default("review"),
+    managedByLexora: boolean("managed_by_lexora").notNull().default(false),
+    externalState: varchar("external_state", { length: 24 }).notNull().default("unknown"),
+    externalDeletedAt: timestamp("external_deleted_at", { withTimezone: true }),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
     // Lexora plants native Google Sheets =AI()/=Gemini() formulas in the Sheet.
     // This flag only controls that template choice; Lexora never calls an AI API.
     aiEnrich: boolean("ai_enrich").notNull().default(true),
@@ -1035,6 +1040,23 @@ export const googleSheetConnections = pgTable(
   }),
 );
 
+export const googleSheetResources = pgTable("google_sheet_resources", {
+  id: serial("id").primaryKey(),
+  connectionId: integer("connection_id").notNull().references(() => googleSheetConnections.id, { onDelete: "cascade" }),
+  spreadsheetId: varchar("spreadsheet_id", { length: 255 }).notNull(),
+  spreadsheetUrl: text("spreadsheet_url").notNull(),
+  spreadsheetName: varchar("spreadsheet_name", { length: 512 }).notNull(),
+  sheetId: integer("sheet_id").notNull(),
+  sheetTitle: varchar("sheet_title", { length: 255 }).notNull(),
+  managedByLexora: boolean("managed_by_lexora").notNull().default(false),
+  status: varchar("status", { length: 24 }).notNull().default("preparing"),
+  channelId: varchar("channel_id", { length: 255 }),
+  resourceId: varchar("resource_id", { length: 255 }),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => ({ fileIdx: uniqueIndex("google_sheet_resources_file_idx").on(table.spreadsheetId) }));
+
 export const googleSheetSyncChannels = pgTable(
   "google_sheet_sync_channels",
   {
@@ -1049,7 +1071,7 @@ export const googleSheetSyncChannels = pgTable(
     // and compares against this digest. Rows created before the fix are NULL and
     // are treated as legacy (replaced automatically, never trusted blindly).
     channelTokenHash: varchar("channel_token_hash", { length: 128 }),
-    lastMessageNumber: integer("last_message_number"),
+    lastMessageNumber: bigint("last_message_number", { mode: "number" }),
     status: varchar("status", { length: 16 }).notNull().default("active"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

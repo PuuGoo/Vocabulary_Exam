@@ -10,7 +10,7 @@ export default function GoogleSheetsBrokenCard({ connection, canManage, busy, ca
   return (
     <div className="rounded-2xl border border-red-200 bg-red-50 p-4 sm:p-5" role="alert">
       <p className="text-sm font-semibold text-red-700">{isError ? "Google Sheet gặp lỗi kết nối" : "Google Sheet đã ngắt kết nối"}</p>
-      <p className="mt-1 text-xs leading-5 text-red-600">Google Sheet tự tạo còn đủ. Lexora có thể khôi phục kết nối hiện có mà không tạo spreadsheet mới.</p>
+      <p className="mt-1 text-xs leading-5 text-red-600">{connection.externalState === "missing" ? "Google Sheet không còn hoặc đã được đưa vào Thùng rác. Từ vựng và dữ liệu học tập trong Lexora vẫn được giữ nguyên." : "Từ vựng và dữ liệu học tập vẫn được giữ nguyên. Kiểm tra quyền truy cập Google trước khi khôi phục kết nối."}</p>
       {connection.lastError ? <p className="mt-2 break-words rounded-xl bg-white/70 px-3 py-2 text-xs text-red-700">Lỗi gần nhất: {connection.lastError}</p> : null}
       {canManage ? (
         <div className="mt-3 flex flex-wrap gap-2">

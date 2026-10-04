@@ -18,6 +18,7 @@ import { GoogleSheetsError } from "@/lib/googleSheets/errors";
 import { isGoogleOAuthConfigured } from "@/lib/googleSheets/auth";
 import { createSheetJson } from "@/lib/googleSheets/createFlow";
 import { checkRateLimit, recordRateLimitHit } from "@/lib/rateLimit";
+import { resolveConnectedTab } from "@/lib/googleSheets/tabIdentity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -84,10 +85,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const template = getGoogleSheetTemplate(set);
     const api = await apiForUser(access.userId);
+    const tab = resolveConnectedTab(await api.getSpreadsheetMetadata(connection.spreadsheetId), connection.sheetId);
     const result = await applyAiPromptsToSheet({
       api,
       spreadsheetId: connection.spreadsheetId,
-      template,
+      template: { ...template, sheetTitle: tab.title },
       promptOverrides,
     });
 
@@ -118,7 +120,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       if (error.code === "OAUTH_REQUIRED" || error.code === "OAUTH_REVOKED") {
         return createSheetJson({ status: 202, body: { error: "Kết nối Google để cập nhật prompt AI.", code: error.code, oauthRequired: true, setId: set.id } });
       }
-      const status = error.code === "SHEET_NOT_FOUND" ? 404 : error.code === "RATE_LIMITED" ? 429 : 502;
+      const status = error.status ?? (error.code === "SHEET_NOT_FOUND" ? 404 : error.code === "RATE_LIMITED" ? 429 : 502);
       return NextResponse.json({ error: error.message, code: error.code, retryable: error.retryable }, { status });
     }
     console.error("[google-sheets] apply ai prompts failed", error instanceof Error ? error.message : "unknown");
