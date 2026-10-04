@@ -58,7 +58,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
     const rowsCreated = Number(stats.rowsCreated ?? 0) || 0;
     const rowsDeleted = Number(stats.rowsDeleted ?? 0) || 0;
     const rowsUpdated = Number(stats.rowsUpdated ?? 0) || 0;
-    if (!hasVocabularyChanges({ changedWordIds, rowsCreated, rowsDeleted })) return;
+    if (!hasVocabularyChanges({ changedWordIds, rowsCreated, rowsUpdated, rowsDeleted })) return;
     // Direct parent callback is the primary path (spec item 8/11).
     onVocabularyChanged?.(changedWordIds);
     // Event covers the webhook path where the panel may not have re-rendered.

@@ -35,12 +35,26 @@ test("the parent page listens for the sync event and refreshes the open set", ()
 });
 
 test("the sync event payload carries everything the parent needs", () => {
+  assert.equal(hasVocabularyChanges({ changedWordIds: [], rowsCreated: 0, rowsDeleted: 0, rowsUpdated: 1 }), true);
   assert.equal(typeof GOOGLE_SHEET_SYNCED_EVENT, "string");
   assert.ok(GOOGLE_SHEET_SYNCED_EVENT.length > 0);
   assert.equal(hasVocabularyChanges({ changedWordIds: [1], rowsCreated: 0, rowsDeleted: 0 }), true);
   assert.equal(hasVocabularyChanges({ changedWordIds: [], rowsCreated: 1, rowsDeleted: 0 }), true);
   assert.equal(hasVocabularyChanges({ changedWordIds: [], rowsCreated: 0, rowsDeleted: 1 }), true);
   assert.equal(hasVocabularyChanges({ changedWordIds: [], rowsCreated: 0, rowsDeleted: 0 }), false, "an unchanged run must not trigger a reload");
+});
+
+test("vocabulary sync stays active outside settings and checks on return", () => {
+  const page = readFileSync("src/app/admin/sets/page.tsx", "utf8");
+  const hook = readFileSync("src/lib/googleSheets/useVocabularySync.ts", "utf8");
+  assert.match(page, /useVocabularySync\(detail\?\.id, detailTab === "vocabulary"/);
+  assert.match(hook, /method: "POST"/);
+  assert.match(hook, /item\.enabled/);
+  assert.match(hook, /canSync &&/);
+  assert.match(hook, /window\.addEventListener\("focus"/);
+  assert.match(hook, /document\.addEventListener\("visibilitychange"/);
+  assert.match(hook, /window\.removeEventListener\("focus"/);
+  assert.match(hook, /window\.clearInterval\(timer\)/);
 });
 
 test("manual Sync Now and webhook share one sync engine (no duplicate logic)", () => {

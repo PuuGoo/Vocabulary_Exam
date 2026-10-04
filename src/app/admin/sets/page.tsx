@@ -23,6 +23,7 @@ import { canonicalizePinyinDisplay, hasExplicitPinyinTone } from "@/lib/pinyin";
 import WordDepthEditor from "@/components/WordDepthEditor";
 import GoogleSheetsPanel from "@/components/GoogleSheetsPanel";
 import { GOOGLE_SHEET_SYNCED_EVENT } from "@/lib/googleSheets/syncEvent";
+import { useVocabularySync } from "@/lib/googleSheets/useVocabularySync";
 
 type SetSummary = { id: number; name: string; category: string | null; folderId: number | null; publicationStatus: "draft" | "published"; type: string; languageCode:string; translationLanguageCode:string; languageSettings:string; count: number; classId: number | null; className: string | null };
 type Word = {
@@ -1051,7 +1052,7 @@ export default function AdminSetsPage() {
    */
   const refreshDetailWords = useCallback(async (setId: number) => {
     try {
-      const res = await fetch(`/api/sets/${setId}`);
+      const res = await fetch(`/api/sets/${setId}`, { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
       setDetail((current) => (current && current.id === setId ? { ...current, ...data.set } : current));
@@ -1059,6 +1060,8 @@ export default function AdminSetsPage() {
       // A failed refresh must never interrupt the admin; the next sync retries.
     }
   }, []);
+
+  useVocabularySync(detail?.id, detailTab === "vocabulary", adminAccess.can("google_sheets.sync"), refreshDetailWords);
 
   // Google Sheets can finish a webhook sync while this page is open, with the
   // panel unmounted or in another tab. Listening for the sync event means the

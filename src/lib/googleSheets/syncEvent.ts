@@ -24,8 +24,8 @@ export type GoogleSheetSyncedDetail = {
 };
 
 /** True when a sync actually changed vocabulary (so the UI must re-read). */
-export function hasVocabularyChanges(detail: Pick<GoogleSheetSyncedDetail, "changedWordIds" | "rowsCreated" | "rowsDeleted">): boolean {
-  return detail.changedWordIds.length > 0 || detail.rowsCreated > 0 || detail.rowsDeleted > 0;
+export function hasVocabularyChanges(detail: Pick<GoogleSheetSyncedDetail, "changedWordIds" | "rowsCreated" | "rowsDeleted"> & { rowsUpdated?: number }): boolean {
+  return detail.changedWordIds.length > 0 || detail.rowsCreated > 0 || detail.rowsDeleted > 0 || (detail.rowsUpdated ?? 0) > 0;
 }
 
 export function emitGoogleSheetSynced(detail: GoogleSheetSyncedDetail): void {
