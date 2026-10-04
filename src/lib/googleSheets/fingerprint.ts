@@ -139,7 +139,7 @@ function canonicalizeFieldValue(key: string, raw: string | null | undefined): st
 
 /**
  * Human-readable field names for a fingerprint comparison, used to explain a
- * conflict ("Trường đã đổi: Example") instead of only reporting the row.
+ * conflict (for example: "Example") instead of only reporting the row.
  */
 export function changedFingerprintFields(
   template: GoogleSheetTemplate,
