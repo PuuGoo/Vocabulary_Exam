@@ -29,7 +29,7 @@ export type WatchChannel = {
    */
   channelToken?: string;
 };
-export type SpreadsheetMetadata = { sheets: Array<{ sheetId: number; title: string }> };
+export type SpreadsheetMetadata = { sheets: Array<{ sheetId: number; title: string; rowCount?: number; columnCount?: number }> };
 
 /**
  * Drive watch channels are documented to live ~24h, so we ask for 23h: close

@@ -136,7 +136,7 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
     async getSpreadsheetMetadata(spreadsheetId) {
       try {
         const response = await sheets.spreadsheets.get({ spreadsheetId, fields: "spreadsheetId,spreadsheetUrl,properties.title,sheets.properties" });
-        const metadata: SpreadsheetMetadata = { sheets: (response.data.sheets || []).flatMap((sheet) => (sheet.properties?.sheetId != null ? [{ sheetId: sheet.properties.sheetId, title: sheet.properties.title || "" }] : [])) };
+        const metadata: SpreadsheetMetadata = { sheets: (response.data.sheets || []).flatMap((sheet) => (sheet.properties?.sheetId != null ? [{ sheetId: sheet.properties.sheetId, title: sheet.properties.title || "", rowCount: sheet.properties.gridProperties?.rowCount ?? undefined, columnCount: sheet.properties.gridProperties?.columnCount ?? undefined }] : [])) };
         return metadata;
       } catch (error) { throw classifyGoogleApiError(error); }
     },

@@ -31,6 +31,26 @@ test("prompt apply refuses a user edit made after the initial formula read", asy
   await assert.rejects(applyAiPromptsToSheet({ api, spreadsheetId: "sheet", template, promptOverrides: { meaning: "NEW" } }), /Sheet đã thay đổi/);
   assert.equal(writes, 0);
 });
+
+test("prompt apply reaches row 10002 without shifting across empty chunks", async () => {
+  const writes: SheetsBatchValueUpdate[] = [];
+  const ranges: string[] = [];
+  const api = createFakeGoogleWorkspaceApi({
+    getSpreadsheetMetadata: async () => ({ sheets: [{ sheetId: 0, title: template.sheetTitle, rowCount: 10002, columnCount: 2 }] }),
+    readValues: async (_id, range) => {
+      ranges.push(range);
+      if (range.includes("!A1:")) return [["Word", "Meaning"]];
+      if (range.includes("!A10001:")) return [[], ["hello", '=AI("OLD";A10002)']];
+      return [];
+    },
+    batchWriteValues: async (_id, updates) => { writes.push(...updates); },
+  });
+  await applyAiPromptsToSheet({ api, spreadsheetId: "large", template, promptOverrides: { meaning: "NEW" } });
+  assert.equal(ranges.length, 6);
+  assert.equal(writes.length, 1);
+  assert.match(writes[0].rangeA1, /!B10002:B10002$/);
+  assert.ok(writes.some(write => write.values.some(row => String(row[0]).includes("A10002"))));
+});
 import { aiColumnsForTemplate, buildAiFormula, resolveAiPrompt } from "@/lib/googleSheets/aiFormula";
 import { getGoogleSheetTemplate } from "@/lib/googleSheets/template";
 
@@ -123,7 +143,9 @@ test("every AI column plan is honored, including Mandarin and irregular verbs", 
     assert.ok(plans.length > 0, `${type} has AI plans`);
     // Blank rows for every field so all AI columns get counted.
     const blank = Array.from({ length: tpl.fields.length }, () => null);
-    const { stats } = planAiPromptApplication({ template: tpl, formulaRows: [blank], promptOverrides: null });
+    const populated: (string | null)[] = [...blank];
+    populated[tpl.fields.findIndex(field => field.key === "term" || field.key === "v1")] = "word";
+    const { stats } = planAiPromptApplication({ template: tpl, formulaRows: [populated], promptOverrides: null });
     assert.ok(stats.blankCellsFilled >= plans.length, `${type}: each AI plan has a blank target`);
   }
 });

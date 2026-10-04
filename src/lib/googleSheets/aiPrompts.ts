@@ -5,7 +5,7 @@ import {
   buildAiColumnFormulas,
   type AiPromptOverrides,
 } from "@/lib/googleSheets/aiFormula";
-import { quoteSheetTitle } from "@/lib/googleSheets/spreadsheet";
+import { columnLetter, quoteSheetTitle } from "@/lib/googleSheets/spreadsheet";
 import { isRawAiFormula, mapHeadersToFieldKeys } from "@/lib/googleSheets/parser";
 import type { GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { GoogleSheetsError } from "./errors";
@@ -97,6 +97,8 @@ export function planAiPromptApplication(options: {
 
   formulaRows.forEach((cells, rowIndex) => {
     const rowNumber = rowIndex + 2; // grid row 1 is the header
+    stats.rowsScanned = Math.max(stats.rowsScanned, rowNumber - 1);
+    if (!cells.some(value => value != null && String(value).trim() !== "")) return;
     for (const { plan, letter, index } of targets) {
       const raw = cells[index];
       if (isBlankCell(raw)) {
@@ -158,8 +160,21 @@ export async function applyAiPromptsToSheet(options: {
   const { api, spreadsheetId, template, promptOverrides } = options;
   const sheetTitle = quoteSheetTitle(template.sheetTitle);
   // Read enough rows to cover the sheet body; FORMULA gives the real source.
-  const scanRange = `${sheetTitle}!A1:${String.fromCharCode(64 + Math.min(template.fields.length, 26))}${SCAN_CHUNK_ROWS + 1}`;
-  const formulaRows = await api.readValues(spreadsheetId, scanRange, { renderOption: "FORMULA" });
+  const metadata = await api.getSpreadsheetMetadata(spreadsheetId);
+  const tab = metadata.sheets.find(sheet => sheet.title === template.sheetTitle);
+  const rowCount = tab?.rowCount ?? SCAN_CHUNK_ROWS;
+  const lastColumn = columnLetter((tab?.columnCount ?? template.fields.length) - 1);
+  const readFormulaRows = async () => {
+    const rows: SheetsValue = [];
+    for (let start = 1; start <= rowCount; start += SCAN_CHUNK_ROWS) {
+      const end = Math.min(rowCount, start + SCAN_CHUNK_ROWS - 1);
+      const chunk = await api.readValues(spreadsheetId, `${sheetTitle}!A${start}:${lastColumn}${end}`, { renderOption: "FORMULA" });
+      for (let index = 0; index < end - start + 1; index += 1) rows.push(chunk[index] ?? []);
+    }
+    while (rows.length && !rows[rows.length - 1].some(value => value != null && String(value).trim() !== "")) rows.pop();
+    return rows;
+  };
+  const formulaRows = await readFormulaRows();
 
   const headers = (formulaRows[0] ?? []).map(value => String(value ?? ""));
   const mapped = mapHeadersToFieldKeys(headers, template);
@@ -171,7 +186,7 @@ export async function applyAiPromptsToSheet(options: {
   const { updates, stats } = planAiPromptApplication({ template: actualTemplate, formulaRows: formulaRows.slice(1), promptOverrides });
   let writeRequests = 0;
   if (updates.length) {
-    const currentRows = await api.readValues(spreadsheetId, scanRange, { renderOption: "FORMULA" });
+    const currentRows = await readFormulaRows();
     if (JSON.stringify(currentRows) !== JSON.stringify(formulaRows)) throw new GoogleSheetsError("Sheet đã thay đổi trong lúc áp dụng prompt. Hãy kiểm tra rồi thử lại; Lexora chưa ghi đè nội dung.", "INVALID_SCHEMA", { status: 409, retryable: false });
     if (typeof api.batchWriteValues === "function") {
       // Chunk to stay well under the request-payload limit on large sheets.

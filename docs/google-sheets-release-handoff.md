@@ -72,7 +72,8 @@ and UI value are **not verified by this release**; the owner performs this test.
   Generate/Insert; writing a formula does not prove generation occurred.
 - Read-before-write checks reduce concurrent-edit risks but Sheets value writes
   do not provide an atomic compare-and-swap with user edits.
-- Prompt application currently scans the first 5,000 body rows.
+- Prompt application reads allocated Sheet rows in 5,000-row chunks and preserves
+  absolute row coordinates across empty chunks; a 10,002-row regression covers this.
 - Large syncs still contain per-row database updates; 10,000-row production
   performance has not been established.
 - The configured `delete` policy currently tombstones mappings rather than
