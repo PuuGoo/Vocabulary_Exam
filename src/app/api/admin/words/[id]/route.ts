@@ -9,6 +9,8 @@ import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { deleteWordsWithSheetSync, sheetWordDeletionError } from "@/lib/googleSheets/deleteWords";
 import { canonicalizePinyinDisplay } from "@/lib/pinyin";
 import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
+import { editWordWithSheetSync } from "@/lib/googleSheets/editWord";
+import { GoogleSheetsError } from "@/lib/googleSheets/errors";
 
 export const maxDuration = 60;
 
@@ -76,6 +78,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const [updated] = await db.update(words).set(patch).where(eq(words.id, wordId)).returning();
-  return NextResponse.json({ word: updated });
+  try {
+    const updated = await editWordWithSheetSync(wordId, patch);
+    return NextResponse.json({ word: updated });
+  } catch (error) {
+    if (error instanceof GoogleSheetsError && error.code === "INVALID_SCHEMA") return NextResponse.json({ error: error.message }, { status: error.status ?? 409 });
+    const busy = error instanceof Error && error.name === "SyncInProgressError";
+    return NextResponse.json({ error: busy ? "Đang đồng bộ Sheet. Hãy thử lưu lại sau vài giây." : "Chưa lưu được thay đổi sang Sheet. Hãy kiểm tra kết nối và thử lại." }, { status: busy ? 409 : 502 });
+  }
 }
