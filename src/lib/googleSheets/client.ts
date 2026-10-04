@@ -75,6 +75,15 @@ export function createGoogleWorkspaceApi(token: TokenInput): GoogleWorkspaceApi 
       }
     },
 
+    async appendValues(spreadsheetId, rangeA1, values) {
+      try {
+        const response = await sheets.spreadsheets.values.append({ spreadsheetId, range: rangeA1, valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values } });
+        const start = response.data.updates?.updatedRange?.match(/![A-Z]+(\d+):/i)?.[1];
+        if (!start) throw new Error("Google did not return the appended row address.");
+        return Number(start);
+      } catch (error) { throw classifyGoogleApiError(error); }
+    },
+
     async readValues(spreadsheetId, rangeA1, options) {
       try {
         const response = await sheets.spreadsheets.values.get({

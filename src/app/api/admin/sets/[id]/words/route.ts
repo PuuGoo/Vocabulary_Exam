@@ -9,6 +9,7 @@ import { getFillPatternValidationError } from "@/lib/fillAnswer";
 import { appendWord } from "@/lib/wordOrder.server";
 import { canonicalizePinyinDisplay } from "@/lib/pinyin";
 import { requireAdminResourceAccess } from "@/lib/folderAuthorization";
+import { publishCreatedWord } from "@/lib/googleSheets/publishWord";
 
 const verbSchema = z.object({
   meaning: z.string().trim().min(1),
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         ipaV2: parsed.data.ipaV2 ? normalizeText(parsed.data.ipaV2) : null,
         ipaV3: parsed.data.ipaV3 ? normalizeText(parsed.data.ipaV3) : null,
       }));
-    return NextResponse.json({ word: w });
+    return NextResponse.json({ word: w, googleSheets: await publishCreatedWord(w) });
   } else {
     const parsed = vocabSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Vui lòng điền từ và nghĩa." }, { status: 400 });
@@ -77,6 +78,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         level: parsed.data.level ? normalizeText(parsed.data.level) : null,
         classifier: parsed.data.classifier ? normalizeText(parsed.data.classifier) : null,
       }));
-    return NextResponse.json({ word: w });
+    return NextResponse.json({ word: w, googleSheets: await publishCreatedWord(w) });
   }
 }

@@ -47,6 +47,7 @@ export const WATCH_CHANNEL_RENEW_THRESHOLD_MS = 1000 * 60 * 60 * 6;
 
 /** Thin, testable abstraction over the Google Sheets + Drive APIs. */
 export type GoogleWorkspaceApi = {
+  appendValues?: (spreadsheetId: string, rangeA1: string, values: SheetsValue) => Promise<number>;
   trashSpreadsheet?: (spreadsheetId: string) => Promise<void>;
   stopWatchChannel?: (channelId: string, resourceId: string) => Promise<void>;
   createSpreadsheet(options: { title: string; sheetTitle: string }): Promise<CreatedSpreadsheet>;

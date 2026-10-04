@@ -1218,7 +1218,8 @@ export default function AdminSetsPage() {
       const err = await res.json().catch(() => ({}));
       return toast(err.error || "Không thể thêm từ.");
     }
-    toast("Đã thêm từ.");
+    const result = await res.json().catch(() => ({}));
+    toast(result.googleSheets?.warning || "Đã thêm từ.");
     setWForm(emptyWordForm);
     setShowAddWord(false);
     openDetail(detail.id);

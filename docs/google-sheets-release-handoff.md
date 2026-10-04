@@ -68,6 +68,15 @@ and UI value are **not verified by this release**; the owner performs this test.
 
 ## Known limits requiring follow-up
 
+- Manual web creation now appends a new vocabulary row to an active connected
+  Sheet and records the same word/source identity. Existing rows are not exported
+  wholesale. If delivery fails, the saved web word is retained and the UI warns;
+  this operation does not yet provide a durable outbound retry queue. It does not
+  backfill words created on the web before this change.
+- Manual word deletion/reordering now casts VALUES parameters to PostgreSQL
+  integers, fixing `42883: operator does not exist: integer = text` during position
+  normalization. A real isolated PostgreSQL regression exercises deletion.
+
 - Native Google AI availability depends on the Google account and may require
   Generate/Insert; writing a formula does not prove generation occurred.
 - Read-before-write checks reduce concurrent-edit risks but Sheets value writes

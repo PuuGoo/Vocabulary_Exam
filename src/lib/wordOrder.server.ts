@@ -20,7 +20,7 @@ export async function writeCanonicalWordPositions(tx: WordOrderTx, setId: number
   // Clear the unique (set_id, position) namespace first. Negative word IDs are
   // unique and never observable after the surrounding transaction commits.
   await tx.update(words).set({ position: sql`-${words.id}` }).where(eq(words.setId, setId));
-  const values = sql.join(orderedIds.map((id, index) => sql`(${id}, ${index + 1})`), sql`, `);
+  const values = sql.join(orderedIds.map((id, index) => sql`(${id}::integer, ${index + 1}::integer)`), sql`, `);
   await tx.execute(sql`UPDATE words AS target SET position = source.position FROM (VALUES ${values}) AS source(id, position) WHERE target.id = source.id AND target.set_id = ${setId}`);
 }
 
