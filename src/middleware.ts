@@ -66,7 +66,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (session && pathname.startsWith("/api/admin") && session.role !== "admin") {
+  if (session && pathname.startsWith("/api/admin") && session.role !== "admin" && pathname !== "/api/admin/google-sheets/oauth/callback") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

@@ -21,12 +21,14 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.redirect(new URL("/login", req.url));
   const access = await getAdminAccess(session);
-  if (!access || !access.can("google_sheets.manage")) return NextResponse.json({ error: "Forbidden", code: "ADMIN_PERMISSION_REQUIRED" }, { status: 403 });
 
   const code = req.nextUrl.searchParams.get("code");
   const state = req.nextUrl.searchParams.get("state") || "";
   const denied = req.nextUrl.searchParams.get("error");
   const parsedState = parseGoogleOAuthState(state);
+  const plannerFlow = parsedState?.next === "/study-planner" && parsedState.userId === session.userId;
+  if (!plannerFlow && (!access || !access.can("google_sheets.manage"))) return NextResponse.json({ error: "Forbidden", code: "ADMIN_PERMISSION_REQUIRED" }, { status: 403 });
+  if (plannerFlow && denied) return NextResponse.redirect(new URL("/study-planner?googleError=1", req.url));
 
   // A denied consent, an invalid state and a missing code must all land on a
   // usable page instead of a raw technical error.
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest) {
     const token = await response.json().catch(() => ({}));
     if (!response.ok || !token.access_token) throw new GoogleSheetsError("Google từ chối cấp quyền.", "OAUTH_REVOKED", { retryable: false, status: 401 });
     await storeGoogleToken(session.userId, token);
+    if (plannerFlow) return NextResponse.redirect(new URL("/study-planner", req.url));
 
     // Resume the pending create-sheet action when the admin started it from a
     // set page. The continuation is only trusted when it is same-site and still
@@ -55,6 +58,7 @@ export async function GET(req: NextRequest) {
     if (outcome.kind !== "redirect") return NextResponse.json(outcome.body, { status: outcome.status });
     return NextResponse.redirect(new URL(outcome.location, req.url));
   } catch (error) {
+    if (plannerFlow) return NextResponse.redirect(new URL("/study-planner?googleError=1", req.url));
     const failure = buildOAuthCallbackFailure(error);
     if (failure.kind === "failed") {
       if (isLocalNext(parsedState.next)) return redirectToContinuation(req, parsedState.next, { failed: true });

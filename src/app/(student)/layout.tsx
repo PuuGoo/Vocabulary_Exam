@@ -4,6 +4,7 @@ import AppShell from "@/components/AppShell";
 import ToastHost from "@/components/Toast";
 import { LEARNING_TABS } from "@/lib/navigation";
 import { UserSessionProvider } from "@/components/UserSessionContext";
+import { StudyPlannerBootstrap } from "@/components/StudyPlannerCard";
 
 export default async function StudentLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -17,6 +18,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
         mode="student"
         tabs={session.role === "admin" ? [...LEARNING_TABS, { href: "/admin", label: "Mở khu quản trị" }] : LEARNING_TABS}
       >
+        <StudyPlannerBootstrap />
         {children}
         <ToastHost />
       </AppShell>

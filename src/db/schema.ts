@@ -59,6 +59,12 @@ export const users = pgTable(
   })
 );
 
+export const studyPlanners = pgTable("study_planners", {
+  userId: integer("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  spreadsheetId: text("spreadsheet_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const folderKindEnum = ["personal_root", "shared_root", "folder", "legacy_root"] as const;
 export const folderAccessLevelEnum = ["viewer", "editor", "manager", "deny"] as const;
 

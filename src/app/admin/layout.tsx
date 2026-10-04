@@ -6,6 +6,7 @@ import { ADMIN_TABS, filterAdminNavigation } from "@/lib/navigation";
 import { getAdminAccess } from "@/lib/adminAuthorization";
 import { ADMIN_PROFILE_LABELS } from "@/lib/adminPermissions";
 import { AdminPermissionProvider } from "@/components/AdminPermissionProvider";
+import { StudyPlannerBootstrap } from "@/components/StudyPlannerCard";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
@@ -20,6 +21,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <AdminPermissionProvider profile={access.profile} profileLabel={profileLabel} permissions={[...access.permissions]}>
       <AppShell displayName={access.displayName} roleLabel="Admin" mode="admin" tabs={tabs.length ? tabs : ADMIN_TABS.slice(0, 1)} navigationSections={sections} adminProfileLabel={profileLabel}>
+        <StudyPlannerBootstrap />
         {children}
         <ToastHost />
       </AppShell>

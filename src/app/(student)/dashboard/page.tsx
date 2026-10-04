@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import StudyPlannerCard from "@/components/StudyPlannerCard";
 
 type ReviewPlan = { today: { wordBudget: number; completedWords: number; plannedWords: number; overdueWords: number; dueSetReviews: number; estimatedMinutes: number }; backlog: { words: number } };
 type DashboardData = { displayName: string; review: ReviewPlan | null; assignments: number | null; session: { setId: number; position: number } | null };
@@ -25,6 +26,7 @@ export default function DashboardPage() {
   const review = data.review;
   const reviewTarget = review ? Math.min(review.today.wordBudget, review.today.completedWords + review.today.plannedWords) : 0;
   return <div className="lexora-page-enter space-y-6">
+    <StudyPlannerCard />
     <section><p className="mb-2 text-sm font-semibold text-gold">Tổng quan</p><h1 className="text-[clamp(1.8rem,4vw,2.55rem)] font-extrabold tracking-[-0.045em] lexora-gradient-text">Chào {data.displayName || "bạn"}</h1><p className="mt-2 max-w-xl text-[0.95rem] leading-6 text-muted">Lexora đã sắp xếp phần ôn quan trọng nhất cho bạn.</p></section>
     <section className="rounded-[22px] bg-[#302A68] p-6 text-white shadow-[0_12px_30px_rgba(48,42,104,0.18)] sm:p-8 [background:linear-gradient(145deg,#302A68_0%,#261f5c_50%,#302A68_100%)] lexora-glow-border">
       <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#C8C2FF]">Ôn tập hôm nay</p>
