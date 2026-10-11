@@ -97,14 +97,19 @@ export async function GET() {
     // 0042: words kept hidden after their connection was retired. These have
     // no surviving row mapping, but vocabulary_archive_marks still protects
     // them so a cascade-delete never resurrects them.
+    //
+    // NOT EXISTS instead of a join: joining google_sheet_row_mappings here
+    // fans one set into one row per mapping, which is exactly the bug this
+    // whole block exists to avoid. A word that is BOTH marked and still
+    // archived by a surviving mapping was already counted above, so it must
+    // not be counted twice.
     const markedRows = await db
       .select({ setId: vocabularyArchiveMarks.setId, marked: sql<number>`count(distinct ${vocabularyArchiveMarks.wordId})::int` })
       .from(vocabularyArchiveMarks)
-      // Exclude words that are still archived by a surviving mapping (already
-      // counted above) so a word that is both marked and still-mapped is not
-      // subtracted twice.
-      .leftJoin(googleSheetRowMappings, and(eq(googleSheetRowMappings.wordId, vocabularyArchiveMarks.wordId), isNotNull(googleSheetRowMappings.deletedAt)))
-      .where(and(inArray(vocabularyArchiveMarks.setId, activeSetIds), isNull(googleSheetRowMappings.wordId)))
+      .where(and(
+        inArray(vocabularyArchiveMarks.setId, activeSetIds),
+        sql`not exists (select 1 from ${googleSheetRowMappings} m where m.word_id = ${vocabularyArchiveMarks.wordId} and m.deleted_at is not null)`,
+      ))
       .groupBy(vocabularyArchiveMarks.setId);
     for (const row of markedRows) archivedCountBySet.set(row.setId, (archivedCountBySet.get(row.setId) ?? 0) + (Number(row.marked) || 0));
   }
