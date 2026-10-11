@@ -38,9 +38,19 @@ export function classifyGoogleApiError(error: unknown): GoogleSheetsError {
   if (error instanceof GoogleSheetsError) return error;
   const status = readStatus(error);
   const message = readMessage(error) || "Google API request failed.";
+  const lower = message.toLowerCase();
+  // Google OAuth refresh failures surface as HTTP 400 with
+  // { error: "invalid_grant", error_description: "Token has been expired or revoked." }
+  // googleapis often surfaces this as a 400 or 401 with the string "invalid_grant"
+  // in the body. If we map it to INVALID_SCHEMA the UI shows a generic
+  // "dữ liệu không đúng định dạng" and the create/recover flow never offers the
+  // OAuth reconnection (202 + oauthUrl). Classify it as revoked instead so the
+  // existing recovery/reconnect wiring can prompt the admin to re-authorize.
+  if (lower.includes("invalid_grant") || lower.includes("invalid grant")) {
+    return new GoogleSheetsError(message, "OAUTH_REVOKED", { status: status ?? 400 });
+  }
   if (status === 401) return new GoogleSheetsError(message, "OAUTH_REVOKED", { status });
   if (status === 403) {
-    const lower = message.toLowerCase();
     if (lower.includes("rate") || lower.includes("quota")) return new GoogleSheetsError(message, "RATE_LIMITED", { status });
     return new GoogleSheetsError(message, "PERMISSION_DENIED", { status });
   }
@@ -73,7 +83,23 @@ function readMessage(error: unknown): string {
   if (typeof nested.message === "string" && nested.message) return nested.message;
   const responseBody = readRecord(record.response).data;
   const bodyError = readRecord(responseBody).error;
-  if (typeof readRecord(bodyError).message === "string" && readRecord(bodyError).message) return readRecord(bodyError).message as string;
+  // Google OAuth and Sheets errors come in several shapes:
+  // - { error: "invalid_grant", error_description: "..." }
+  // - { error: { message: "...", code: 400 } }
+  // - { response: { data: { error: "invalid_grant", error_description: "..." } } }
+  // Collect all string clues so invalid_grant is never missed.
+  const directError = typeof record.error === "string" ? record.error : "";
+  if (directError) return directError + (typeof record.error_description === "string" ? `: ${record.error_description}` : "");
+  if (typeof readRecord(bodyError).message === "string" && (readRecord(bodyError).message as string)) return readRecord(bodyError).message as string;
+  if (typeof bodyError === "string" && bodyError) return bodyError;
+  if (typeof responseBody === "string" && responseBody) return responseBody;
+  const bodyDesc = readRecord(responseBody).error_description;
+  if (typeof bodyDesc === "string" && bodyDesc) {
+    const bodyErrStr = typeof readRecord(responseBody).error === "string" ? String(readRecord(responseBody).error) : "";
+    return bodyErrStr ? `${bodyErrStr}: ${bodyDesc}` : bodyDesc;
+  }
+  const respDesc = readRecord(record.response).error_description;
+  if (typeof respDesc === "string" && respDesc) return respDesc;
   return "";
 }
 

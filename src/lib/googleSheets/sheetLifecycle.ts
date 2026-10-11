@@ -1,10 +1,10 @@
-import { and, asc, eq, lt } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lt } from "drizzle-orm";
 import { externalFailureState } from "./externalState";
 import { resolveConnectedTab } from "./tabIdentity";
 import { verifiedSourceIdWriteRanges } from "./sourceIdWrites";
 import { blankAiWrites } from "./blankAiWrites";
 import { db } from "@/db";
-import { googleSheetConnections, googleSheetCreateLocks, googleSheetRowMappings, googleSheetSyncRuns, vocabSets, words } from "@/db/schema";
+import { googleSheetConnections, googleSheetCreateLocks, googleSheetRowMappings, googleSheetSyncRuns, vocabSets, vocabularyArchiveMarks, words } from "@/db/schema";
 import type { GoogleWorkspaceApi } from "@/lib/googleSheets/api";
 import { createGoogleWorkspaceApi } from "@/lib/googleSheets/client";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
@@ -40,6 +40,10 @@ export async function apiForUser(userId: number): Promise<GoogleWorkspaceApi> {
 export const CONNECTED_MESSAGE = "Google Sheet đã được kết nối cho bộ từ này.";
 export const RECOVER_MESSAGE = "Google Sheet đã được tạo nhưng kết nối chưa hoàn tất. Hãy khôi phục kết nối hiện có.";
 export const CREATE_BUSY_MESSAGE = "Google Sheet đang được tạo bởi một yêu cầu khác. Vui lòng chờ lại.";
+// Terminal states (the Sheet was trashed or swapped on purpose): the create
+// flow must never resurrect or duplicate them.
+export const TERMINAL_ARCHIVED_MESSAGE = "Google Sheet của bộ từ này đã được đưa vào Thùng rác. Hãy tạo Google Sheet mới để tiếp tục.";
+export const TERMINAL_REPLACED_MESSAGE = "Google Sheet của bộ từ này đã được thay thế bằng Sheet khác.";
 
 /**
  * Advisory lock for the create-sheet workflow, keyed by setId.
@@ -84,6 +88,56 @@ export type CreateSheetResult = {
 };
 
 /**
+ * Forge a fresh spreadsheet for a set whose current connection is terminal
+ * (archived / replaced), without ever resurrecting the dead row.
+ *
+ * Order matters and is the whole point of this function:
+ *   1. carry every archived word_id into vocabulary_archive_marks FIRST, so
+ *      deleting the row below cannot cascade the row mappings away and make
+ *      previously archived words reappear in the admin list;
+ *   2. delete the terminal row (its spreadsheet is gone/trashed, and it can
+ *      never be recovered) so google_sheet_connections_set_unique frees the
+ *      set for the new row;
+ *   3. run the normal create flow, which exports the whole vocabulary and
+ *      clears the marks it just carried (createGoogleSheetForSet).
+ *
+ * The `words`, `word_progress`, `mistakes` and `user_word_skill_progress` rows
+ * are never touched: only the dead Google Sheets integration is retired.
+ */
+export async function recreateFreshSheetForSet(
+  setId: number,
+  terminalConnectionId: number,
+  actor: Actor,
+  options?: CreateSheetOptions,
+): Promise<CreateSheetResult> {
+  // Step 1: preserve the archive outcome (delete_behavior = "archive" is the
+  // only mode where a hidden word must stay hidden).
+  const archivedWordIds = await db
+    .select({ wordId: googleSheetRowMappings.wordId })
+    .from(googleSheetRowMappings)
+    .where(and(eq(googleSheetRowMappings.connectionId, terminalConnectionId), isNotNull(googleSheetRowMappings.deletedAt)));
+  const wordIds = [...new Set(archivedWordIds.map((row) => row.wordId).filter((id): id is number => id != null))];
+  if (wordIds.length) {
+    await db.insert(vocabularyArchiveMarks).values(
+      wordIds.map((wordId) => ({
+        wordId,
+        setId,
+        archivedFromConnection: terminalConnectionId,
+        archivedAt: new Date(),
+        reason: "terminal_google_sheet_connection",
+      })),
+    ).onConflictDoNothing({ target: vocabularyArchiveMarks.wordId });
+  }
+  // Step 2: retire the terminal row. Cascade clears the mappings, channels,
+  // runs and resources; vocabulary_archive_marks above keep the words hidden
+  // and survive via ON DELETE SET NULL on archived_from_connection.
+  await db.delete(googleSheetConnections).where(eq(googleSheetConnections.id, terminalConnectionId));
+  console.warn("[google-sheets] retired terminal connection", terminalConnectionId, "set", setId, "archived marks", wordIds.length);
+  // Step 3: normal create (clears the marks for the words it re-exports).
+  return createGoogleSheetForSet(setId, actor, undefined, options);
+}
+
+/**
  * Main workflow: create a spreadsheet, write the current vocabulary into it,
  * save the connection + row mappings and start the watch channel.
  */
@@ -100,6 +154,20 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
     throw already;
   }
   if (existing) {
+    // archived / replaced are deliberate terminal states: the Sheet was trashed
+    // or swapped on purpose, so it must never be resurrected or duplicated by
+    // the create flow. Signal that explicitly so the route can offer a new
+    // sheet instead of a bare conflict.
+    if (["archived", "replaced"].includes(existing.status)) {
+      const terminal = new GoogleSheetsError(
+        existing.status === "archived" ? TERMINAL_ARCHIVED_MESSAGE : TERMINAL_REPLACED_MESSAGE,
+        "INVALID_SCHEMA",
+        { retryable: false, status: 409 },
+      );
+      (terminal as unknown as Record<string, unknown>).needsCreateNew = true;
+      (terminal as unknown as Record<string, unknown>).terminal = true;
+      throw terminal;
+    }
     const recoverable = new GoogleSheetsError(RECOVER_MESSAGE, "INVALID_SCHEMA", { retryable: false, status: 409 });
     (recoverable as unknown as Record<string, unknown>).needsRecovery = true;
     throw recoverable;
@@ -211,6 +279,15 @@ export async function createGoogleSheetForSet(setId: number, actor: Actor, apiOv
       lastSyncedFingerprint: fingerprintDbWord(template, word as unknown as Record<string, unknown>),
     }));
     if (mappingValues.length) await db.insert(googleSheetRowMappings).values(mappingValues);
+
+    // A brand new Sheet exports the set's whole vocabulary, so any word that
+    // was hidden by a retired connection (vocabulary_archive_marks, see
+    // migration 0042) is visible again from this point. Clearing the marks
+    // keeps the hide/show state driven by the *current* Sheet instead of
+    // accumulating across replaced integrations.
+    if (mappingValues.length) {
+      await db.delete(vocabularyArchiveMarks).where(inArray(vocabularyArchiveMarks.wordId, wordRows.map((word) => word.id)));
+    }
 
     await ensureWatchChannel(api, { id: connectionId, spreadsheetId: created.spreadsheetId, createdBy: actor.userId }, created.spreadsheetId);
     await writeAdminAudit({ actorUserId: actor.userId, action: "google_sheet.create", resourceType: "vocab_set", resourceId: setId, metadata: { connectionId, spreadsheetId: created.spreadsheetId, exportedRows: exportRows.length, templateType: template.templateType, templateVersion: template.templateVersion } });

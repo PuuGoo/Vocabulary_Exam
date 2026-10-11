@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql, eq, or, isNull, inArray, and } from "drizzle-orm";
 import { db } from "@/db";
-import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress, userWordSkillProgress, googleSheetConnections, googleSheetRowMappings } from "@/db/schema";
+import { vocabCategories, vocabSets, words, wordProgress, classMembers, classes, setReviewProgress, userWordSkillProgress, googleSheetConnections, googleSheetRowMappings, vocabularyArchiveMarks } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, nextCategoryOrder } from "@/lib/categorySequence";
@@ -94,6 +94,19 @@ export async function GET() {
       .where(and(inArray(vocabSets.id, activeSetIds), eq(googleSheetConnections.deleteBehavior, "archive"), isNotNull(googleSheetRowMappings.deletedAt)))
       .groupBy(vocabSets.id);
     for (const row of archivedRows) archivedCountBySet.set(row.setId, Number(row.archived) || 0);
+    // 0042: words kept hidden after their connection was retired. These have
+    // no surviving row mapping, but vocabulary_archive_marks still protects
+    // them so a cascade-delete never resurrects them.
+    const markedRows = await db
+      .select({ setId: vocabularyArchiveMarks.setId, marked: sql<number>`count(distinct ${vocabularyArchiveMarks.wordId})::int` })
+      .from(vocabularyArchiveMarks)
+      // Exclude words that are still archived by a surviving mapping (already
+      // counted above) so a word that is both marked and still-mapped is not
+      // subtracted twice.
+      .leftJoin(googleSheetRowMappings, and(eq(googleSheetRowMappings.wordId, vocabularyArchiveMarks.wordId), isNotNull(googleSheetRowMappings.deletedAt)))
+      .where(and(inArray(vocabularyArchiveMarks.setId, activeSetIds), isNull(googleSheetRowMappings.wordId)))
+      .groupBy(vocabularyArchiveMarks.setId);
+    for (const row of markedRows) archivedCountBySet.set(row.setId, (archivedCountBySet.get(row.setId) ?? 0) + (Number(row.marked) || 0));
   }
   for (const row of rows) row.count = Math.max(0, Number(row.count || 0) - (archivedCountBySet.get(row.id) ?? 0));
 

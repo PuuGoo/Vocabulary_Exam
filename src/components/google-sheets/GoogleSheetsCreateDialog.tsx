@@ -1,11 +1,13 @@
 "use client";
 import Modal from "@/components/Modal";
 import { primary, secondary } from "./types";
-export default function GoogleSheetsCreateDialog({ busy, phase, aiEnrich, onAiEnrich, onClose, onCreate }: { busy: boolean; phase: string; aiEnrich: boolean; onAiEnrich: (value: boolean) => void; onClose: () => void; onCreate: () => void }) {
+export default function GoogleSheetsCreateDialog({ busy, phase, aiEnrich, recreatingAfterTerminal, onAiEnrich, onClose, onCreate }: { busy: boolean; phase: string; aiEnrich: boolean; recreatingAfterTerminal?: boolean; onAiEnrich: (value: boolean) => void; onClose: () => void; onCreate: () => void }) {
   return (
-    <Modal title="Tạo Google Sheet" onClose={onClose}>
+    <Modal title={recreatingAfterTerminal ? "Tạo Google Sheet mới (thay Sheet cũ)" : "Tạo Google Sheet"} onClose={onClose}>
       <p className="text-sm leading-6 text-muted">
-        Lexora tạo Sheet theo template của bộ từ, đưa toàn bộ vocabulary hiện tại vào Sheet và bật tự động đồng bộ. Bạn chỉ cần chỉnh sửa trong Google Sheets.
+        {recreatingAfterTerminal
+          ? "Sheet cũ đã được đưa vào Thùng rác hoặc thay thế. Lexora sẽ tạo Sheet hoàn toàn mới, đưa lại toàn bộ vocabulary hiện tại và bật đồng bộ. Từ vựng và lịch sử học trong Lexora vẫn giữ nguyên."
+          : "Lexora tạo Sheet theo template của bộ từ, đưa toàn bộ vocabulary hiện tại vào Sheet và bật tự động đồng bộ. Bạn chỉ cần chỉnh sửa trong Google Sheets."}
       </p>
       {/* The only AI involved is Google's own Sheets AI function. Lexora plants
           the instructions; Google Sheets generates the values; the existing

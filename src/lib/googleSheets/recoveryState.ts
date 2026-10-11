@@ -23,7 +23,20 @@ export function isPausedConnectionState(connection: ConnectionState): boolean {
 
 /** Broken wiring (error / disconnected): needs recovery, not a 409. */
 export function isBrokenConnectionState(connection: ConnectionState): boolean {
-  return ["error", "disconnected", "missing", "archived", "replaced"].includes(connection.status);
+  // "archived" / "replaced" are terminal: the Sheet is trashed or swapped and
+  // must never be reused via the normal create flow. They are broken but not
+  // recoverable, so create must refuse them with an actionable 409 instead of
+  // trying to heal the row.
+  return ["error", "disconnected", "missing"].includes(connection.status);
+}
+
+/**
+ * Terminal wiring: the Sheet was intentionally archived / replaced.
+ * Treated as broken but requires explicit user action (create new / replace)
+ * rather than silent recovery of the same connection row.
+ */
+export function isTerminalConnectionState(connection: ConnectionState): boolean {
+  return ["archived", "replaced"].includes(connection.status);
 }
 
 /**
@@ -31,10 +44,12 @@ export function isBrokenConnectionState(connection: ConnectionState): boolean {
  * row be presented? The create route and the panel must agree, otherwise the UI
  * says "Chưa kết nối" while the API answers 409.
  */
-export type ConnectionView = "none" | "connected" | "paused" | "error" | "disconnected";
+export type ConnectionView = "none" | "connected" | "paused" | "error" | "disconnected" | "archived" | "replaced";
 
 export function connectionView(connection: ConnectionState | null | undefined): ConnectionView {
   if (!connection) return "none";
+  if (connection.status === "archived") return "archived";
+  if (connection.status === "replaced") return "replaced";
   if (isActiveConnectionState(connection)) return "connected";
   if (isPausedConnectionState(connection)) return "paused";
   if (connection.status === "error") return "error";
@@ -48,6 +63,8 @@ export function connectionViewMessage(view: ConnectionView): string {
     case "paused": return "Google Sheet đã được kết nối nhưng đang tạm dừng. Nhấn \"Tiếp tục\" để đồng bộ trở lại.";
     case "error": return "Google Sheet gặp lỗi kết nối. Có thể khôi phục kết nối hiện có.";
     case "disconnected": return "Cần kết nối lại Google Sheet.";
+    case "archived": return "Google Sheet đã được đưa vào Thùng rác. Tạo Sheet mới để tiếp tục.";
+    case "replaced": return "Google Sheet đã được thay thế bằng Sheet khác.";
     default: return "";
   }
 }

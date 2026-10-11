@@ -35,6 +35,13 @@ try {
   await client.begin((transaction) => transaction.unsafe(workspaceSql));
   console.log("Applied 0040_google_sheet_workspace.sql");
 
+  // 0042: carry the archive flag of retired connections (vocabulary_archive_marks)
+  // and retire orphaned terminal rows (archived / replaced) so a set can forge
+  // a fresh Sheet. Safe to re-run: idempotent by construction.
+  const terminalSql = await readFile(new URL("../drizzle/0042_google_sheet_terminal_connections.sql", import.meta.url), "utf8");
+  await client.begin((transaction) => transaction.unsafe(terminalSql));
+  console.log("Applied 0042_google_sheet_terminal_connections.sql");
+
   const [integrity] = await client.unsafe(`
     SELECT
       (SELECT COUNT(*) FROM information_schema.tables WHERE table_name IN (
@@ -52,6 +59,8 @@ try {
       (SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'google_sheet_create_locks')::integer AS create_lock_table,
       (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'google_sheet_connections' AND column_name = 'ai_enrich')::integer AS ai_enrich_columns
       ,(SELECT COUNT(*) FROM information_schema.columns WHERE table_name = 'google_sheet_connections' AND column_name = 'ai_prompts')::integer AS ai_prompts_columns
+      ,(SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'vocabulary_archive_marks')::integer AS archive_marks_table
+      ,(SELECT COUNT(*) FROM google_sheet_connections WHERE status IN ('archived','replaced') AND NOT EXISTS (SELECT 1 FROM google_sheet_sync_channels ch WHERE ch.connection_id = google_sheet_connections.id AND ch.status = 'active') AND NOT EXISTS (SELECT 1 FROM google_sheet_connections c2 WHERE c2.set_id = google_sheet_connections.set_id AND c2.id <> google_sheet_connections.id))::integer AS orphan_terminal_connections
   `);
   if (integrity.table_count !== 7) throw new Error(`Google Sheets tables missing (${integrity.table_count}/7).`);
   if (integrity.channel_token_hash_columns !== 1) throw new Error("google_sheet_sync_channels.channel_token_hash missing.");  if (integrity.set_unique_indexes !== 1) throw new Error("google_sheet_connections unique(set_id) index missing.");
@@ -59,6 +68,8 @@ try {
   if (integrity.create_lock_table !== 1) throw new Error("google_sheet_create_locks table missing.");
   if (integrity.ai_prompts_columns !== 1) throw new Error("google_sheet_connections.ai_prompts missing.");
   if (integrity.invalid_mappings || integrity.invalid_delete_behavior) throw new Error("Google Sheets integrity check failed.");
+  if (integrity.archive_marks_table !== 1) throw new Error("vocabulary_archive_marks table missing.");
+  if (integrity.orphan_terminal_connections) throw new Error("Orphan terminal google_sheet_connections rows still present.");
   console.log(JSON.stringify(integrity));
 } finally {
   await client.end();

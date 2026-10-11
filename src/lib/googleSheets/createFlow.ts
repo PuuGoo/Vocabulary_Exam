@@ -81,6 +81,22 @@ export function createSheetErrorOutcome(error: unknown, setId: number): CreateSh
   }
   if (code === "INVALID_SCHEMA") {
     const rec = typeof error === "object" && error !== null ? error as Record<string, unknown> : {};
+    // Terminal rows must never be routed to recovery: the Sheet was trashed or
+    // swapped on purpose, so the admin needs a new Sheet, not a resurrection.
+    if (rec.terminal === true || rec.needsCreateNew === true) {
+      return {
+        kind: "failed",
+        status: 409,
+        body: {
+          error: typeof rec.message === "string" && rec.message ? String(rec.message) : "Google Sheet đã được kết thúc cho bộ từ này. Hãy tạo Sheet mới.",
+          code,
+          needsCreateNew: true,
+          terminal: true,
+          retryable: false,
+          setId,
+        },
+      };
+    }
     const alreadyConnected = rec.needsRecovery !== true && (rec.alreadyConnected === true || rec.status === 409);
     if (alreadyConnected) {
       // The set already has a healthy sheet: a successful no-op, so the UI shows

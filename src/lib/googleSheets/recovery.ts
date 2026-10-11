@@ -28,7 +28,7 @@ import { acquireConnectionLock, releaseConnectionLock } from "./store";
  * the old one is verifiably gone (SHEET_NOT_FOUND).
  */
 
-export { connectionView, connectionViewMessage, isActiveConnectionState, isPausedConnectionState, isBrokenConnectionState, type ConnectionView } from "@/lib/googleSheets/recoveryState";
+export { connectionView, connectionViewMessage, isActiveConnectionState, isPausedConnectionState, isBrokenConnectionState, isTerminalConnectionState, type ConnectionView } from "@/lib/googleSheets/recoveryState";
 
 export type ConnectionSummary = {
   id: number;

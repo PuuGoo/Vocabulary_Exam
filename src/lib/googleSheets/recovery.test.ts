@@ -234,7 +234,11 @@ test("H. the panel renders an explicit error state with recovery actions", () =>
   // redesign; the guarantee under test is that the recovery affordance is
   // rendered, so read both files.
   const brokenCard = readFileSync("src/components/google-sheets/GoogleSheetsBrokenCard.tsx", "utf8");
-  assert.match(panel, /connection\.status === "error" \|\| connection\.status === "disconnected"/, "broken states get their own branch");
+  // The branch is driven by a single `broken` predicate (error / disconnected /
+  // missing / archived / replaced) so the API and the UI cannot drift again.
+  assert.match(panel, /const broken = !!connection && \["error", "disconnected", "missing", "archived", "replaced"\]\.includes\(connection\.status\)/, "broken states get their own branch");
+  assert.match(panel, /\{connection && broken && \(/, "the broken card renders only for broken states");
+  assert.match(panel, /\{connection && !broken && \(/, "the healthy card renders only when nothing is broken");
   assert.match(brokenCard, /Khôi phục kết nối/, "the recovery button exists");
   assert.match(panel, /recoverConnection\(/, "the button calls the recover endpoint");
   assert.match(panel, /connections\/\$\{connection\.id\}\/recover/);

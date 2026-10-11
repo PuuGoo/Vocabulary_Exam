@@ -1179,3 +1179,24 @@ export const googleSheetOauthTokens = pgTable(
     userIdx: uniqueIndex("google_sheet_oauth_tokens_user_idx").on(table.userId),
   }),
 );
+
+// Additive carry for the visibility guarantee when 0042 retires terminal
+// google_sheet_connections rows: google_sheet_row_mappings.deleted_at is the
+// archive flag that hides a word from the set detail. Deleting the connection
+// would cascade-delete those mappings and make every previously archived word
+// reappear. This table remembers the word_id that must stay hidden even after
+// the connection is gone, without touching the words row or its progress or
+// mistakes. No foreign key on word_id is the point — it is a sticky mark.
+export const vocabularyArchiveMarks = pgTable(
+  "vocabulary_archive_marks",
+  {
+    wordId: integer("word_id").primaryKey().references(() => words.id, { onDelete: "cascade" }),
+    setId: integer("set_id").notNull().references(() => vocabSets.id, { onDelete: "cascade" }),
+    archivedAt: timestamp("archived_at", { withTimezone: true }).notNull().defaultNow(),
+    archivedFromConnection: integer("archived_from_connection").references(() => googleSheetConnections.id, { onDelete: "set null" }),
+    reason: text("reason").notNull().default("terminal_google_sheet_connection"),
+  },
+  (table) => ({
+    setIdx: index("vocabulary_archive_marks_set_idx").on(table.setId),
+  }),
+);

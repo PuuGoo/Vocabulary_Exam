@@ -3,7 +3,7 @@ import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { classMembers, vocabCategories, vocabSets, words, wordProgress } from "@/db/schema";
-import { googleSheetConnections, googleSheetRowMappings } from "@/db/schema";
+import { googleSheetConnections, googleSheetRowMappings, vocabularyArchiveMarks } from "@/db/schema";
 import { getSession } from "@/lib/auth";
 import { normalizeText } from "@/lib/text";
 import { formatCategorySetName, getCategoryPrefixNumber, nextCategoryOrder, prepareCategorySetRename } from "@/lib/categorySequence";
@@ -40,20 +40,33 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .from(googleSheetConnections)
     .where(eq(googleSheetConnections.setId, setId))
     .limit(1);
+  // vocabulary_archive_marks (0042) carries the archive flag for words whose
+  // connection was retired: those words were hidden from the Sheet and must
+  // stay hidden after the mapping rows cascade away.
   const archiveFilters = gsConnection?.deleteBehavior === "archive";
   const allWords = await db.select().from(words).where(eq(words.setId, setId)).orderBy(asc(words.position), asc(words.id));
-  // A word is hidden only when this connection archived it. Words with no
-  // mapping (CSV/XLSX import, never exported) always stay visible.
+  // A word is hidden when this connection archived it OR when a retired
+  // connection did (carried by vocabulary_archive_marks). Words with no
+  // mapping at all (CSV/XLSX import, never exported) always stay visible.
   let wordList = allWords;
-  if (archiveFilters && gsConnection?.id != null) {
+  if (allWords.length) {
     const archived = new Set<number>();
-    if (allWords.length) {
+    if (archiveFilters && gsConnection?.id != null) {
       const mappings = await db
         .select({ wordId: googleSheetRowMappings.wordId, deletedAt: googleSheetRowMappings.deletedAt })
         .from(googleSheetRowMappings)
         .where(eq(googleSheetRowMappings.connectionId, gsConnection.id));
       for (const mapping of mappings) if (mapping.deletedAt && mapping.wordId != null) archived.add(mapping.wordId);
     }
+    // vocabulary_archive_marks (0042) carries any archived word from a retired
+    // connection. It must stay hidden after the mapping rows cascade away,
+    // regardless of the current deleteBehavior. The next whole-export create
+    // will clear its own marks again.
+    const carried = await db
+      .select({ wordId: vocabularyArchiveMarks.wordId })
+      .from(vocabularyArchiveMarks)
+      .where(eq(vocabularyArchiveMarks.setId, setId));
+    for (const mark of carried) archived.add(mark.wordId);
     wordList = archived.size ? allWords.filter((word) => !archived.has(word.id)) : allWords;
   }
   wordList = visibleWordPositions(wordList);

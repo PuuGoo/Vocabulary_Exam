@@ -25,6 +25,10 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
   const [connections, setConnections] = useState<Connection[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  // True while the open "create" dialog must retire a terminal connection
+  // first (archived / replaced), the only sanctioned way to forge a new sheet
+  // for a set whose old one can never be recovered.
+  const [recreatingAfterTerminal, setRecreatingAfterTerminal] = useState(false);
   const [createPhase, setCreatePhase] = useState<"idle" | "connecting" | "creating">("idle");
   const [resumeCreate, setResumeCreate] = useState(false);
   const [canCreateNew, setCanCreateNew] = useState(false);
@@ -46,6 +50,10 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
   const seenRunRef = useRef<string | null>(null);
   const connection = connections.find((item) => item.setId === setId) ?? null;
   const broken = !!connection && ["error", "disconnected", "missing", "archived", "replaced"].includes(connection.status);
+  // archived / replaced are terminal: recovery cannot resurrect them, so the
+  // only path forward is creating a new Sheet. The broken card must say so
+  // instead of offering a "Khôi phục kết nối" button that always fails.
+  const terminal = !!connection && ["archived", "replaced"].includes(connection.status);
   const latestRun = runs[0] ?? null;
 
   /**
@@ -73,7 +81,10 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       const data = await response.json();
       setConnections(data.connections || []);
       const found = (data.connections || []).find((item: Connection) => item.setId === setId);
-      setCanCreateNew(found ? found.status !== "error" && found.status !== "disconnected" : false);
+      // "Create new" is offered for terminal states, and for a missing Sheet
+      // (whose file is verifiably gone). It stays hidden for a merely broken
+      // connection, which recovery can still fix without losing history.
+      setCanCreateNew(found ? ["archived", "replaced", "missing"].includes(found.status) : false);
     } catch { /* keep prior state */ }
   }, [setId]);
 
@@ -123,12 +134,13 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
    * with an oauthUrl, and we send the admin straight into the existing
    * OAuth flow (Kết nối Google để tiếp tục) instead of showing a 401.
    */
-  async function createSheet() {
+  async function createSheet(forceAfterTerminal: boolean = false) {
     if (createPhase !== "idle") return;
     setCreatePhase("creating");
     setBusy("create");
     try {
-      const response = await fetch("/api/admin/google-sheets/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ setId, aiEnrich: aiEnrichChoice }) });
+      const recreateAfterTerminal = forceAfterTerminal && terminal;
+      const response = await fetch("/api/admin/google-sheets/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ setId, aiEnrich: aiEnrichChoice, ...(recreateAfterTerminal ? { recreateAfterTerminal: true } : {}) }) });
       const data = await response.json().catch(() => ({}));
       if (data.oauthRequired && data.oauthUrl) {
         setCreatePhase("connecting");
@@ -153,6 +165,19 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
         if (data.code === "NOT_CONFIGURED") { setResumeCreate(true); }
         // A healthy sheet must never read as a generic failure, and a broken one
         // must offer recovery instead of an opaque "Conflict".
+        // Terminal reached without the recreate flag: the sheet is trashed or
+        // replaced and only the sanctioned path (recreateAfterTerminal) may
+        // retire it. Prompt creation through that path so archive marks stay
+        // vocabulary-safe.
+        if ((data.terminal || data.needsCreateNew) && !recreatingAfterTerminal) {
+          setCanCreateNew(true);
+          setRecreatingAfterTerminal(terminal);
+          setDialog(null);
+          toast(data.error || "Google Sheet đã được kết thúc. Nhấn \"Tạo Google Sheet mới\" để tiếp tục.");
+          setDialog("create");
+          return;
+        }
+        if (data.terminal || data.needsCreateNew) { setCanCreateNew(true); toast(data.error || "Google Sheet đã được kết thúc. Hãy tạo Sheet mới."); return; }
         if (data.alreadyConnected) {
           setDialog(null);
           toast(data.error || "Google Sheet đã được kết nối cho bộ từ này.");
@@ -165,12 +190,28 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
           setDialog("recover");
           return;
         }
+        // OAuth revocation is surfaced by errors.ts as OAUTH_REVOKED -> the
+        // create route maps it to 202 + oauthUrl. Handle the race where the
+        // outer status check already fired without seeing oauthRequired above.
+        if ((data.code === "OAUTH_REVOKED" || data.code === "OAUTH_REQUIRED" || data.code === "PERMISSION_DENIED") && data.oauthRequired && data.oauthUrl) {
+          setCreatePhase("connecting");
+          toast("Google đã thu hồi quyền truy cập. Đang kết nối lại Google...");
+          window.location.assign(String(data.oauthUrl));
+          return;
+        }
         if (data.code === "RATE_LIMITED") { toast(data.error || "Google Sheet đang được tạo bởi yêu cầu khác. Vui lòng chờ lại."); return; }
+        if (data.raced && (data.view === "connected" || data.view === "paused")) {
+          setDialog(null);
+          toast(data.message || data.error || "Google Sheet đã được tạo bởi yêu cầu trước. Đang dùng kết nối hiện có.");
+          await load();
+          return;
+        }
         toast(data.error || "Không thể tạo Google Sheet lúc này.");
         return;
       }
       setDialog(null);
       setResumeCreate(false);
+      setRecreatingAfterTerminal(false);
       if (data.connectionId) {
         setSuccess({ count: data.wordCount ?? data.exported ?? 0, url: data.spreadsheetUrl });
         setDialog("success");
@@ -369,10 +410,10 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       )}
 
       {connection && broken && (
-        <GoogleSheetsBrokenCard connection={connection} canManage={canManage} busy={busy !== null} canCreate={canCreateNew} onRecover={() => { setRecoverResult(connection.lastError || ""); setDialog("recover"); }} onCreateNew={() => setDialog("create")} />
+        <GoogleSheetsBrokenCard connection={connection} canManage={canManage} busy={busy !== null} canCreate={canCreateNew} terminal={terminal} onRecover={() => { setRecoverResult(connection.lastError || ""); setDialog("recover"); }} onCreateNew={() => { setRecreatingAfterTerminal(terminal); setDialog("create"); }} />
       )}
 
-      {connection && !(connection.status === "error" || connection.status === "disconnected") && (
+      {connection && !broken && (
         <GoogleSheetsDetails
           connection={connection}
           latestRun={latestRun}
@@ -392,7 +433,7 @@ export default function GoogleSheetsPanel({ setId, canManage, canSync, isAdmin, 
       {connection && <GoogleSheetsReliability connection={connection} run={latestRun} canManage={canManage} canSync={canSync} onUpdated={async () => { await load(); await loadRuns(connection.id); onVocabularyChanged?.([]); emitGoogleSheetSynced({ setId, connectionId: connection.id, changedWordIds: [], rowsCreated: 0, rowsUpdated: 1, rowsDeleted: 0, finishedAt: new Date().toISOString() }); }} />}
 
       {dialog === "create" && (
-        <GoogleSheetsCreateDialog busy={busy === "create"} phase={createPhase} aiEnrich={aiEnrichChoice} onAiEnrich={setAiEnrichChoice} onClose={() => setDialog(null)} onCreate={() => void createSheet()} />
+        <GoogleSheetsCreateDialog busy={busy === "create"} phase={createPhase} aiEnrich={aiEnrichChoice} recreatingAfterTerminal={recreatingAfterTerminal} onAiEnrich={setAiEnrichChoice} onClose={() => { setRecreatingAfterTerminal(false); setDialog(null); }} onCreate={() => void createSheet(recreatingAfterTerminal)} />
       )}
 
       {dialog === "success" && success && (
