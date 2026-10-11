@@ -2,6 +2,8 @@ import { getSession } from "@/lib/auth";
 import { ensureStudyPlanner, findStudyPlanner } from "@/lib/studyPlanner";
 import { loadGoogleToken } from "@/lib/googleSheets/auth";
 import { classifyGoogleApiError } from "@/lib/googleSheets/errors";
+import { loadPlannerConnectionForUser, plannerDashboard } from "@/lib/studyPlanner/queries";
+import { todayLocal } from "@/lib/studyPlanner/values";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -9,6 +11,22 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const session = await getSession();
   if (!session) return Response.json({ error: "Unauthorized" }, { status: 401 });
+  const plannerConnection = await loadPlannerConnectionForUser(session.userId);
+  if (plannerConnection) {
+    // Backwards-compatible: callers that only needed the URL still get it;
+    // richer clients additionally read dashboard + status from the same fetch.
+    const dashboard = await plannerDashboard(plannerConnection.id, todayLocal());
+    return Response.json({
+      planner: { url: plannerConnection.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${encodeURIComponent(plannerConnection.spreadsheetId)}/edit` },
+      plannerConnection: {
+        id: plannerConnection.id,
+        spreadsheetId: plannerConnection.spreadsheetId,
+        status: plannerConnection.status,
+        enabled: plannerConnection.enabled,
+      },
+      dashboard,
+    });
+  }
   const planner = await findStudyPlanner(session.userId);
   const token = planner ? null : await loadGoogleToken(session.userId);
   return Response.json({ planner, googleConnected: Boolean(planner || (token?.refreshToken && token.scope.split(/\s+/).includes("https://www.googleapis.com/auth/drive.readonly"))) });
