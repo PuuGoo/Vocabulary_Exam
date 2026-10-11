@@ -1,10 +1,11 @@
 import { and, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db";
-import { studyPlannerConnections } from "@/db/schema";
+import { studyPlannerConnections, studyPlannerCourses } from "@/db/schema";
 import { GoogleSheetsError, isRetryableCode } from "@/lib/googleSheets/errors";
 import type { GoogleWorkspaceApi, SheetsValue } from "@/lib/googleSheets/api";
-import { gridFromPlannerValues } from "@/lib/studyPlanner/columnGrid";
+import { quoteSheetTitle } from "@/lib/googleSheets/spreadsheet";
+import { gridFromPlannerValues, type PlannerGrid } from "@/lib/studyPlanner/columnGrid";
 import { WORKBOOK_RANGES, type WorkbookTab } from "@/lib/studyPlanner/workbookMap";
 import {
   flushPlannerIdWrites,
@@ -12,10 +13,21 @@ import {
   syncPlannerAssignmentsFromGrid,
   syncPlannerCoursesFromGrid,
   syncPlannerCurriculumFromGrid,
+  syncPlannerIeltsFromGrid,
   syncPlannerReadingFromGrid,
   syncPlannerTasksFromGrid,
   syncPlannerTodosFromGrid,
 } from "@/lib/studyPlanner/syncPlannerEngine";
+import {
+  ATTENDANCE_DATE_ROW,
+  attendanceSessionColumns,
+  plannerControlValues,
+  plannerMonthFromControls,
+  syncPlannerAttendance,
+  syncPlannerCourseSessions,
+  syncPlannerHabits,
+  syncPlannerSettings,
+} from "@/lib/studyPlanner/syncPlannerGridDomains";
 import {
   acquirePlannerSyncLock,
   bumpPlannerRevision,
@@ -32,8 +44,10 @@ import {
  * Phase 4b/5 planner sync orchestrator.
  *
  * Flow: durable pending -> one lock per planner -> one batched read per tab ->
- * per-domain upserts inside one transaction -> __lexora_id backfill writes ->
- * pending cleared only after a fully successful run.
+ * row domains upserted first, then the grid domains that key off course ids ->
+ * __lexora_id backfill writes -> pending cleared only after a fully successful
+ * run. Everything happens inside one transaction, so a failure never leaves
+ * half of a planner imported.
  *
  * A failed read never deletes: every domain upsert is driven by rows the Sheet
  * actually returned, and archival of vanished rows is a separate, explicit
@@ -58,16 +72,22 @@ export type PlannerSyncResult = {
   retryable?: boolean;
 };
 
+const TAB_COURSES: WorkbookTab = "Thông tin lớp học";
+const TAB_HABITS: WorkbookTab = "Habit Tracker";
+const TAB_ATTENDANCE: WorkbookTab = "Bảng theo dõi chuyên cần";
+
 /** Tabs read per sync, in the order they should be applied. */
 const SYNC_TABS: WorkbookTab[] = [
   "Nhật ký nhiệm vụ",
-  "Thông tin lớp học",
+  "Kế hoạch ngày & IELTS",
+  TAB_COURSES,
   "Quản lý giáo trình",
   "Bảng theo dõi bài tập",
   "Danh sách tài liệu đọc",
-  "Habit Tracker",
+  TAB_HABITS,
   "Danh sách việc cần làm",
   "Hoạt động",
+  TAB_ATTENDANCE,
 ];
 
 type TabPlan = { tab: WorkbookTab; dataFrom: number; dataTo: number | null; columns: string[]; metadataColumn: string | undefined };
@@ -84,6 +104,20 @@ function planFor(tab: WorkbookTab): TabPlan | null {
   };
 }
 
+function gridFor(tab: WorkbookTab, valuesByTab: ReadonlyMap<string, SheetsValue | undefined>): PlannerGrid | undefined {
+  const range = WORKBOOK_RANGES[tab];
+  const values = valuesByTab.get(tab);
+  // A tab whose read failed (undefined) yields no grid, so nothing is touched.
+  if (!range || values === undefined) return undefined;
+  return gridFromPlannerValues({
+    tab,
+    values,
+    dataFrom: range.dataFrom,
+    dataTo: range.dataTo,
+    columns: [...range.sourceColumns, ...(range.controlColumns ?? [])],
+  });
+}
+
 export async function syncPlannerConnection(
   connectionId: number,
   trigger: PlannerSyncTrigger,
@@ -98,7 +132,7 @@ export async function syncPlannerConnection(
   const runId = await startPlannerSyncRun(connectionId, trigger);
   try {
     // 2) One lock per planner: webhook / manual / cron never overlap.
-    await acquirePlannerSyncLock(connectionId, `planner_${trigger}`);
+    await acquirePlannerSyncLock(connectionId, "planner_" + trigger);
   } catch (error) {
     await finishPlannerSyncRun(runId, "error", { errorMessage: error instanceof Error ? error.message : "locked" });
     return { status: "locked" };
@@ -118,22 +152,29 @@ export async function syncPlannerConnection(
   const idWriteQueue: Array<{ tab: string; column: string; rows: Array<{ rowNumber: number; sourceId: string }> }> = [];
 
   try {
-    // 3) One read per tab; no per-cell requests.
+    // 3) One read per tab; no per-cell requests. The range starts at row 1 so
+    // the editable control cells (semester dates, habit month) are included.
     const valuesByTab = new Map<string, SheetsValue | undefined>();
     await Promise.all(
       plans.map(async (plan) => {
-        const range = `'${plan.tab.replace(/'/g, "''")}'!A1:BZ${Math.max(plan.dataFrom, plan.dataTo ?? plan.dataFrom + 2000)}`;
+        const lastRow = plan.dataTo == null ? plan.dataFrom + 2000 : Math.max(plan.dataFrom, plan.dataTo);
+        const range = quoteSheetTitle(plan.tab) + "!A1:BZ" + lastRow;
         const values = await api.readValues(connection.spreadsheetId, range);
         valuesByTab.set(plan.tab, values);
       }),
     );
 
+    const courseGrid = gridFor(TAB_COURSES, valuesByTab);
+    const habitGrid = gridFor(TAB_HABITS, valuesByTab);
+    const attendanceGrid = gridFor(TAB_ATTENDANCE, valuesByTab);
+
     // 4) Upserts in one transaction so a failure leaves no partial domain state.
     await db.transaction(async (tx) => {
+      // Row domains first: courses must exist before the timetable, habits and
+      // attendance grids can key off their ids.
       for (const plan of plans) {
-        const values = valuesByTab.get(plan.tab);
-        if (values === undefined) continue; // tab read failed: touch nothing
-        const grid = gridFromPlannerValues({ tab: plan.tab, values, dataFrom: plan.dataFrom, dataTo: plan.dataTo, columns: plan.columns });
+        const grid = gridFor(plan.tab, valuesByTab);
+        if (!grid) continue;
         const result = await runDomainSync(tx, connectionId, plan, grid);
         if (!result) continue;
         stats.rowsRead += result.stats.rowsRead;
@@ -145,6 +186,68 @@ export async function syncPlannerConnection(
         stats.domains.push(result.stats.domain);
         if (result.idWrites.length && plan.metadataColumn) {
           idWriteQueue.push({ tab: plan.tab, column: plan.metadataColumn, rows: result.idWrites });
+        }
+      }
+
+      // Course names are the join key of every grid domain: the timetable, the
+      // attendance rows and the planner UI all refer to a course by name.
+      const courses = await tx
+        .select({ id: studyPlannerCourses.id, courseName: studyPlannerCourses.courseName })
+        .from(studyPlannerCourses)
+        .where(eq(studyPlannerCourses.connectionId, connectionId));
+      const courseIdByName = new Map<string, number>();
+      for (const course of courses) {
+        courseIdByName.set(plannerCourseKey(course.courseName), course.id);
+      }
+
+      // Editable control cells only; derived neighbours are never written.
+      const controls = plannerControlValues(valuesByTab);
+      const settingsResult = await syncPlannerSettings(tx, connectionId, controls);
+      stats.rowsCreated += settingsResult.created;
+      stats.rowsUpdated += settingsResult.updated;
+      stats.rowsUnchanged += settingsResult.unchanged;
+      stats.invalidRows += settingsResult.invalid;
+      stats.domains.push("settings");
+
+      if (courseGrid) {
+        // "Thông tin lớp học" G..K: one session per row.
+        const sessionResult = await syncPlannerCourseSessions(tx, connectionId, courseGrid, courseIdByName);
+        stats.rowsCreated += sessionResult.created;
+        stats.rowsUpdated += sessionResult.updated;
+        stats.rowsUnchanged += sessionResult.unchanged;
+        stats.invalidRows += sessionResult.invalid;
+        stats.rowsRead += courseGrid.rows.length;
+        stats.domains.push("course_sessions");
+      }
+
+      if (habitGrid) {
+        // "Habit Tracker" B..AF is the month selected by the B3/B4 controls.
+        const habitMonth = plannerMonthFromControls(controls.habitYear, controls.habitMonth);
+        const habitMetadataColumn = WORKBOOK_RANGES[TAB_HABITS]?.metadataColumn;
+        const habitResult = await syncPlannerHabits(tx, connectionId, habitGrid, habitMonth, habitMetadataColumn);
+        stats.rowsCreated += habitResult.created;
+        stats.rowsUpdated += habitResult.updated;
+        stats.rowsUnchanged += habitResult.unchanged;
+        stats.invalidRows += habitResult.invalid;
+        stats.rowsRead += habitGrid.rows.length;
+        stats.domains.push("habits");
+        if (habitResult.idWrites.length && habitMetadataColumn) {
+          idWriteQueue.push({ tab: TAB_HABITS, column: habitMetadataColumn, rows: habitResult.idWrites });
+        }
+      }
+
+      if (attendanceGrid) {
+        // "Bảng theo dõi chuyên cần" F..AI: one column per weekly session,
+        // whose real date lives in the derived header row.
+        const sessionColumns = attendanceSessionColumns(valuesByTab.get(TAB_ATTENDANCE));
+        if (sessionColumns.length) {
+          const attendanceResult = await syncPlannerAttendance(tx, connectionId, attendanceGrid.rows, sessionColumns, courseIdByName);
+          stats.rowsCreated += attendanceResult.created;
+          stats.rowsUpdated += attendanceResult.updated;
+          stats.rowsUnchanged += attendanceResult.unchanged;
+          stats.invalidRows += attendanceResult.invalid;
+          stats.rowsRead += attendanceGrid.rows.length;
+          stats.domains.push("attendance");
         }
       }
     });
@@ -178,11 +281,19 @@ export async function syncPlannerConnection(
   }
 }
 
-async function runDomainSync(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], connectionId: number, plan: TabPlan, grid: ReturnType<typeof gridFromPlannerValues>) {
+/** Case/whitespace-insensitive course name, the join key of every grid domain. */
+function plannerCourseKey(courseName: string | null | undefined): string {
+  return String(courseName ?? "").normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+async function runDomainSync(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], connectionId: number, plan: TabPlan, grid: PlannerGrid) {
   switch (plan.tab) {
     case "Nhật ký nhiệm vụ":
-    case "Kế hoạch ngày & IELTS":
       return syncPlannerTasksFromGrid(tx, connectionId, grid, plan.metadataColumn);
+    case "Kế hoạch ngày & IELTS":
+      // Only the IELTS practice block is source data here; columns B..G are
+      // formulas mirroring "Nhật ký nhiệm vụ" and would duplicate its tasks.
+      return syncPlannerIeltsFromGrid(tx, connectionId, grid, plan.metadataColumn);
     case "Thông tin lớp học":
       return syncPlannerCoursesFromGrid(tx, connectionId, grid, plan.metadataColumn);
     case "Quản lý giáo trình":
@@ -213,4 +324,3 @@ export async function stalePlannerConnections(limit: number) {
     )
     .limit(limit);
 }
-

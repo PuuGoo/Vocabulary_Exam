@@ -59,8 +59,8 @@ export type WorkbookRange = {
 export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
   "Dashboard": null,
   "Kế hoạch ngày & IELTS": {
-    headerA1: "B5",
-    dataFrom: 6,
+    headerA1: "B6",
+    dataFrom: 7,
     dataTo: 1000,
     // Daily task lattice (cols B..F) + IELTS practice block (H..M).
     // A is completion checkbox (source as well).
@@ -71,8 +71,8 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     domain: ["study_planner_tasks"],
   },
   "Nhật ký nhiệm vụ": {
-    headerA1: "A4",
-    dataFrom: 5,
+    headerA1: "A6",
+    dataFrom: 7,
     dataTo: 991,
     sourceColumns: ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"],
     // A is the Ma Task label; N (Trang thai) is derived (IF on completion) and must not be treated as source.
@@ -86,10 +86,10 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     // schedule lattice G7:L (Thu / Gio). Modeled as one range; the sync
     // layer splits them logically and writes to disjoint columns, so legacy
     // semesters are never truncated.
-    headerA1: "A7",
-    dataFrom: 7,
+    headerA1: "A9",
+    dataFrom: 10,
     dataTo: 205,
-    sourceColumns: ["A", "B", "C", "D", "E", "G", "H", "I"],
+    sourceColumns: ["A", "B", "C", "D", "E", "G", "H", "I", "J", "K"],
     controlColumns: ["B"], // B2/B3 semester dates land here via settings table.
     derivedColumns: [],
     metadataColumn: "AR",
@@ -107,8 +107,8 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     domain: ["study_planner_curriculum_topics"],
   },
   "Bảng theo dõi bài tập": {
-    headerA1: "A5",
-    dataFrom: 6,
+    headerA1: "A22",
+    dataFrom: 23,
     dataTo: 202,
     sourceColumns: ["A", "B", "C", "D", "E", "F", "G", "I", "J"],
     derivedColumns: ["H", "K"],
@@ -126,12 +126,12 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     domain: ["study_planner_reading_materials"],
   },
   "Bảng theo dõi chuyên cần": {
-    // Grid: columns F..AI are Buoi sessions; dates live in row 4 derived as
+    // Grid: columns F..AI are Buoi sessions; dates live in row 6 derived as
     // B2+7*n. No hidden column: session identity is (lexora_id + real date).
-    headerA1: "A5",
-    dataFrom: 6,
+    headerA1: "A6",
+    dataFrom: 7,
     dataTo: 205,
-    sourceColumns: ["F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI"],
+    sourceColumns: ["A", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI"],
     controlColumns: [],
     derivedColumns: ["B", "C", "D", "E"],
     metadataColumn: undefined,
@@ -141,18 +141,18 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     // Wide 31-day grid A..AF per day. One habit per row A26:A40 in the
     // specimen; the sheet reserves A24..BO40 with 627 formulas so writes must
     // stay inside A..AF for source cells.
-    headerA1: "A7",
+    headerA1: "A24",
     dataFrom: 26,
     dataTo: 140,
     sourceColumns: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "AA", "AB", "AC", "AD", "AE", "AF"],
     controlColumns: ["B"], // B2/B3 year/month land here via settings.
     derivedColumns: ["AG", "AH", "AI", "AJ", "AK"],
-    metadataColumn: "AS",
+    metadataColumn: "BP",
     domain: ["study_planner_habits", "study_planner_habit_completions"],
   },
   "Danh sách việc cần làm": {
-    headerA1: "A5",
-    dataFrom: 6,
+    headerA1: "A6",
+    dataFrom: 7,
     dataTo: 205,
     sourceColumns: ["A", "B", "C", "D", "E", "G"],
     derivedColumns: ["F"],
@@ -160,8 +160,8 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     domain: ["study_planner_todos"],
   },
   "Hoạt động": {
-    headerA1: "A3",
-    dataFrom: 4,
+    headerA1: "A4",
+    dataFrom: 5,
     dataTo: 400,
     sourceColumns: ["A", "B", "C", "D", "E", "F"],
     derivedColumns: [],

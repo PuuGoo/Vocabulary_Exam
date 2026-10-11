@@ -24,6 +24,7 @@ import {
   type ImportResult,
 } from "@/lib/studyPlanner/importers";
 import type { PlannerGrid, PlannerGridRow } from "@/lib/studyPlanner/columnGrid";
+import { importIeltsPracticeRow } from "@/lib/studyPlanner/importers";
 import type { GoogleWorkspaceApi } from "@/lib/googleSheets/api";
 
 /**
@@ -484,3 +485,60 @@ export async function syncPlannerActivitiesFromGrid(
 }
 
 export { columnLetter, metadataWriteRanges };
+export async function syncPlannerIeltsFromGrid(
+  tx: Tx,
+  connectionId: number,
+  grid: PlannerGrid,
+  metadataColumn: string | undefined,
+) {
+  const byLexora = new Map<string, { id: number }>();
+  const existing = grid.rows.length
+    ? await tx.select({ id: studyPlannerTasks.id, lexoraId: studyPlannerTasks.lexoraId })
+        .from(studyPlannerTasks)
+        .where(eq(studyPlannerTasks.connectionId, connectionId))
+    : [];
+  for (const row of existing) byLexora.set(row.lexoraId, { id: row.id });
+
+  return syncRowDomain({
+    tx,
+    connectionId,
+    domain: "tasks_ielts",
+    grid,
+    metadataColumn,
+    importer: (row, opts) =>
+      importIeltsPracticeRow(row as unknown as Parameters<typeof importIeltsPracticeRow>[0], opts) as unknown as ImportResult<Record<string, unknown>>,
+    persist: async ({ lexoraId, values }) => {
+      const hit = byLexora.get(lexoraId);
+      const payload = {
+        connectionId,
+        lexoraId,
+        taskDate: String(values.practiceDate),
+        completed: false,
+        startTime: null,
+        endTime: null,
+        category: "IELTS",
+        ieltsSkill: (values.skill as string | null) ?? null,
+        taskTitle: String(values.material),
+        priority: null,
+        durationMinutes: null,
+        notes: null,
+        dueDate: null,
+        compensatingTask: null,
+        statusText: null,
+        ieltsMaterial: String(values.material),
+        ieltsTaskType: (values.taskType as string | null) ?? null,
+        ieltsBand: (values.band as number | null) != null ? String(values.band) : null,
+        ieltsMistakeAnalysis: (values.mistakeAnalysis as string | null) ?? null,
+        sheetRow: null,
+        archivedAt: null,
+      };
+      if (hit) {
+        await tx.update(studyPlannerTasks).set({ ...payload, updatedAt: new Date() }).where(eq(studyPlannerTasks.id, hit.id));
+        return { inserted: 0, updated: 1, fingerprint: "" };
+      }
+      const [inserted] = await tx.insert(studyPlannerTasks).values(payload).returning({ id: studyPlannerTasks.id });
+      byLexora.set(lexoraId, { id: inserted.id });
+      return { inserted: 1, updated: 0, fingerprint: "" };
+    },
+  });
+}

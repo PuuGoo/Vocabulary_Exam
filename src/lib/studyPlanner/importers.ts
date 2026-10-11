@@ -78,7 +78,7 @@ export type TaskImport = {
 };
 
 /**
- * Nhat ky nhem vu columns (Phase 1.4 map, header row 4, data from row 5):
+ * Nhat ky nhem vu columns (Phase 1.4 map, header row 6, data from row 7):
  * A Ma Task, B Ngay, C Hoan thanh, D Bat dau, E Ket thuc, F Phan loai,
  * G Ky nang IELTS, H Nhiem vu, I Muc uu tien, J Thoi luong, K Ghi chu,
  * L Han chot, M Bu cho Task, N Trang thai (derived -> read only as fallback).
@@ -115,6 +115,49 @@ export function importTaskRow(row: PlannerGridRow, options: ImporterOptions = {}
     ieltsMistakeAnalysis: row.cells.R ?? null,
   };
   return { status: "ok", rowNumber: row.rowNumber, lexoraId, values, fingerprint: fingerprintPlannerRecord("task", values) };
+}
+
+
+export type IeltsPracticeImport = {
+  practiceDate: string;
+  skill: string | null;
+  material: string;
+  taskType: string | null;
+  band: number | null;
+  mistakeAnalysis: string | null;
+};
+
+/**
+ * Ke hoach ngay & IELTS (IELTS practice block only, columns I..N).
+ *
+ * The daily-task lattice on this tab (columns B..G) is formula-generated
+ * from Nhat ky nhiem vu and must not be imported a second time: importing
+ * it here would duplicate every mirrored task. This importer reads only
+ * the user-entered IELTS practice table (I = date, J = skill, K = material,
+ * L = task type, M = band, N = mistake analysis); the result feeds the same
+ * study_planner_tasks row as a Nhat ky task through the IELTS fields.
+ */
+export function importIeltsPracticeRow(row: PlannerGridRow, options: ImporterOptions = {}): ImportResult<IeltsPracticeImport> {
+  const columns = ["I", "J", "K", "L", "M", "N"];
+  const lexoraId = readMeta(row, options.metadataColumn);
+  if (!hasAnyValue(row, columns)) return { status: "blank", rowNumber: row.rowNumber, lexoraId };
+  const practiceDate = normalizeDate(row.cells.I);
+  const material = normalizeText(row.cells.K ?? "");
+  const invalidKeys: string[] = [];
+  if (!practiceDate) invalidKeys.push("practice_date");
+  if (!material) invalidKeys.push("material");
+  if (invalidKeys.length) {
+    return { status: "invalid", rowNumber: row.rowNumber, lexoraId, invalidKeys, message: "Thieu hoac sai: " + invalidKeys.join(", ") };
+  }
+  const values: IeltsPracticeImport = {
+    practiceDate: practiceDate as string,
+    skill: row.cells.J ?? null,
+    material,
+    taskType: row.cells.L ?? null,
+    band: normalizeNumber(row.cells.M),
+    mistakeAnalysis: row.cells.N ?? null,
+  };
+  return { status: "ok", rowNumber: row.rowNumber, lexoraId, values, fingerprint: fingerprintPlannerRecord("task", { task_date: practiceDate, task_title: material, category: "IELTS", ielts_skill: row.cells.J ?? null, ielts_material: material, ielts_task_type: row.cells.L ?? null, ielts_band: normalizeNumber(row.cells.M), ielts_mistake_analysis: row.cells.N ?? null }) };
 }
 
 // ------------------------------------------------------- courses/sessions

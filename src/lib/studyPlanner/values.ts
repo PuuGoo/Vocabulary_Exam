@@ -209,6 +209,33 @@ export function readPlannerSourceIdCell(value: unknown): string {
   return PLANNER_SOURCE_ID_PATTERN.test(cleaned) ? cleaned : "";
 }
 
+/**
+ * Column letter of a real calendar date inside the Habit Tracker month grid.
+ *
+ * The month grid runs B (day 1) .. AF (day 31), so the column is a pure
+ * function of the day-of-month. A date outside 1..31 has no cell and
+ * returns null so a web edit is never written to the wrong column.
+ */
+export function habitDayColumn(date: string | null | undefined): string | null {
+  const text = normalizeText(date);
+  if (!PLANNER_DATE_PATTERN.test(text)) return null;
+  const day = Number(text.slice(8, 10));
+  if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+  // Column B is day 1, so index 1 + day - 1 = day.
+  return columnLetterForIndex(day);
+}
+
+function columnLetterForIndex(index: number): string {
+  let current = index;
+  let result = "";
+  while (current > 0) {
+    const remainder = (current - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    current = Math.floor((current - 1) / 26);
+  }
+  return result;
+}
+
 /** Today in planner local time, ISO date. */
 export function todayLocal(timezone: string = PLANNER_TIMEZONE): string {
   const parts = new Intl.DateTimeFormat("en-CA", {

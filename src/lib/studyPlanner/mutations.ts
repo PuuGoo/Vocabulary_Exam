@@ -33,6 +33,7 @@ import {
   normalizeWeekday,
   PLANNER_DATE_PATTERN,
 } from "@/lib/studyPlanner/values";
+import { habitDayColumn } from "@/lib/studyPlanner/values";
 import { WORKBOOK_RANGES, type WorkbookTab } from "@/lib/studyPlanner/workbookMap";
 import { loadPlannerConnectionForUser } from "@/lib/studyPlanner/queries";
 import { plannerDashboard } from "@/lib/studyPlanner/queries";
@@ -205,7 +206,12 @@ export async function toggleHabitCompletion(userId: number, input: { habitId: nu
     .values({ habitId: habit.id, completionDate: date, completed: input.completed })
     .onConflictDoUpdate({ target: [studyPlannerHabitCompletions.habitId, studyPlannerHabitCompletions.completionDate], set: { completed: input.completed, updatedAt: new Date() } })
     .returning();
-  await enqueueWebEdit(connection.id, "Habit Tracker", habit.sheetRow, { B: input.completed }, { name: habit.name }, "habit");
+  // The completion's own date maps to the month-grid column B..AF;
+  // writing column B for every day would corrupt the whole month.
+  const habitColumn = habitDayColumn(date);
+  if (habit.sheetRow != null && habitColumn) {
+    await enqueueWebEdit(connection.id, "Habit Tracker", habit.sheetRow, { [habitColumn]: input.completed }, { name: habit.name }, "habit");
+  }
   return row;
 }
 
@@ -223,7 +229,12 @@ export async function setAttendanceMark(userId: number, input: { sessionId: numb
     .values({ connectionId: connection.id, sessionId: session.id, courseName, mark: input.mark })
     .onConflictDoUpdate({ target: [studyPlannerAttendanceMarks.sessionId, studyPlannerAttendanceMarks.courseName], set: { mark: input.mark, updatedAt: new Date() } })
     .returning();
-  await enqueueWebEdit(connection.id, "Bảng theo dõi chuyên cần", row.sheetRow, { F: input.mark }, { course_name: courseName, mark: input.mark } as Record<string, unknown>, "attendanceMark");
+  // The stored mark already knows its own (course row, session column);
+  // writing to a hard-coded column would overwrite the wrong session.
+  if (row.sheetRow != null && row.sheetColumn) {
+    await enqueueWebEdit(connection.id, "Bảng theo dõi chuyên cần", row.sheetRow, { [row.sheetColumn]: input.mark },
+      { course_name: courseName, mark: input.mark } as Record<string, unknown>, "attendanceMark");
+  }
   return row;
 }
 
