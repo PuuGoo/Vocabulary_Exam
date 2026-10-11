@@ -29,4 +29,20 @@ jobs:
           curl --silent --show-error --fail --max-time 330 \
             --header "Authorization: Bearer $CRON_SECRET" \
             "$RECONCILE_URL" --output result.json
-          jq -e 'has("renewal") and has("results") and ([.renewal[] | select(.error != null)] | length == 0) and ([.results[] | select(.status == "error")] | length == 0)' result.json > /dev/null
+          # Phase 5.4: the previous jq expression rejected HTTP 200 bodies whose
+          # renewal/results carried errors, but it also hid *which* connection
+          # failed. Print safe diagnostics (ids + status only, never tokens) and
+          # then fail the job, so real errors are not suppressed to make it green.
+          jq -r '
+            ( .renewal[]?      | select(.error != null) | "renew-failed connectionId=\(.connectionId) error=\(.error)" ),
+            ( .plannerRenewal[]? | select(.error != null) | "planner-renew-failed connectionId=\(.connectionId) error=\(.error)" ),
+            ( .results[]?      | select(.status == "error") | "sync-failed connectionId=\(.connectionId) error=\(.error // "unknown")" ),
+            ( .plannerResults[]? | select(.status == "error") | "planner-sync-failed connectionId=\(.connectionId) error=\(.error // "unknown")" )
+          ' result.json || true
+          jq -e '
+            has("renewal") and has("results")
+            and ([.renewal[]? | select(.error != null)] | length == 0)
+            and ([.plannerRenewal[]? | select(.error != null)] | length == 0)
+            and ([.results[]? | select(.status == "error")] | length == 0)
+            and ([.plannerResults[]? | select(.status == "error")] | length == 0)
+          ' result.json > /dev/null

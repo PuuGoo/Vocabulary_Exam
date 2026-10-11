@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import StudyPlannerCard from "@/components/StudyPlannerCard";
+import PlannerConnectionPanel from "@/components/planner/PlannerConnectionPanel";
 import { loadPlannerConnectionForUser, plannerDashboard, plannerConnectionHistory } from "@/lib/studyPlanner/queries";
 import { todayLocal } from "@/lib/studyPlanner/values";
 
@@ -75,6 +76,8 @@ export default async function StudyPlannerPage({ searchParams }: { searchParams:
       {connection.lastError ? (
         <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{connection.lastError}</p>
       ) : null}
+
+      <PlannerConnectionPanel />
 
       {hasData ? (
         <>
