@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth";
 import { loadPlannerConnectionForUser } from "@/lib/studyPlanner/queries";
 import StudyPlannerNav from "@/components/StudyPlannerNav";
 import StudyPlannerRevisionPoller from "@/components/StudyPlannerRevisionPoller";
+import PlannerSyncIndicator from "@/components/planner/PlannerSyncIndicator";
 
 /**
  * Phase 6/8 — Shared Study Planner application shell.
@@ -17,8 +18,15 @@ export default async function StudyPlannerLayout({ children }: { children: React
   const connection = session ? await loadPlannerConnectionForUser(session.userId) : null;
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
-      <StudyPlannerNav connected={Boolean(connection)} />
-      {connection ? <StudyPlannerRevisionPoller /> : null}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <StudyPlannerNav connected={Boolean(connection)} />
+        {connection ? (
+          <div className="flex items-center gap-2 pt-3">
+            <PlannerSyncIndicator />
+            <StudyPlannerRevisionPoller />
+          </div>
+        ) : null}
+      </div>
       {children}
     </div>
   );
