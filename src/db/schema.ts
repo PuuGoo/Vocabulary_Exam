@@ -11,6 +11,9 @@ import {
   index,
   customType,
   date,
+  numeric,
+  smallint,
+  doublePrecision,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
@@ -1198,5 +1201,499 @@ export const vocabularyArchiveMarks = pgTable(
   },
   (table) => ({
     setIdx: index("vocabulary_archive_marks_set_idx").on(table.setId),
+  }),
+);
+
+// ============================================================================
+// Study Planner (additive, see drizzle/0043_study_planner_sync.sql)
+//
+// Study Planner synchronization is deliberately isolated from vocabulary
+// synchronization: no table below references words, vocab_sets, word_progress,
+// mistakes or any other learning table, so planner sync can never touch
+// learning history and vocabulary sync keeps working unchanged.
+//
+// `studyPlanners` above is the legacy user -> spreadsheet mapping. It is kept
+// untouched (Phase 3 requires preserving existing personal copies) and is
+// backfilled into studyPlannerConnections, which is the connection of record.
+// ============================================================================
+
+export const studyPlannerConnections = pgTable(
+  "study_planner_connections",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    spreadsheetId: text("spreadsheet_id").notNull(),
+    spreadsheetUrl: text("spreadsheet_url").notNull().default(""),
+    spreadsheetName: text("spreadsheet_name").notNull().default(""),
+    templateId: text("template_id").notNull().default(""),
+    templateVersion: integer("template_version").notNull().default(1),
+    status: varchar("status", { length: 16 }).notNull().default("connected"),
+    enabled: boolean("enabled").notNull().default(true),
+    managedByLexora: boolean("managed_by_lexora").notNull().default(false),
+    externalState: varchar("external_state", { length: 24 }).notNull().default("unknown"),
+    lastVerifiedAt: timestamp("last_verified_at", { withTimezone: true }),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastSuccessfulSyncedAt: timestamp("last_successful_synced_at", { withTimezone: true }),
+    lastError: text("last_error"),
+    lastErrorAt: timestamp("last_error_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    userIdx: uniqueIndex("study_planner_connections_user_unique").on(table.userId),
+    spreadsheetIdx: uniqueIndex("study_planner_connections_spreadsheet_unique").on(table.spreadsheetId),
+  }),
+);
+
+export const studyPlannerSyncChannels = pgTable(
+  "study_planner_sync_channels",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    channelId: varchar("channel_id", { length: 255 }).notNull(),
+    resourceId: varchar("resource_id", { length: 255 }).notNull(),
+    resourceUri: text("resource_uri").notNull().default(""),
+    expirationAt: timestamp("expiration_at", { withTimezone: true }),
+    // SHA-256 digest only. The raw token Google echoes in
+    // X-Goog-Channel-Token is never stored, logged or shipped to a browser.
+    channelTokenHash: varchar("channel_token_hash", { length: 128 }),
+    lastMessageNumber: bigint("last_message_number", { mode: "number" }),
+    status: varchar("status", { length: 16 }).notNull().default("active"),
+    lastNotifiedAt: timestamp("last_notified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    connectionIdx: index("study_planner_sync_channels_conn_idx").on(table.connectionId),
+    channelIdx: uniqueIndex("study_planner_sync_channels_channel_idx").on(table.channelId),
+  }),
+);
+
+export const studyPlannerSyncPending = pgTable("study_planner_sync_pending", {
+  connectionId: integer("connection_id").primaryKey().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+  pending: boolean("pending").notNull().default(false),
+  pendingReason: varchar("pending_reason", { length: 64 }),
+  pendingAt: timestamp("pending_at", { withTimezone: true }),
+  attempts: integer("attempts").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const studyPlannerSyncRuns = pgTable(
+  "study_planner_sync_runs",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    triggerType: varchar("trigger_type", { length: 32 }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    status: varchar("status", { length: 16 }).notNull().default("running"),
+    rowsRead: integer("rows_read").notNull().default(0),
+    rowsCreated: integer("rows_created").notNull().default(0),
+    rowsUpdated: integer("rows_updated").notNull().default(0),
+    rowsUnchanged: integer("rows_unchanged").notNull().default(0),
+    rowsDeleted: integer("rows_deleted").notNull().default(0),
+    conflictCount: integer("conflict_count").notNull().default(0),
+    errorMessage: text("error_message"),
+    metadata: text("metadata").notNull().default("{}"),
+  },
+  (table) => ({
+    connectionIdx: index("study_planner_sync_runs_conn_idx").on(table.connectionId, table.startedAt),
+  }),
+);
+
+export const studyPlannerSyncLocks = pgTable("study_planner_sync_locks", {
+  connectionId: integer("connection_id").primaryKey().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+  lockedAt: timestamp("locked_at", { withTimezone: true }).notNull(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
+  lockedBy: varchar("locked_by", { length: 64 }).notNull(),
+});
+
+/**
+ * Monotonic revision per connection. The web UI polls this value to know that
+ * a Sheet change reached PostgreSQL; polling never triggers synchronization.
+ */
+export const studyPlannerSyncRevisions = pgTable(
+  "study_planner_sync_revisions",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    reason: varchar("reason", { length: 64 }).notNull().default("sync"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    revisionIdx: uniqueIndex("study_planner_sync_revisions_revision_unique").on(table.connectionId, table.revision),
+  }),
+);
+
+/**
+ * Outbound web -> Sheet writes. Only mapped input ranges are ever queued, and
+ * the expected fingerprint lets the webhook treat the resulting notification
+ * as a no-op instead of looping Sheet -> DB -> Sheet forever.
+ */
+export const studyPlannerWriteQueue = pgTable(
+  "study_planner_write_queue",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    rangeA1: varchar("range_a1", { length: 255 }).notNull(),
+    valuesJson: text("values_json").notNull(),
+    expectedFingerprint: varchar("expected_fingerprint", { length: 128 }),
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pendingIdx: index("study_planner_write_queue_pending_idx").on(table.connectionId, table.status),
+  }),
+);
+
+/** Editable control cells from view-oriented tabs (semester, target band, selected day/month). */
+export const studyPlannerSettings = pgTable("study_planner_settings", {
+  connectionId: integer("connection_id").primaryKey().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+  semesterStart: date("semester_start"),
+  semesterEnd: date("semester_end"),
+  semesterWeeks: integer("semester_weeks"),
+  targetIelts: text("target_ielts"),
+  selectedDate: date("selected_date"),
+  selectedYear: integer("selected_year"),
+  selectedMonth: integer("selected_month"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Rollback / bulk-review snapshots. Never applied without explicit approval. */
+export const studyPlannerSnapshots = pgTable(
+  "study_planner_snapshots",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    payloadJson: text("payload_json").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    connectionIdx: index("study_planner_snapshots_conn_idx").on(table.connectionId, table.createdAt),
+  }),
+);
+
+export const studyPlannerCourses = pgTable(
+  "study_planner_courses",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    courseName: text("course_name").notNull(),
+    courseCode: text("course_code"),
+    lecturer: text("lecturer"),
+    credits: integer("credits"),
+    notes: text("notes"),
+    score: numeric("score"),
+    gradePoint: numeric("grade_point"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_courses_lexora_unique").on(table.connectionId, table.lexoraId),
+    connectionIdx: index("study_planner_courses_conn_idx").on(table.connectionId),
+  }),
+);
+
+export const studyPlannerCourseSessions = pgTable(
+  "study_planner_course_sessions",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    courseId: integer("course_id").notNull().references(() => studyPlannerCourses.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    weekday: smallint("weekday").notNull(),
+    startTime: doublePrecision("start_time").notNull(),
+    endTime: doublePrecision("end_time").notNull(),
+    room: text("room"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_course_sessions_lexora_unique").on(table.connectionId, table.lexoraId),
+    courseIdx: index("study_planner_course_sessions_course_idx").on(table.courseId),
+  }),
+);
+
+/**
+ * Daily task log (Nhật ký nhiệm vụ) and IELTS practice
+ * ('Kế hoạch ngày & IELTS') share one table so a task is never imported twice.
+ * Identity is lexoraId (the hidden __lexora_id column), never the row number.
+ */
+export const studyPlannerTasks = pgTable(
+  "study_planner_tasks",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    taskDate: date("task_date").notNull(),
+    completed: boolean("completed").notNull().default(false),
+    startTime: doublePrecision("start_time"),
+    endTime: doublePrecision("end_time"),
+    category: text("category"),
+    ieltsSkill: text("ielts_skill"),
+    taskTitle: text("task_title").notNull(),
+    priority: text("priority"),
+    durationMinutes: integer("duration_minutes"),
+    notes: text("notes"),
+    dueDate: date("due_date"),
+    compensatingTask: text("compensating_task"),
+    statusText: text("status_text"),
+    ieltsMaterial: text("ielts_material"),
+    ieltsTaskType: text("ielts_task_type"),
+    ieltsBand: numeric("ielts_band"),
+    ieltsMistakeAnalysis: text("ielts_mistake_analysis"),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_tasks_lexora_unique").on(table.connectionId, table.lexoraId),
+    dateIdx: index("study_planner_tasks_conn_date_idx").on(table.connectionId, table.taskDate),
+  }),
+);
+
+export const studyPlannerCurriculumTopics = pgTable(
+  "study_planner_curriculum_topics",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    subject: text("subject").notNull(),
+    topic: text("topic").notNull(),
+    expectedWeek: integer("expected_week"),
+    statusText: text("status_text"),
+    completed: boolean("completed").notNull().default(false),
+    notes: text("notes"),
+    position: integer("position").notNull().default(0),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_curriculum_lexora_unique").on(table.connectionId, table.lexoraId),
+    connectionIdx: index("study_planner_curriculum_conn_idx").on(table.connectionId),
+  }),
+);
+
+export const studyPlannerAssignments = pgTable(
+  "study_planner_assignments",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    subject: text("subject"),
+    description: text("description").notNull(),
+    category: text("category"),
+    statusText: text("status_text"),
+    durationHours: numeric("duration_hours"),
+    dueTime: doublePrecision("due_time"),
+    dueDate: date("due_date"),
+    notes: text("notes"),
+    grade: text("grade"),
+    position: integer("position").notNull().default(0),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_assignments_lexora_unique").on(table.connectionId, table.lexoraId),
+    dueIdx: index("study_planner_assignments_due_idx").on(table.connectionId, table.dueDate),
+  }),
+);
+
+export const studyPlannerReadingMaterials = pgTable(
+  "study_planner_reading_materials",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    subject: text("subject"),
+    title: text("title").notNull(),
+    author: text("author"),
+    targetPages: text("target_pages"),
+    currentPage: integer("current_page"),
+    totalPages: integer("total_pages"),
+    notes: text("notes"),
+    position: integer("position").notNull().default(0),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_reading_lexora_unique").on(table.connectionId, table.lexoraId),
+    connectionIdx: index("study_planner_reading_conn_idx").on(table.connectionId),
+  }),
+);
+
+/**
+ * Attendance identity is (session, course), never the sheet column index, so
+ * inserting a session column mid-semester does not rewrite attendance history.
+ */
+export const studyPlannerAttendanceSessions = pgTable(
+  "study_planner_attendance_sessions",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    sessionIndex: integer("session_index").notNull(),
+    sessionDate: date("session_date").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_attendance_sessions_lexora_unique").on(table.connectionId, table.lexoraId),
+  }),
+);
+
+export const studyPlannerAttendanceMarks = pgTable(
+  "study_planner_attendance_marks",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    sessionId: integer("session_id").notNull().references(() => studyPlannerAttendanceSessions.id, { onDelete: "cascade" }),
+    courseId: integer("course_id").references(() => studyPlannerCourses.id, { onDelete: "set null" }),
+    courseName: text("course_name").notNull(),
+    mark: varchar("mark", { length: 8 }).notNull(),
+    sheetRow: integer("sheet_row"),
+    sheetColumn: text("sheet_column"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    sessionCourseIdx: uniqueIndex("study_planner_attendance_marks_session_course_unique").on(table.sessionId, table.courseName),
+    connectionIdx: index("study_planner_attendance_marks_conn_idx").on(table.connectionId),
+  }),
+);
+
+export const studyPlannerHabits = pgTable(
+  "study_planner_habits",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_habits_lexora_unique").on(table.connectionId, table.lexoraId),
+    connectionIdx: index("study_planner_habits_conn_idx").on(table.connectionId),
+  }),
+);
+
+/** Habit completion is keyed by stable habit + real calendar date, never grid position. */
+export const studyPlannerHabitCompletions = pgTable(
+  "study_planner_habit_completions",
+  {
+    id: serial("id").primaryKey(),
+    habitId: integer("habit_id").notNull().references(() => studyPlannerHabits.id, { onDelete: "cascade" }),
+    completionDate: date("completion_date").notNull(),
+    completed: boolean("completed").notNull().default(false),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    habitDateIdx: uniqueIndex("study_planner_habit_completions_unique").on(table.habitId, table.completionDate),
+    dateIdx: index("study_planner_habit_completions_date_idx").on(table.completionDate),
+  }),
+);
+
+export const studyPlannerTodos = pgTable(
+  "study_planner_todos",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    completed: boolean("completed").notNull().default(false),
+    taskTitle: text("task_title").notNull(),
+    category: text("category"),
+    priority: text("priority"),
+    dueDate: date("due_date"),
+    notes: text("notes"),
+    position: integer("position").notNull().default(0),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_todos_lexora_unique").on(table.connectionId, table.lexoraId),
+    connectionIdx: index("study_planner_todos_conn_idx").on(table.connectionId),
+  }),
+);
+
+export const studyPlannerActivities = pgTable(
+  "study_planner_activities",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    lexoraId: varchar("lexora_id", { length: 64 }).notNull(),
+    activityDate: date("activity_date").notNull(),
+    startTime: doublePrecision("start_time"),
+    endTime: doublePrecision("end_time"),
+    activityName: text("activity_name").notNull(),
+    activityType: text("activity_type"),
+    notes: text("notes"),
+    position: integer("position").notNull().default(0),
+    sheetRow: integer("sheet_row"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    lexoraIdx: uniqueIndex("study_planner_activities_lexora_unique").on(table.connectionId, table.lexoraId),
+    dateIdx: index("study_planner_activities_date_idx").on(table.connectionId, table.activityDate),
+  }),
+);
+
+/** Both sides of a genuine concurrent edit are preserved until a person resolves it. */
+export const studyPlannerConflicts = pgTable(
+  "study_planner_conflicts",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    entityType: varchar("entity_type", { length: 32 }).notNull(),
+    entityId: integer("entity_id").notNull(),
+    fieldKey: varchar("field_key", { length: 64 }).notNull(),
+    sheetValue: text("sheet_value"),
+    webValue: text("web_value"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedValue: text("resolved_value"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    connectionIdx: index("study_planner_conflicts_conn_idx").on(table.connectionId, table.resolvedAt),
+  }),
+);
+
+/** Large destructive changes wait here for explicit approval. */
+export const studyPlannerBulkReviews = pgTable(
+  "study_planner_bulk_reviews",
+  {
+    id: serial("id").primaryKey(),
+    connectionId: integer("connection_id").notNull().references(() => studyPlannerConnections.id, { onDelete: "cascade" }),
+    kind: varchar("kind", { length: 32 }).notNull(),
+    fingerprint: varchar("fingerprint", { length: 128 }).notNull(),
+    summaryJson: text("summary_json").notNull().default("{}"),
+    snapshotId: integer("snapshot_id").references(() => studyPlannerSnapshots.id, { onDelete: "set null" }),
+    status: varchar("status", { length: 16 }).notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => ({
+    connectionIdx: index("study_planner_bulk_reviews_conn_idx").on(table.connectionId, table.status),
   }),
 );

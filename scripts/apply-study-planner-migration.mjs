@@ -11,4 +11,13 @@ try {
     await transaction.unsafe(migration);
   });
   console.log("Applied 0041_study_planners.sql");
+  // Phase 3 (0043): full normalized planner model. Additive + idempotent;
+  // backfills study_planner_connections from legacy study_planners without
+  // touching the legacy rows.
+  const plannerSync = await readFile(new URL("../drizzle/0043_study_planner_sync.sql", import.meta.url), "utf8");
+  await client.begin(async transaction => {
+    await transaction.unsafe("SET LOCAL lock_timeout = '10s'");
+    await transaction.unsafe(plannerSync);
+  });
+  console.log("Applied 0043_study_planner_sync.sql");
 } finally { await client.end(); }
