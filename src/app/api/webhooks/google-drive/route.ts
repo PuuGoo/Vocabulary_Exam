@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { googleSheetConnections, googleSheetSyncChannels } from "@/db/schema";
+import { googleSheetConnections, googleSheetSyncChannels, studyPlannerConnections, studyPlannerSyncChannels } from "@/db/schema";
 import { recordNotificationState } from "@/lib/googleSheets/store";
+import { recordPlannerNotificationState } from "@/lib/studyPlanner/store";
+import { runPendingPlannerConnection } from "@/lib/studyPlanner/reconcile";
 import { runPendingConnection } from "@/lib/googleSheets/reconcile";
 import { verifyChannelToken } from "@/lib/googleSheets/channelToken";
+import { renewPlannerWatchChannelIfExpiring } from "@/lib/studyPlanner/watch";
 import { renewWatchChannelIfExpiring } from "@/lib/googleSheets/watch";
 
 export const runtime = "nodejs";
@@ -46,13 +49,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing notification headers." }, { status: 400 });
   }
 
-  const [channel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.channelId, channelId)).limit(1);
-  if (!channel) return NextResponse.json({ ok: true, ignored: "unknown_channel" }, { status: 202 });
+  // A planner notification is valid even when vocabulary has no matching
+  // channel; the two namespaces are queried explicitly so a valid planner
+  // signal is never logged as "unknown_channel".
+  const [vocabChannel] = await db.select().from(googleSheetSyncChannels).where(eq(googleSheetSyncChannels.channelId, channelId)).limit(1);
+  const plannerChannelRows = await db
+    .select()
+    .from(studyPlannerSyncChannels)
+    .where(eq(studyPlannerSyncChannels.channelId, channelId))
+    .limit(1);
+  const plannerChannel = plannerChannelRows[0] as ({ id: number; connectionId: number; channelId: string; resourceId: string | null; resourceUri?: string | null; expirationAt: Date | null; channelTokenHash: string | null; lastMessageNumber: number | null; status: string } | undefined);
+  const namespace: "vocab" | "planner" | "none" = plannerChannel ? "planner" : vocabChannel ? "vocab" : "none";
+  if (namespace === "none") return NextResponse.json({ ok: true, ignored: "unknown_channel" }, { status: 202 });
+  const channel: { channelId: string; resourceId: string | null; channelTokenHash: string | null; lastMessageNumber: number | null; status: string; connectionId: number } =
+    namespace === "planner"
+      ? {
+          channelId: plannerChannel!.channelId,
+          resourceId: plannerChannel!.resourceId,
+          channelTokenHash: plannerChannel!.channelTokenHash,
+          lastMessageNumber: plannerChannel!.lastMessageNumber,
+          status: plannerChannel!.status,
+          connectionId: plannerChannel!.connectionId,
+        }
+      : {
+          channelId: vocabChannel!.channelId,
+          resourceId: vocabChannel!.resourceId,
+          channelTokenHash: vocabChannel!.channelTokenHash,
+          lastMessageNumber: vocabChannel!.lastMessageNumber,
+          status: vocabChannel!.status,
+          connectionId: vocabChannel!.connectionId,
+        };
   if (channel.status !== "active") return NextResponse.json({ ok: true, ignored: "inactive_channel" }, { status: 202 });
 
-  // The token must match the digest stored when the channel was created.
-  // Legacy rows (created before this fix) have no digest and can never pass,
-  // so they are rejected here and recreated by the renewal cron.
   if (!verifyChannelToken(channelToken, channel.channelTokenHash)) {
     console.warn(`[google-drive-webhook] rejected notification: channel ${channelId} failed token verification`);
     return NextResponse.json({ error: "Invalid channel token." }, { status: 403 });
@@ -64,50 +92,78 @@ export async function POST(req: NextRequest) {
   const messageNumber = Number(rawMessageNumber || "0");
   const hasMessageNumber = /^\d+$/.test(rawMessageNumber) && Number.isSafeInteger(messageNumber) && messageNumber > 0;
   if (!hasMessageNumber) return NextResponse.json({ error: "Invalid message number." }, { status: 400 });
-  // Idempotency: Google message numbers start at 1 and only increase — they
-  // are not necessarily sequential, so only reject <= lastMessageNumber.
   if (hasMessageNumber && channel.lastMessageNumber != null && messageNumber <= channel.lastMessageNumber) {
     return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
   }
 
   console.log(
-    `[google-drive-webhook] channelId=${channelId} resourceId=${resourceId} state=${resourceState || "unknown"} changed=${changed || "unknown"} messageNumber=${hasMessageNumber ? messageNumber : "none"} connectionId=${channel.connectionId}`
+    `[google-drive-webhook] channelId=${channelId} namespace=${namespace} resourceId=${resourceId} state=${resourceState || "unknown"} changed=${changed || "unknown"} messageNumber=${hasMessageNumber ? messageNumber : "none"} connectionId=${channel.connectionId}`
   );
 
-  // Lazy renewal: a notification proves the channel is alive, so this is the
-  // cheapest moment to top it up. The daily cron is the safety net, but with a
-  // once-a-day schedule (Vercel Hobby) it cannot be the only renewal path —
-  // otherwise a channel could expire in the gap between two cron runs.
-  // A `sync` notification only confirms the channel is alive: record it, then
-  // stop. Google sends it when a watch starts, before any content change.
   if (resourceState === "sync") {
-    await recordNotificationState(channelId, resourceId, hasMessageNumber ? messageNumber : (channel.lastMessageNumber ?? 1));
-    return NextResponse.json({ ok: true, connectionId: channel.connectionId, resourceState: "sync", acknowledged: true }, { status: 202 });
+    if (namespace === "planner") {
+      await recordPlannerNotificationState(channelId, resourceId, hasMessageNumber ? messageNumber : (channel.lastMessageNumber ?? 1));
+    } else {
+      await recordNotificationState(channelId, resourceId, hasMessageNumber ? messageNumber : (channel.lastMessageNumber ?? 1));
+    }
+    return NextResponse.json({ ok: true, namespace, connectionId: channel.connectionId, resourceState: "sync", acknowledged: true }, { status: 202 });
+  }
+
+  if (namespace === "planner") {
+    const state = await recordPlannerNotificationState(channelId, resourceId, messageNumber, "webhook");
+    if (!state) return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
+    const [plannerConnection] = await db
+      .select()
+      .from(studyPlannerConnections)
+      .where(eq(studyPlannerConnections.id, channel.connectionId))
+      .limit(1);
+    if (!plannerConnection || !plannerConnection.enabled || plannerConnection.status === "disconnected") {
+      return NextResponse.json({ ok: true, ignored: "connection_inactive", namespace }, { status: 202 });
+    }
+    let plannerResult = await runPendingPlannerConnection(plannerConnection.id, "webhook");
+    const plannerDeadline = Date.now() + 15000;
+    while (plannerResult.status === "locked" && Date.now() < plannerDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      plannerResult = await runPendingPlannerConnection(plannerConnection.id, "webhook");
+    }
+    await renewPlannerWatchChannelIfExpiring(plannerConnection.id);
+    console.log(
+      `[google-drive-webhook] namespace=planner connectionId=${plannerConnection.id} resourceState=${resourceState || "unknown"} changed=${changed || "none"} messageNumber=${hasMessageNumber ? messageNumber : "none"} sync=${plannerResult.status}`
+    );
+    if (plannerResult.status === "error") {
+      console.error(`[google-drive-webhook] planner connection ${plannerConnection.id} sync failed: ${plannerResult.error ?? "unknown"}`);
+    }
+    return NextResponse.json({
+      ok: true,
+      namespace: "planner",
+      connectionId: plannerConnection.id,
+      resourceState: resourceState || "unknown",
+      changed: changed || null,
+      sync: plannerResult.status,
+      ...(plannerResult.error ? { error: plannerResult.error } : {}),
+    }, { status: 202 });
   }
 
   const state = await recordNotificationState(channelId, resourceId, messageNumber, "webhook");
   if (!state) return NextResponse.json({ ok: true, ignored: "duplicate_or_out_of_order" }, { status: 202 });
-
   const [connection] = await db.select().from(googleSheetConnections).where(eq(googleSheetConnections.id, channel.connectionId)).limit(1);
   if (!connection || !connection.enabled || connection.status === "disconnected") {
     return NextResponse.json({ ok: true, ignored: "connection_inactive" }, { status: 202 });
   }
-
-
-  // Persist first: if this invocation dies mid-sync (timeout, cold start, revoked
-  // OAuth) the connection is still pending and the daily cron picks it up.
   let result = await runPendingConnection(connection.id, "webhook");
   const lockDeadline = Date.now() + 15000;
   while (result.status === "locked" && Date.now() < lockDeadline) {
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     result = await runPendingConnection(connection.id, "webhook");
   }
   await renewWatchChannelIfExpiring(channel.connectionId);
-  // Safe diagnostics only: ids/status. No token, no OAuth material, no body.
-  console.log(`[google-drive-webhook] connectionId=${connection.id} trigger=webhook resourceState=${resourceState || "unknown"} changed=${changed || "none"} messageNumber=${hasMessageNumber ? messageNumber : "none"} sync=${result.status}`);
+  console.log(
+    `[google-drive-webhook] namespace=vocab connectionId=${connection.id} trigger=webhook resourceState=${resourceState || "unknown"} changed=${changed || "none"} messageNumber=${hasMessageNumber ? messageNumber : "none"} sync=${result.status}`
+  );
   if (result.status === "error") console.error(`[google-drive-webhook] connection ${connection.id} sync failed: ${result.error ?? "unknown"}`);
   return NextResponse.json({
     ok: true,
+    namespace: "vocab",
     connectionId: connection.id,
     resourceState: resourceState || "unknown",
     changed: changed || null,

@@ -43,7 +43,9 @@ export function normalizeAttendanceMark(value: unknown): AttendanceMark | null {
   const lower = text.toLowerCase();
   if (text === "✔" || lower === "true") return "✔";
   if (text === "✘" || lower === "false") return "✘";
-  if (text === "⏳" || lower === "late" || lower === "muộn" || lower === "đi muộn") return "⏳";
+  // Unaccented "muon"/"di muon" are accepted too: Vietnamese input often
+  // drops diacritics, and the mark meaning is unambiguous.
+  if (text === "⏳" || lower === "late" || lower === "muộn" || lower === "đi muộn" || lower === "muon" || lower === "di muon") return "⏳";
   return null;
 }
 
@@ -198,6 +200,13 @@ export function readOptionalCell(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
   const text = normalizeText(value);
   return text === "" ? null : text;
+}
+
+/** Raw __lexora_id cell: trim + NFC + validate as v_<hex> (same rule as vocabulary). */
+export const PLANNER_SOURCE_ID_PATTERN = /^v_[0-9a-z]{6,32}$/;
+export function readPlannerSourceIdCell(value: unknown): string {
+  const cleaned = normalizeText(String(value ?? "").trim()).toLocaleLowerCase("en");
+  return PLANNER_SOURCE_ID_PATTERN.test(cleaned) ? cleaned : "";
 }
 
 /** Today in planner local time, ISO date. */
