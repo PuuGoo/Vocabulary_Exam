@@ -118,6 +118,8 @@ function gridFor(tab: WorkbookTab, valuesByTab: ReadonlyMap<string, SheetsValue 
   });
 }
 
+export const MASTER_TEMPLATE_MESSAGE = "Planner \u0111ang tr\u1ecf v\u00e0o file m\u1eabu d\u00f9ng chung. H\u00e3y t\u1ea1o b\u1ea3n sao ri\u00eang.";
+
 export async function syncPlannerConnection(
   connectionId: number,
   trigger: PlannerSyncTrigger,
@@ -125,6 +127,26 @@ export async function syncPlannerConnection(
 ): Promise<PlannerSyncResult> {
   const [connection] = await db.select().from(studyPlannerConnections).where(eq(studyPlannerConnections.id, connectionId)).limit(1);
   if (!connection || !connection.enabled || connection.status === "disconnected") return { status: "skipped" };
+  // A connection whose file IS the currently-published master template stays
+  // read-only: writing the hidden __lexora_id column would stamp the shared
+  // template every future copy is cut from, so skip loudly instead.
+  try {
+    const [{ getActivePlannerTemplateId }, { PLANNER_TEMPLATE_ID }] = await Promise.all([
+      import("@/lib/studyPlanner/template"),
+      import("@/lib/studyPlanner"),
+    ]);
+    const masterId = await getActivePlannerTemplateId(PLANNER_TEMPLATE_ID);
+    if (masterId && connection.spreadsheetId === masterId) {
+      await db
+        .update(studyPlannerConnections)
+        .set({ status: "disconnected", enabled: false, lastError: MASTER_TEMPLATE_MESSAGE, lastErrorAt: new Date(), updatedAt: new Date() })
+        .where(eq(studyPlannerConnections.id, connectionId));
+      return { status: "skipped" };
+    }
+  } catch {
+    // A registry lookup failure must never block sync: the normal path fails
+    // loudly on its own when the target is actually wrong.
+  }
 
   const plans = SYNC_TABS.map(planFor).filter((plan): plan is TabPlan => plan != null);
   // 1) Durable pending before any long work.
