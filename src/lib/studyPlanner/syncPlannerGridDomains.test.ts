@@ -13,7 +13,7 @@ import {
   TARGET_IELTS_CELL,
 } from "@/lib/studyPlanner/syncPlannerGridDomains";
 import { gridFromPlannerValues } from "@/lib/studyPlanner/columnGrid";
-import { WORKBOOK_RANGES } from "@/lib/studyPlanner/workbookMap";
+import { WORKBOOK_RANGES, plannerWritableColumns } from "@/lib/studyPlanner/workbookMap";
 import { importIeltsPracticeRow } from "@/lib/studyPlanner/importers";
 
 /**
@@ -155,4 +155,32 @@ test("attendance and habit ranges leave their formula neighbours writable-safe",
   assert.equal(habit.metadataColumn, "BP");
   assert.ok(!used.has("AS"), "AS carries formulas in the real workbook and must not store ids");
   assert.ok(!used.has("BP"));
+});
+
+test("a readable formula column is never web-writable (source minus derived)", () => {
+  // "Nhat ky nhieu vu" J (duration), L (deadline mirror) and N (status) hold
+  // live formulas. The importer still reads their evaluated value as user
+  // intent, but a web edit must not overwrite the workbook's formula.
+  const logTab = (Object.keys(WORKBOOK_RANGES) as Array<keyof typeof WORKBOOK_RANGES>).find((k) => k.startsWith("Nh")) as keyof typeof WORKBOOK_RANGES;
+  const log = WORKBOOK_RANGES[logTab];
+  assert.ok(log);
+  const writable = plannerWritableColumns(log);
+  assert.ok(log.sourceColumns.includes("J"), "J stays readable source");
+  assert.ok(log.derivedColumns.includes("J"), "J is a live formula");
+  assert.ok(!writable.has("J"), "J must not be web-writable");
+  assert.ok(!writable.has("L"));
+  assert.ok(!writable.has("N"));
+  assert.ok(writable.has("B") && writable.has("H"), "editable task cells stay writable");
+
+  // IELTS tab: the whole mirrored daily-plan lattice B..G is derived.
+  const plannerTab = (Object.keys(WORKBOOK_RANGES) as Array<keyof typeof WORKBOOK_RANGES>).find((k) => k.endsWith("IELTS")) as keyof typeof WORKBOOK_RANGES;
+  const planner = WORKBOOK_RANGES[plannerTab];
+  assert.ok(planner);
+  const plannerWritable = plannerWritableColumns(planner);
+  for (const letter of ["B", "C", "D", "E", "F", "G", "H"]) {
+    assert.ok(!plannerWritable.has(letter), letter + " is a formula mirror and must never be written");
+  }
+  for (const letter of ["I", "J", "K", "L", "M", "N"]) {
+    assert.ok(plannerWritable.has(letter), letter + " is user-entered IELTS source");
+  }
 });

@@ -59,14 +59,17 @@ export type WorkbookRange = {
 export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
   "Dashboard": null,
   "Kế hoạch ngày & IELTS": {
-    headerA1: "B6",
+    // Only the user-entered IELTS practice table (I..N) is source data.
+    // Columns B..G are LET/FILTER/HSTACK formulas that mirror
+    // "Nhật ký nhiệm vụ": importing or writing them would duplicate
+    // every task and overwrite the workbook's own daily-plan formula.
+    headerA1: "I6",
     dataFrom: 7,
     dataTo: 1000,
-    // Daily task lattice (cols B..F) + IELTS practice block (H..M).
-    // A is completion checkbox (source as well).
-    sourceColumns: ["A", "B", "C", "D", "E", "F", "H", "I", "J", "K", "L", "M"],
+    sourceColumns: ["I", "J", "K", "L", "M", "N"],
     controlColumns: [],
-    derivedColumns: [],
+    // B..G daily-plan lattice + the B2..M4 metric strip are all computed.
+    derivedColumns: ["A", "B", "C", "D", "E", "F", "G", "H"],
     metadataColumn: "AN",
     domain: ["study_planner_tasks"],
   },
@@ -74,10 +77,13 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
     headerA1: "A6",
     dataFrom: 7,
     dataTo: 991,
-    sourceColumns: ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"],
-    // A is the Ma Task label; N (Trang thai) is derived (IF on completion) and must not be treated as source.
+    // Read set: B..N. A, J, L and N hold live formulas (task code, duration,
+    // deadline mirror, status). They are read as evaluated values because
+    // they carry real user intent, but they are listed in derivedColumns so
+    // the web write path can never overwrite the formula itself.
+    sourceColumns: ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N"],
     controlColumns: [],
-    derivedColumns: ["N"],
+    derivedColumns: ["A", "J", "L", "N"],
     metadataColumn: "AP",
     domain: ["study_planner_tasks"],
   },
@@ -171,6 +177,20 @@ export const WORKBOOK_RANGES: Record<WorkbookTab, WorkbookRange | null> = {
   "Hướng dẫn": null,
   "Dữ liệu": null,
 };
+
+/**
+ * Columns a web edit may actually write on this tab.
+ *
+ * A workbook column can be readable source data AND a live formula owned by
+ * the workbook itself (e.g. Nhat ky J/L/N: task duration, deadline mirror,
+ * status). Those are legitimately *read* as evaluated values, but a web
+ * write must never overwrite the formula: the write-safe set is
+ * sourceColumns + controlColumns MINUS derivedColumns. Coordinate, the
+ * write queue and every mutation call this so the rule lives in one place.
+ */
+export function plannerWritableColumns(range: WorkbookRange): Set<string> {
+  return new Set([...range.sourceColumns, ...(range.controlColumns ?? [])].filter((letter) => !range.derivedColumns.includes(letter)));
+}
 
 /** Every source-phase tab drives a table; derived ones do not. */
 export const SOURCE_TABS: WorkbookTab[] = (Object.keys(WORKBOOK_RANGES) as WorkbookTab[]).filter(

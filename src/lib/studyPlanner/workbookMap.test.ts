@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { DERIVED_TABS, SOURCE_TABS, WORKBOOK_RANGES } from "@/lib/studyPlanner/workbookMap";
+import { DERIVED_TABS, SOURCE_TABS, WORKBOOK_RANGES, plannerWritableColumns } from "@/lib/studyPlanner/workbookMap";
 
 // These assertions lock the Phase 1.4 audit so they stay in sync with the docs
 // map; changing the workbook without updating both places would break sync.
@@ -19,8 +19,12 @@ test("the workbook has exactly 16 tabs and every source tab has a data range", (
     if (tab !== "Bảng theo dõi chuyên cần") {
       assert.ok(range.metadataColumn != null, `${tab} needs a metadata column for __lexora_id`);
     }
-    // Derived columns are never writable; the sync writes only source + control.
-    assert.ok(!range.derivedColumns.some((letter) => range.sourceColumns.includes(letter)), `${tab} has a column marked both source and derived`);
+    // A column may legitimately be both readable source AND a live formula
+    // (e.g. Nhat ky J/L/N mirrors its evaluated value as user intent); write
+    // safety comes from plannerWritableColumns (source minus derived), not
+    // from keeping the two sets disjoint.
+    const overlap = range.derivedColumns.filter((letter) => range.sourceColumns.includes(letter));
+    assert.ok(overlap.every((letter) => plannerWritableColumns(range as never).has(letter) === false), `${tab} derived/source overlap must stay unwritable`);
   }
 });
 

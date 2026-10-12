@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { studyPlannerWriteQueue } from "@/db/schema";
 import { fingerprintPlannerRecord, plannerFingerprintKeys } from "@/lib/studyPlanner/fingerprint";
-import { WORKBOOK_RANGES, type WorkbookTab } from "@/lib/studyPlanner/workbookMap";
+import { WORKBOOK_RANGES, plannerWritableColumns, type WorkbookTab } from "@/lib/studyPlanner/workbookMap";
 
 /**
  * Phase 4.3 coordinate — coalesce web writes and tag them for echo matching.
@@ -58,7 +58,7 @@ export async function coordinateWebWrites(inputs: WebWriteInput[]): Promise<numb
   for (const input of inputs) {
     const range = WORKBOOK_RANGES[input.tab];
     if (!range) throw new Error(`Tab ${input.tab} is not writable`);
-    const writable = new Set([...range.sourceColumns, ...(range.controlColumns ?? [])]);
+    const writable = plannerWritableColumns(range);
     for (const letter of Object.keys(input.valuesByColumn)) {
       if (!writable.has(letter)) throw new Error(`Column ${letter} on ${input.tab} is derived`);
     }

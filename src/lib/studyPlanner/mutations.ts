@@ -34,7 +34,7 @@ import {
   PLANNER_DATE_PATTERN,
 } from "@/lib/studyPlanner/values";
 import { habitDayColumn } from "@/lib/studyPlanner/values";
-import { WORKBOOK_RANGES, type WorkbookTab } from "@/lib/studyPlanner/workbookMap";
+import { WORKBOOK_RANGES, plannerWritableColumns, type WorkbookTab } from "@/lib/studyPlanner/workbookMap";
 import { loadPlannerConnectionForUser } from "@/lib/studyPlanner/queries";
 import { plannerDashboard } from "@/lib/studyPlanner/queries";
 import { todayLocal } from "@/lib/studyPlanner/values";
@@ -62,7 +62,7 @@ export async function plannerConnectionForSession(userId: number) {
 function requireWritableTab(tab: WorkbookTab, letters: string[]): void {
   const range = WORKBOOK_RANGES[tab];
   if (!range) throw new Error(`Tab ${tab} is derived and cannot be edited from the web`);
-  const writable = new Set([...range.sourceColumns, ...(range.controlColumns ?? [])]);
+  const writable = plannerWritableColumns(range);
   for (const letter of letters) {
     if (!writable.has(letter)) throw new Error(`Column ${letter} on tab ${tab} is derived`);
   }
@@ -179,7 +179,17 @@ export async function patchPlannerTask(userId: number, patch: z.infer<typeof pla
     ieltsSkill: (existing as { ieltsSkill: string | null }).ieltsSkill,
   };
   const [updated] = await db.update(studyPlannerTasks).set({ ...next, updatedAt: new Date() }).where(eq(studyPlannerTasks.id, existing.id)).returning();
-  await enqueueWebEdit(connection.id, "Nhật ký nhiệm vụ", updated.sheetRow, { H: updated.taskTitle, B: updated.taskDate, C: updated.completed }, { task_title: updated.taskTitle, task_date: updated.taskDate, completed: updated.completed } as Record<string, unknown>, "task");
+  // H is writable; J/L/N are derived mirrors (duration/status/deadline) on
+  // this tab and may not be overwritten from the web. Completed + the
+  // source columns are safe because they are editable in the workbook.
+  await enqueueWebEdit(
+    connection.id,
+    "Nhật ký nhiệm vụ",
+    updated.sheetRow,
+    { H: updated.taskTitle, B: updated.taskDate, C: updated.completed },
+    { task_title: updated.taskTitle, task_date: updated.taskDate, completed: updated.completed } as Record<string, unknown>,
+    "task",
+  );
   return updated;
 }
 
