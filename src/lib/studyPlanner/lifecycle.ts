@@ -109,6 +109,8 @@ export async function snapshotPlanner(connectionId: number, kind: string): Promi
 
 type ReplacePlannerOptions = {
   confirmedSpreadsheetId: string;
+  destinationSpreadsheetId?: string;
+  templateId?: string;
   trashPrevious?: boolean;
   api?: GoogleWorkspaceApi;
 };
@@ -131,7 +133,7 @@ type ReplacePlannerOptions = {
 export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options: ReplacePlannerOptions): Promise<{ connectionId: number; spreadsheetId: string; cleanupPending: boolean }> {
   const [connection] = await db.select().from(studyPlannerConnections).where(eq(studyPlannerConnections.userId, actor.userId)).limit(1);
   if (!connection) throw new GoogleSheetsError("Chưa có Study Planner để thay thế.", "INVALID_SCHEMA", { status: 404 });
-  if (connection.spreadsheetId !== options.confirmedSpreadsheetId) {
+  if (connection.spreadsheetId !== options.confirmedSpreadsheetId && options.destinationSpreadsheetId == null) {
     throw new GoogleSheetsError("Kết nối đã thay đổi. Hãy mở lại xác nhận.", "INVALID_SCHEMA", { status: 409 });
   }
   if (options.trashPrevious && !isPlannerManagedByLexora(connection)) {
@@ -139,6 +141,10 @@ export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options:
   }
   const previousSpreadsheetId = connection.spreadsheetId;
   const previousChannels = await db.select().from(studyPlannerSyncChannels).where(eq(studyPlannerSyncChannels.connectionId, connection.id));
+  const destinationId = options.destinationSpreadsheetId ?? options.confirmedSpreadsheetId;
+  if (!/^[a-zA-Z0-9-_]{20,}$/.test(destinationId)) {
+    throw new GoogleSheetsError("Spreadsheet id không hợp lệ.", "INVALID_SCHEMA", { status: 400 });
+  }
 
   await acquirePlannerSyncLock(connection.id, "replace_planner");
   let activated = false;
@@ -148,17 +154,17 @@ export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options:
     const token = await loadGoogleToken(actor.userId);
     if (!token?.refreshToken) throw new GoogleSheetsError("Bạn cần kết nối tài khoản Google trước.", "OAUTH_REVOKED", { status: 401 });
     const api: GoogleWorkspaceApi = options.api ?? createGoogleWorkspaceApi(token as Parameters<typeof createGoogleWorkspaceApi>[0]);
-    // 2. Verify access and tab structure: re-read metadata for the confirmed id (same file).
-    const metadata = await api.getSpreadsheetMetadata(options.confirmedSpreadsheetId);
+    // 2. Verify access and tab structure: re-read metadata for the destination file.
+    const metadata = await api.getSpreadsheetMetadata(destinationId);
     const sheetTitles = new Set(metadata.sheets.map((sheet) => sheet.title));
     const missingTabs = ["Nhật ký nhiệm vụ", "Thông tin lớp học"].filter((tab) => !sheetTitles.has(tab));
     if (missingTabs.length) {
       throw new GoogleSheetsError(`Sheet mới thiếu tab: ${missingTabs.join(", ")} — vui lòng dùng bản copy từ mẫu Lexora.`, "INVALID_SCHEMA", { status: 400 });
     }
-    // 4. Create watch for the (same-file) candidate so renewal uses the new channel.
+    // 4. Create watch for the candidate so renewal uses the new channel.
     // For a within-file replace (sheet structure fix), we just refresh the channel without copying.
-    const resourceId = previousChannels[0]?.resourceId ?? options.confirmedSpreadsheetId;
-    const watch = await api.createWatchChannel({ spreadsheetId: options.confirmedSpreadsheetId, resourceId });
+    const resourceId = previousChannels[0]?.resourceId ?? destinationId;
+    const watch = await api.createWatchChannel({ spreadsheetId: destinationId, resourceId });
     candidateWatchId = watch.channelId;
     candidateResourceId = watch.resourceId;
     await snapshotPlanner(connection.id, "replace_study_planner_before");
@@ -175,7 +181,8 @@ export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options:
         status: "active",
       });
       await tx.update(studyPlannerConnections).set({
-        spreadsheetId: options.confirmedSpreadsheetId,
+        spreadsheetId: destinationId,
+        ...(options.templateId ? { templateId: options.templateId } : {}),
         managedByLexora: true,
         status: "connected",
         externalState: "accessible",
@@ -186,7 +193,7 @@ export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options:
         lastErrorAt: null,
         updatedAt: now,
       }).where(eq(studyPlannerConnections.id, connection.id));
-      await writeAdminAudit({ actorUserId: actor.userId, action: "study_planner.replace", resourceType: "study_planner_connection", resourceId: connection.id, metadata: { previousSpreadsheetId, spreadsheetId: options.confirmedSpreadsheetId } }, tx);
+      await writeAdminAudit({ actorUserId: actor.userId, action: "study_planner.replace", resourceType: "study_planner_connection", resourceId: connection.id, metadata: { previousSpreadsheetId, spreadsheetId: destinationId } }, tx);
     });
     activated = true;
     // 6. Stop the old watch(es) that are no longer current. Best-effort: Google may have already expired them.
@@ -198,13 +205,13 @@ export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options:
         else cleanupPending = true;
       } catch { cleanupPending = true; }
     }
-    if (options.trashPrevious && previousSpreadsheetId !== options.confirmedSpreadsheetId) {
+    if (options.trashPrevious && previousSpreadsheetId !== destinationId) {
       try {
         if (!api.trashSpreadsheet) throw new Error("Trash unavailable");
         await api.trashSpreadsheet(previousSpreadsheetId);
       } catch { cleanupPending = true; }
     }
-    return { connectionId: connection.id, spreadsheetId: options.confirmedSpreadsheetId, cleanupPending };
+    return { connectionId: connection.id, spreadsheetId: destinationId, cleanupPending };
   } catch (error) {
     // If we created a watch before failing to activate, stop it so Google does not keep it.
     if (!activated && candidateWatchId && candidateResourceId) {

@@ -34,7 +34,7 @@ test("disconnect keeps the file and the vocabulary: no planner delete or trash w
 
 test("trash runs only when Lexora manages the file and the caller confirms", () => {
   assert.match(lifecycle, /trashPrevious\s*&&\s*!isPlannerManagedByLexora/, "trash must be refused for unmanaged files");
-  assert.match(lifecycle, /trashPrevious\s*&&\s*previousSpreadsheetId\s*!==\s*options\.confirmedSpreadsheetId/, "a same-file replacement must never trash itself");
+  assert.match(lifecycle, /trashPrevious\s*&&\s*previousSpreadsheetId\s*!==\s*destinationId/, "a same-file replacement must never trash itself");
 });
 
 test("replacement is staged: candidate check, snapshot, verify, then activate", () => {

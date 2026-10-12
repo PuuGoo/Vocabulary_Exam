@@ -20,4 +20,10 @@ try {
     await transaction.unsafe(plannerSync);
   });
   console.log("Applied 0043_study_planner_sync.sql");
+  const plannerTemplate = await readFile(new URL("../drizzle/0044_study_planner_template_registry.sql", import.meta.url), "utf8");
+  await client.begin(async transaction => {
+    await transaction.unsafe("SET LOCAL lock_timeout = '10s'");
+    await transaction.unsafe(plannerTemplate);
+  });
+  console.log("Applied 0044_study_planner_template_registry.sql");
 } finally { await client.end(); }

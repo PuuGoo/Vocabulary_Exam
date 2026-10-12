@@ -39,6 +39,27 @@ export default function PlannerConnectionPanel() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function switchTemplate() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/study-planner/template-switch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "\u0110\u1ed5i template th\u1ea5t b\u1ea1i.");
+      setNotice("\u0110\u00e3 \u0111\u1ed5i sang template m\u1edbi. B\u1ea3n sao c\u0169 v\u00e0 d\u1eef li\u1ec7u web v\u1eabn \u0111\u01b0\u1ee3c gi\u1eef nguy\u00ean.");
+      await load();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "\u0110\u1ed5i template th\u1ea5t b\u1ea1i.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function act(action: "disconnect" | "replace") {
     setBusy(true);
     setError("");
@@ -96,6 +117,11 @@ export default function PlannerConnectionPanel() {
         >
           Mở Google Sheet
         </a>
+        {!needsReconnect && !missing ? (
+          <button type="button" disabled={busy} onClick={() => void switchTemplate()} className="rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+            {busy ? "\u0110ang x\u1eeb l\u1ea1i b\u1ea3n sao..." : "\u0110\u1ed5i sang template m\u1edbi"}
+          </button>
+        ) : null}
         {needsReconnect ? (
           <a href="/api/study-planner/oauth" className="rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-white">Kết nối lại Google</a>
         ) : (

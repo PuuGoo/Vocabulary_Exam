@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { studyPlanners } from "@/db/schema";
 import { getGoogleOAuthConfig, loadGoogleToken } from "./googleSheets/auth";
 import { GoogleSheetsError } from "./googleSheets/errors";
+import { getActivePlannerTemplateId } from "./studyPlanner/template";
 
 export const PLANNER_TEMPLATE_ID = "1uA6I3fGgr9Sh4pKxmw5I6UVX6Ib4PKa2WCSCFgH-MTY";
 export const PLANNER_TAB_ID = 2127813405;
@@ -32,7 +33,8 @@ async function googlePlannerApi(userId: number): Promise<PlannerCopyApi> {
       return result.data.files?.[0]?.id ?? null;
     },
     copy: async (key, name) => {
-      const result = await drive.files.copy({ fileId: PLANNER_TEMPLATE_ID, fields: "id", requestBody: { name: `Study Planner - ${name}`, appProperties: { lexoraPlanner: key } } }, { retry: false });
+      const templateId = await getActivePlannerTemplateId(PLANNER_TEMPLATE_ID);
+      const result = await drive.files.copy({ fileId: templateId, fields: "id", requestBody: { name: `Study Planner - ${name}`, appProperties: { lexoraPlanner: key } } }, { retry: false });
       if (!result.data.id) throw new Error("Google did not return a copied file");
       return result.data.id;
     },
