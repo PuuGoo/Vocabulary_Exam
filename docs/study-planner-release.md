@@ -1,8 +1,8 @@
 # Study Planner — Release Report (Phase 13)
 
-> Date: 2026-10-13 | Branch: `main` @ `76ef532` (map/grid fix, then docs at `7e0e57b`) | Workbook: `Study Planner - Quản trị viên.xlsx` (226 KB, 16 tabs, `1B6HNR-7PKMLORxWsogmxJow_UUyhbiw4WBaP_Bdl4qg#992210349`)
+> Date: 2026-10-13 | Branch: `main` @ `2d5e6d2` | Workbook: `Study Planner - Quản trị viên.xlsx` (16 tabs, `1B6HNR-7PKMLORxWsogmxJow_UUyhbiw4WBaP_Bdl4qg#992210349`)
 > The 20 owner-requested end-to-end acceptance tests (Phase 12, steps 1–20) require a real, disposable Google account and the live Sheet; they were not executed in this run. Passing isolated suites below is not a substitute.
-> Follow-up 76ef532 re-verified every source tab against the actual xlsx (cell-by-cell with `xlsx` cellFormula reads). The Phase 1.4 map offsets changed on almost every tab — see §3 — and the four grid domains that had never run are now wired into the orchestrator with their control cells and column lattices. The reproduction-method coverage note below is honest about what blocks the remaining manual steps.
+> Earlier follow-ups re-verified every source tab against the actual xlsx (cell-by-cell with `xlsx` cellFormula reads), added the template registry + user switch (39eb9fa), the every-branch connection upsert (e91d993), and the url-swap/grid-expansion/idempotent-switch fix (2d5e6d2). Production DB inspection (Neon, read-only SELECTs) then confirmed the template flow is real: connection 2 (user 8) flipped from the legacy file to `1mM61Htw…`, webhook runs read 629 rows and created 104, and the panel no longer 404s. The Phase 1.4 map offsets changed on almost every tab — see §3 — and the four grid domains that had never run are now wired into the orchestrator with their control cells and column lattices. The reproduction-method coverage note below is honest about what blocks the remaining manual steps.
 
 ### Reproduction Method Coverage
 
@@ -32,6 +32,7 @@
 |-----------|-----------|-------|
 | `drizzle/0041_study_planners.sql` | `npm run db:migrate:study-planner` (runs 0041 then 0043) | personal planner links, `study_planners` |
 | `drizzle/0043_study_planner_sync.sql` | same command | 11 normalized planner tables + backfill of `study_planner_connections` from legacy `study_planners` — additive, no `DROP`/`TRUNCATE`, keeps vocabulary sync untouched |
+| `drizzle/0044_study_planner_template_registry.sql` | same command | seeds `app_settings.study_planner.template_id` (admin-managed master template) + `ADD COLUMN IF NOT EXISTS` guards for `template_id`/`template_version`. Idempotent; **applied to production Neon on 2026-10-12**, together with a one-off backfill of 1 orphan connection (user 8) whose legacy planner row existed without a connection row |
 
 `scripts/apply-study-planner-migration.mjs` is wired to `db:migrate:study-planner`. Secrets expected in `.env` / Vercel: `DATABASE_URL`, `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`, `GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY`, `GOOGLE_SHEET_CHANNEL_SECRET`, `CRON_SECRET`, `BLOB_READ_WRITE_TOKEN` where used. Nothing from here is logged or shipped to the browser.
 
@@ -85,27 +86,43 @@ Shared shell: left/grouped nav (Tổng quan / Kế hoạch / Lịch / Trường 
 
 | Suite | Run | Result |
 |-------|-----|--------|
-| `npm run test:study-planner` (11 files) | `node --import tsx --test …` | 64 pass, 0 fail |
+| `npm run test:study-planner` (12 files) | `node --import tsx --test …` | **75 pass, 0 fail** (+11: template registry, switch staging, grid-expansion-before-id-write, url-swap, idempotent switch, every-branch connection upsert) |
 | `npm run test:study-planner-db` | embedded Postgres, 314 statements | 4 pass, 0 fail (initial idempotency, soft delete, habit (habitId,date), value normalization) |
 | `npx tsc --noEmit` | type check | 0 errors |
+| `npm run build` (post-fix) | production build | compiled, 121 pages, `/api/study-planner/template-switch` + `/api/admin/study-planner/template` present in the route manifest |
 | `npm run build` | production build | 119 pages, compiled |
 
 The 37 vocabulary isolated suites remain green (`npm run test:google-sheets`). The full `npm test` (472 tests, 37 DB-skipped) was last green at the previous release checkpoint.
 
 ## 6. Production tests actually performed
 
-* Build/typecheck and all isolated suites above — real. Production **database** was not migrated in this run (verified against the isolated embedded Postgres), and no live Google Sheet or browser sync was driven: those require owner credentials and a disposable test planner, per the spec. Treat the DB migration and the 20 owner E2E steps below as pending verification. The new `syncPlannerDbEndToEnd.test.ts` asserts every range against the real xlsx (cell-by-cell, formula-aware, too-small stub guard) — a pure-offline stand-in for the missing live Workbook check.
+Live production (Neon + real Drive, account `lexora.admin.2027@gmail.com`) was driven this run — these are observations, not simulations:
 
+* Migration `0044` applied to production Neon, plus a one-off backfill that created the missing `study_planner_connections` row for user 8 (a planner created after `0043` had a legacy row only, so `/recover` answered `connected:false` and the panel rendered nothing).
+* Template switch executed against the real Drive API: `Drive.files.copy` produced a personal copy from the admin template, the staged `replaceStudyPlanner` swapped the connection, `snapshotPlanner(switch_template_before)` + `replace_study_planner_before` rows exist in `study_planner_snapshots`, and the old watch channels were stopped (rows in `study_planner_sync_channels` show `status='stopped'` with only one `active`).
+* Grid-limit defect reproduced and fixed live: the fresh copy's `Nhừt ký nhiệm vụ` tab has 29 columns while the `__lexora_id` column is AP (42), so every metadata write failed with `exceeds grid limits`. Verified by direct Sheets metadata read, then the tab set was widened; the following webhook sync runs returned `partial, rows_read=629, rows_created=104` instead of failing at 0.
+* Connection state after the fix (read from production): user 8 → `status=connected`, `enabled=true`, `external_state=accessible`, `template_id=1B6HNR-7…`, `last_error` NULL; the dashboard no longer shows the sync error.
+* Webhook-driven, browser-free sync is confirmed: the six most recent `study_planner_sync_runs` for connection 2 all have `trigger_type='webhook'` — i.e. the update path is the Drive notification → pending → sync, not a manual POST loop.
+
+Still not verified (and therefore not claimed):
+
+* Steps 1–12 of Phase 12, which each require a human editing a specific cell in the live Sheet and then observing the matching web page refresh **without a reload**. The plumbing (webhook → revision → `StudyPlannerRevisionPoller`) is implemented and the revision counters move, but no step was watched end-to-end in a browser.
+* Step 13–15 (sort/move identity, paste-many, bulk-deletion safety) on a live sheet.
+* Step 16–17 (web edit → only the intended Sheet ranges → no infinite webhook loop) on a live sheet.
+* Step 18 (simulate a deleted Sheet / revoked OAuth on production data) and step 19 (reconcile a deliberately missed notification) — the code paths exist and are unit-tested offline, but were not induced on production.
+* Step 20, the vocabulary Google Sheets regression, was not re-driven against a live vocabulary connection in this run (the isolated vocabulary suites stayed green).
 ## 7. Production tests still requiring owner acceptance (Phase 12 steps 1–20)
 
 Steps 1–20 of Phase 12 — including sheet→web / web→sheet, duplicate-free repeat syncs, sorting/movement, bulk safety, missing-sheet/revoked-OAuth preservation, reconciliation of a missed notification, and the vocabulary-is-still-green check — must be executed against a disposable real account. None of them are claimed passed here. In particular steps 1–12 each need one real Google Sheets edit observer to confirm that the web view refreshes (via `StudyPlannerRevisionPoller`) without a manual reload or «Sync Now» loop.
 
 ## 8. Known limitations and operational risks
 
-* The master template remains the legacy id in `src/lib/studyPlanner.ts` until the owner confirms the new master metadata; future copies are still stamped with that legacy id.
+* The master template is no longer a constant: `app_settings.study_planner.template_id` (admin-editable at `/admin`) decides what new copies are cut from, with `PLANNER_TEMPLATE_ID` as fallback. User 1 (`admin`) still points their *personal* connection at the template spreadsheet itself (`1B6HNR-7…`) instead of a personal copy — a deliberate read-only link from before the lifecycle, but its sync fails with the same grid-limit error until its tab set is widened or it is replaced by a personal copy (see §6 for the user-8 fix). New accounts are no longer affected because `ensureStudyPlanner` upserts the connection row in both branches (`e91d993`).
 * The offline audit limits from `study-planner-workbook-map.md` (§4) still apply in the sense that DataValidation/conditional formatting and hidden-row layout need a live metadata read to fully confirm, but every column-letter / headerA1 / control-cell address has been verified cell-by-cell against the actual export.
 * The Vercel Hobby cron remains once-daily (`17 * * * *`, 8-min timeout): immediate sync relies on Drive notifications; the cron is the safety net, and the new grid domains (settings/habits/attendance/timetable) only run inside the webhook → pending → reconcile path, not via a polling loop.
 
 ## 9. Go / No-go recommendation
 
-* **No-go for unverified production assumptions** — the cell-address wiring is now verified offline against the real workbook (including the Nhat ky formula columns and the habit/attendance formula fringe), but deploy to staging, run `db:migrate:study-planner` there, and let the owner drive the 20 live-Sheet/browser acceptance steps before marking production complete. The isolated test/build gate is green, but Google delivery and an already-open production browser have not been observed, consistent with the standing handoff rule («a push is not acceptance»).
+* **No-go for the 20 standing Phase-12 E2E steps** (see §7): cell-address wiring is verified offline against the real workbook *and* the template-switch/snapshot/watch/channel/pending/webhook path is verified live once (user 8, §6). What is still missing is the human-in-the-loop confirmation for each domain (edit a cell → watch the matching page update without reload).
+* **Go for the template-registry + switch + grid-expansion changes as deployed** (`2d5e6d2`): typecheck, 75 isolated planner tests, 4 embedded-Postgres DB tests, and the production build are green; the production connection they target is `connected` with `last_error` NULL; the failure that would reappear (grid limits on a never-synced copy) is guarded by `ensureMetadataColumnWidth` with an idempotent retry.
+* Before any future claim of full acceptance: run `db:migrate:study-planner` on staging, have the owner execute steps 1–20 against a disposable account, and reconcile the missed-notification + revoked-OAuth + vocabulary-regression paths on staging first.
