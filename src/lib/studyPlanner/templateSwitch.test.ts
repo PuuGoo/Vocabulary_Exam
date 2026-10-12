@@ -54,6 +54,17 @@ test("0044 registry migration is additive and idempotent", () => {
   assert.doesNotMatch(migration, /DROP|TRUNCATE/);
 });
 
+test("ensureStudyPlanner always leaves a connection row behind (legacy rows included)", () => {
+  // A planner created before study_planner_connections existed has a legacy
+  // row but no connection, so every panel/health/switch endpoint answered
+  // 404 for it. ensureStudyPlanner must create the connection in both branches
+  // without ever copying a second file or touching vocabulary.
+  assert.match(server, /\.onConflictDoNothing\(\{ target: studyPlannerConnections\.userId \}\)/);
+  assert.match(server, /\.onConflictDoUpdate\(\{/);
+  assert.doesNotMatch(server, /delete\(studyPlanner/);
+  assert.doesNotMatch(server, /\bwords\b(?!_)/);
+});
+
 test("refresh without overwrite: old planner stays active until staged swap succeeds", () => {
   assert.match(replaceBody, /snapshotPlanner/);
   assert.match(replaceBody, /activated = true/);

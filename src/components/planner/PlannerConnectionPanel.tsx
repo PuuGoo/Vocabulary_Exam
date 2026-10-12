@@ -11,6 +11,13 @@ type Payload = {
   health?: Health | null;
 };
 
+const LEGACY_TITLE = "K\u1ebft n\u1ed1i Study Planner";
+const LEGACY_BADGE = "Ch\u1edd \u0111\u1ed3ng b\u1ed9";
+const LEGACY_DESC = "Planner c\u1ee7a b\u1ea1n \u0111ang \u1edf ch\u1ebf \u0111\u1ed9 c\u0169. B\u1ea5m b\u00ean d\u01b0\u1edbi \u0111\u1ec3 n\u00e2ng c\u1ea5p v\u00e0 chuy\u1ec3n sang template m\u1edbi. D\u1eef li\u1ec7u web \u0111\u01b0\u1ee3c gi\u1eef nguy\u00ean, file c\u0169 v\u1eabn c\u00f2n trong Drive.";
+const WORKING = "\u0110ang x\u1eed l\u00fd\u2026";
+const SWITCH_TEMPLATE = "\u0110\u1ed5i sang template m\u1edbi";
+const OPEN_SHEET = "M\u1edf Google Sheet";
+
 /**
  * Phase 11 — Planner connection panel.
  *
@@ -24,12 +31,23 @@ export default function PlannerConnectionPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [legacyUrl, setLegacyUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const response = await fetch("/api/study-planner/recover", { cache: "no-store" });
       if (!response.ok) throw new Error("Không tải được trạng thái kết nối.");
       setData(await response.json());
+      // A planner created before the connection table existed only has a
+      // legacy row, so /recover answers connected:false. GET /api/study-planner
+      // still knows its sheet, which lets us offer the switch instead of hiding.
+      try {
+        const index = await fetch("/api/study-planner", { cache: "no-store" });
+        if (index.ok) {
+          const indexData = await index.json();
+          if (indexData?.planner?.url) setLegacyUrl(indexData.planner.url);
+        }
+      } catch {}
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Không tải được trạng thái kết nối.");
     } finally {
@@ -92,7 +110,38 @@ export default function PlannerConnectionPanel() {
   if (loading) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">Đang kiểm tra kết nối Study Planner…</div>;
   }
-  if (!data?.connected) return null;
+  if (!data?.connected) {
+    if (!legacyUrl) return null;
+    return (
+      <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">{LEGACY_TITLE}</h2>
+          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{LEGACY_BADGE}</span>
+        </div>
+        <p role="status" className="text-sm text-slate-600">{LEGACY_DESC}</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void switchTemplate()}
+            className="rounded-xl bg-gold px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? WORKING : SWITCH_TEMPLATE}
+          </button>
+          <a
+            href={legacyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-xl bg-slate-100 px-3 py-2 text-sm hover:bg-slate-200"
+          >
+            {OPEN_SHEET}
+          </a>
+        </div>
+        {notice ? <p className="text-sm text-emerald-700">{notice}</p> : null}
+        {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
+      </section>
+    );
+  }
 
   const health = data.health;
   const needsReconnect = Boolean(health?.oauthRevoked || health?.accessDenied);
@@ -101,7 +150,7 @@ export default function PlannerConnectionPanel() {
   return (
     <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Kết nối Study Planner</h2>
+          <h2 className="text-sm font-semibold">K?t n?i Study Planner</h2>
         <span className={`rounded-full px-2 py-1 text-xs ${data.connection?.status === "connected" && !needsReconnect && !missing ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-800"}`}>
           {needsReconnect ? "Cần kết nối lại" : missing ? "Không tìm thấy Sheet" : data.connection?.status}
         </span>

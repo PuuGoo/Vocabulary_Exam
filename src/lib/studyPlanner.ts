@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { google } from "googleapis";
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { studyPlanners } from "@/db/schema";
+import { studyPlanners, studyPlannerConnections } from "@/db/schema";
 import { getGoogleOAuthConfig, loadGoogleToken } from "./googleSheets/auth";
 import { GoogleSheetsError } from "./googleSheets/errors";
 import { getActivePlannerTemplateId } from "./studyPlanner/template";
@@ -45,13 +45,50 @@ export async function ensureStudyPlanner(user: { userId: number; displayName: st
   return db.transaction(async tx => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(73421, ${user.userId})`);
     const [existing] = await tx.select().from(studyPlanners).where(eq(studyPlanners.userId, user.userId));
-    if (existing) return { url: plannerUrl(existing.spreadsheetId) };
+    if (existing) {
+      // Backfill guard for planners created before the connection table was
+      // introduced: the legacy row is the planner, but the connection row is
+      // what every panel/health/switch endpoint reads. Creating it here makes
+      // ensureStudyPlanner idempotent for both shapes without ever copying a
+      // second file.
+      await tx
+        .insert(studyPlannerConnections)
+        .values({
+          userId: user.userId,
+          spreadsheetId: existing.spreadsheetId,
+          spreadsheetUrl: plannerUrl(existing.spreadsheetId),
+          spreadsheetName: "Study Planner",
+          managedByLexora: true,
+        })
+        .onConflictDoNothing({ target: studyPlannerConnections.userId });
+      return { url: plannerUrl(existing.spreadsheetId) };
+    }
     const api = override ?? await googlePlannerApi(user.userId);
     const secret = process.env.GOOGLE_SHEET_TOKEN_ENCRYPTION_KEY;
     if (!secret) throw new Error("Planner identity secret not configured");
     const key = createHmac("sha256", secret).update(`study-planner:${user.userId}`).digest("hex");
     const spreadsheetId = await api.find(key) ?? await api.copy(key, user.displayName);
     await tx.insert(studyPlanners).values({ userId: user.userId, spreadsheetId });
+    // The connection row is the row every planner feature reads (health,
+    // watch channel, sync). Legacy migration 0043 only backfilled the rows
+    // that existed at the time, so a planner created afterwards would have a
+    // legacy row but no connection: the panel would report "not connected" and
+    // the template switch would 404. Upserting here keeps both tables in step
+    // for every planner created from now on.
+    await tx
+      .insert(studyPlannerConnections)
+      .values({
+        userId: user.userId,
+        spreadsheetId,
+        spreadsheetUrl: plannerUrl(spreadsheetId),
+        spreadsheetName: "Study Planner",
+        templateId: await getActivePlannerTemplateId(PLANNER_TEMPLATE_ID),
+        managedByLexora: true,
+      })
+      .onConflictDoUpdate({
+        target: studyPlannerConnections.userId,
+        set: { spreadsheetId, spreadsheetUrl: plannerUrl(spreadsheetId), updatedAt: new Date() },
+      });
     return { url: plannerUrl(spreadsheetId) };
   });
 }

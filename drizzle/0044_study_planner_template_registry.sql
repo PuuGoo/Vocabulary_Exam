@@ -1,4 +1,4 @@
-﻿/* 0044 Study Planner template registry (Phase 12) */
+/* 0044 Study Planner template registry (Phase 12) */
 --
 -- Additive and idempotent. Nothing is dropped or truncated and no vocabulary
 -- table is referenced: this only seeds the admin-managed template id and makes
