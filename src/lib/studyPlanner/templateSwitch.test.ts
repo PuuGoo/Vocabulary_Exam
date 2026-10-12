@@ -65,6 +65,30 @@ test("ensureStudyPlanner always leaves a connection row behind (legacy rows incl
   assert.doesNotMatch(server, /\bwords\b(?!_)/);
 });
 
+test("the __lexora_id column is created before it is written (grid limits)", () => {
+  // A template that was never synced has no id column: writing AN/AP/AR/AQ
+  // fails with "exceeds grid limits". The tab must be expanded first, and
+  // Google only accepts startIndex one below the grid size.
+  const engine = fs.readFileSync("src/lib/studyPlanner/syncPlannerEngine.ts", "utf8");
+  assert.match(engine, /ensureMetadataColumnWidth/);
+  assert.match(engine, /insertDimension/);
+  assert.match(engine, /inheritFromBefore: true/);
+  assert.match(engine, /startIndex: Math\.max\(0, current - 1\)/);
+  assert.ok(
+    engine.indexOf("await ensureMetadataColumnWidth(api") < engine.indexOf("const ranges = metadataWriteRanges(entry.tab"),
+    "the grid must be expanded before the metadata write",
+  );
+});
+
+test("switching twice returns the same file instead of copying again", () => {
+  // Already covered by the idempotent guard on templateId + destinationId.
+  assert.match(userRoute, /alreadyOnTemplate: true/);
+  assert.match(userRoute, /connection\.templateId === templateId/);
+});
+
+test("the connection URL travels with the id so the panel never reopens the old file", () => {
+  assert.match(lifecycle, /spreadsheetUrl: `https:\/\/docs\.google\.com\/spreadsheets\/d\/\$\{destinationId\}\/edit`/);
+});
 test("refresh without overwrite: old planner stays active until staged swap succeeds", () => {
   assert.match(replaceBody, /snapshotPlanner/);
   assert.match(replaceBody, /activated = true/);

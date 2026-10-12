@@ -54,6 +54,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Link hoặc id Google Sheet không hợp lệ." }, { status: 400 });
   }
   const templateId = extractPlannerTemplateId(requested ?? "") ?? (await getActivePlannerTemplateId(PLANNER_TEMPLATE_ID));
+  // Idempotent switch: pressing the button again after a successful switch
+  // returns the current file instead of copying another one from Drive.
+  // templateId is the provenance recorded by the last successful switch.
+  if (connection.templateId && connection.templateId === templateId) {
+    return NextResponse.json({ connectionId: connection.id, spreadsheetId: connection.spreadsheetId, cleanupPending: false, alreadyOnTemplate: true });
+  }
+  if (typeof body.destinationSpreadsheetId === "string") {
+    const bare = extractPlannerTemplateId(body.destinationSpreadsheetId);
+    if (bare && bare === connection.spreadsheetId) {
+      return NextResponse.json({ connectionId: connection.id, spreadsheetId: connection.spreadsheetId, cleanupPending: false, alreadyOnTemplate: true });
+    }
+  }
   const directSwitch = typeof body.destinationSpreadsheetId === "string" ? body.destinationSpreadsheetId : "";
   if (directSwitch.trim()) {
     // Back-compat: the caller already copied a file and only needs the swap.

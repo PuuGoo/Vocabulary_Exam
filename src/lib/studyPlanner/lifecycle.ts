@@ -182,6 +182,9 @@ export async function replaceStudyPlanner(actor: PlannerLifecycleActor, options:
       });
       await tx.update(studyPlannerConnections).set({
         spreadsheetId: destinationId,
+        // The URL must move with the id: the panel and dashboard link to
+        // spreadsheetUrl, so leaving it stale reopened the previous file.
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${destinationId}/edit`,
         ...(options.templateId ? { templateId: options.templateId } : {}),
         managedByLexora: true,
         status: "connected",

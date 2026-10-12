@@ -12,7 +12,7 @@ import {
 } from "@/db/schema";
 import { generateSourceId } from "@/lib/googleSheets/identity";
 import { columnLetter } from "@/lib/googleSheets/spreadsheet";
-import { metadataWriteRanges } from "@/lib/studyPlanner/columnGrid";
+import { metadataWriteRanges, columnIndexFromLetter } from "@/lib/studyPlanner/columnGrid";
 import {
   importActivityRow,
   importAssignmentRow,
@@ -135,12 +135,49 @@ export function buildPlannerTabRanges(tabs: ReadonlyArray<{ tab: string; lastCol
   });
 }
 
+/**
+ * The hidden __lexora_id column sits outside the sheet's used range, so a
+ * template that was never synced before does not have it: writing AN/AP/AR/AQ
+ * there fails with "Range (...) exceeds grid limits". Expanding the tab by
+ * columns is safe (it appends empty cells past the used range) and makes the
+ * id column addressable, so identity survives every later sync.
+ */
+async function ensureMetadataColumnWidth(api: GoogleWorkspaceApi, spreadsheetId: string, tab: string, column: string): Promise<void> {
+  const needed = columnIndexFromLetter(column) + 1;
+  if (needed <= 0 || needed > 1000) return;
+  const metadata = await api.getSpreadsheetMetadata(spreadsheetId);
+  const sheet = metadata.sheets.find((entry) => entry.title === tab);
+  if (!sheet) return;
+  const current = sheet.columnCount ?? 0;
+  if (current >= needed) return;
+  await api.batchUpdate(spreadsheetId, [
+    {
+      insertDimension: {
+        range: { sheetId: sheet.sheetId, dimension: "COLUMNS", startIndex: Math.max(0, current - 1), endIndex: needed },
+        inheritFromBefore: true,
+      },
+    },
+  ]);
+}
+
 export async function flushPlannerIdWrites(
   api: GoogleWorkspaceApi,
   spreadsheetId: string,
   writes: ReadonlyArray<{ tab: string; column: string; rows: ReadonlyArray<{ rowNumber: number; sourceId: string }> }>,
 ): Promise<void> {
   for (const entry of writes) {
+    let attempt = 0;
+    while (true) {
+      try {
+        await ensureMetadataColumnWidth(api, spreadsheetId, entry.tab, entry.column);
+        // expansion (if any) completes before the write, so one pass is enough
+        break;
+      } catch (error) {
+        attempt += 1;
+        if (attempt > 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
     const ranges = metadataWriteRanges(entry.tab, entry.column, entry.rows as Array<{ rowNumber: number; sourceId: string }>);
     for (const range of ranges) {
       if (api.batchWriteValues) {
