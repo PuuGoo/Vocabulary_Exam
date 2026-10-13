@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ConfirmDialog, { useConfirmDialog } from "@/components/ConfirmDialog";
 import { useRouter, useSearchParams } from "next/navigation";
 import SpeakButton from "@/components/SpeakButton";
 import StudyModeNav from "@/components/StudyModeNav";
@@ -117,6 +118,7 @@ export default function FillFocusSession({
   const [saving, setSaving] = useState(false);
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  const { confirm: confirmRestart, dialog: confirmDialog } = useConfirmDialog();
   const [expandOpen, setExpandOpen] = useState(false);
 
   useEffect(() => {
@@ -127,6 +129,16 @@ export default function FillFocusSession({
   }, [expandOpen]);
   const [rangeStart, setRangeStart] = useState(hasRange ? String(rangeFrom) : "1");
   const [rangeEnd, setRangeEnd] = useState(hasRange ? String(rangeTo) : String(totalWordCount));
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("lexora-auto-speak") === "1" || localStorage.getItem("lexora-auto-speak") === "true") setAutoSpeak(true);
+      if (localStorage.getItem("lexora-auto-advance") === "1" || localStorage.getItem("lexora-auto-advance") === "true") setAutoAdvance(true);
+    } catch {}
+  }, []);
+  const persistAutoSpeak = (next: boolean) => { setAutoSpeak(next); try { localStorage.setItem("lexora-auto-speak", next ? "1" : "0"); } catch {} };
+  const persistAutoAdvance = (next: boolean) => { setAutoAdvance(next); try { localStorage.setItem("lexora-auto-advance", next ? "1" : "0"); } catch {} };
   const hydratedRef = useRef(false);
   const actionLockRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -253,6 +265,39 @@ export default function FillFocusSession({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
+
+  // D1: auto-speak on new question when enabled. Fire when feedback appears (new question is revealed)
+  useEffect(() => {
+    if (!autoSpeak || !currentWord || !feedback || !feedback.correct || needsCorrection) return;
+    // Speak the target term/phrase after a short delay to let feedback render
+    const timer = window.setTimeout(() => {
+      try {
+        const text = getSpeakText(currentWord, set);
+        if (!text) return;
+        const lang = getLanguageConfig(languageCode).ttsLanguage;
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+        window.speechSynthesis.cancel();
+        const clean = (languageCode === "zh-CN" ? text.trim() : text.split("/")[0].trim()) || text.trim();
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.lang = lang;
+        utter.rate = 0.9;
+        window.speechSynthesis.speak(utter);
+      } catch {}
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [autoSpeak, currentWord?.id, feedback?.correct, needsCorrection]);
+
+  // D2: auto-advance after correct (~1.5s) when enabled
+  useEffect(() => {
+    if (!autoAdvance) return;
+    if (!feedback || !feedback.correct || needsCorrection) return;
+    if (effectiveSessionKind === "test") return;
+    const timer = window.setTimeout(() => {
+      if (needsCorrection) return;
+      advancePractice();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [autoAdvance, feedback?.correct, needsCorrection, effectiveSessionKind]);
 
   function navigateWith(updates: Record<string, string | null>) {
     if (hasActivity && !confirm("Tiến độ đã được tự động lưu. Bạn muốn chuyển chế độ?")) return;
@@ -447,8 +492,11 @@ export default function FillFocusSession({
     changeGroup(group + 1);
   }
 
-  function restart() {
-    if (hasActivity && !confirm("Xóa toàn bộ tiến độ của bài Điền từ này để làm lại?")) return;
+  async function restart() {
+    if (hasActivity) {
+      const ok = await confirmRestart({ title: "Làm lại bài này?", description: "Tiến độ của phiên hiện tại sẽ bị xóa và bạn bắt đầu lại từ câu 1.", confirmLabel: "Làm lại", tone: "danger" });
+      if (!ok) return;
+    }
     try { localStorage.removeItem(draftKey); } catch {}
     setGroup(0); setQueues(buildQueues(groups)); setCursors({ 0: 0 }); setAnswers({}); setOutcomes({});
     setHintLevels({}); setAudioBeforeAnswer({}); setGroupResults({}); setPhase("questions");
@@ -473,17 +521,44 @@ export default function FillFocusSession({
   const result = groupResults[group];
   const overall = summarizeOverall(groupResults, groups.length);
   const progressPercent = originalWords.length ? Math.round(((Math.min(cursor, originalWords.length - 1) + (feedback ? 1 : 0)) / originalWords.length) * 100) : 0;
+  const firstTryStreak = useMemo(() => {
+    const seen = new Set<number>();
+    let streak = 0;
+    for (const id of queue) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const outcome = outcomes[id];
+      if (!outcome) break;
+      if (outcome.firstTryCorrect) streak += 1;
+      else streak = 0;
+    }
+    return streak;
+  }, [queue, outcomes]);
+
+  // D1/D2 settings panel content (rendered as inline when customOpen)
+  const settingsPanel = (
+    <div className="grid gap-2">
+      <button type="button" role="menuitemcheckbox" aria-checked={autoSpeak} onClick={() => persistAutoSpeak(!autoSpeak)} className="flex min-h-11 w-full items-center justify-between rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-goldpale">
+        <span className="flex items-center gap-2"><span aria-hidden="true">🔊</span> Tự phát âm khi có câu mới</span>
+        <span aria-hidden="true" className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${autoSpeak ? "bg-gold" : "bg-line"}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${autoSpeak ? "translate-x-4" : "translate-x-0"}`} /></span>
+      </button>
+      <button type="button" role="menuitemcheckbox" aria-checked={autoAdvance} onClick={() => persistAutoAdvance(!autoAdvance)} className="flex min-h-11 w-full items-center justify-between rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-goldpale">
+        <span className="flex items-center gap-2"><span aria-hidden="true">⏭</span> Tự chuyển câu sau khi đúng (1,5s)</span>
+        <span aria-hidden="true" className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${autoAdvance ? "bg-gold" : "bg-line"}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${autoAdvance ? "translate-x-4" : "translate-x-0"}`} /></span>
+      </button>
+    </div>
+  );
 
   return (
     <div className={`fill-focus-session lexora-page-enter relative ${expandOpen ? "fixed inset-0 z-[90] overflow-y-auto bg-[rgb(var(--color-paper))] p-3 sm:p-6" : ""} ${chrome === "compact" ? "space-y-1 pb-1" : "space-y-1 pb-1"}`}>
       {chrome === "full" && <section className="fill-session-head flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[0.8rem]">
         <div className="flex min-w-0 items-baseline gap-2"><p className="shrink-0 text-xs font-bold uppercase tracking-[0.16em] text-gold">{getFillModeLabel(set,target)}{wordScope === "unknown" ? " · Từ chưa nhớ" : ""}</p><h1 className="mt-1 truncate text-base font-extrabold sm:text-lg">{set.name}</h1></div>
-        <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setExpandOpen((o) => !o)} title={expandOpen ? "Thu nh\u00f3" : "M\u1edf r\u1ed9ng to\u00e0n m\u00e0n h\u00ecnh"}>{expandOpen ? "\u21BB Thu nh\u00f3" : "\u27F6 M\u1edf r\u1ed9ng"}</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
+        <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setExpandOpen((o) => !o)} title={expandOpen ? "Thu nh\u00f3" : "M\u1edf r\u1ed9ng to\u00e0n m\u00e0n h\u00ecnh"}>{expandOpen ? "\u21BB Thu nh\u00f3" : "\u27F6 M\u1edf r\u1ed9ng"}</button><span aria-hidden="true" className="hidden h-6 w-px bg-line sm:block" /><button className="min-h-9 rounded-lg border border-dashed border-line px-3 text-xs font-semibold text-muted hover:border-gold/30 hover:bg-goldpale hover:text-golddark" onClick={() => void restart()}>↺ Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
       </section>}
 
       {!retest && !quickMode && <div className="fill-session-modenav"><StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} slim /></div>}
 
-      <section className="fill-session-toolbar rounded-xl border border-line bg-white px-2.5 py-1.5 sm:px-3">
+      <section className="fill-session-toolbar overflow-hidden rounded-xl border border-line bg-white px-2.5 py-1.5 sm:px-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <div className="inline-flex items-center gap-1 rounded-lg bg-[#F4F2FA] p-0.5" role="group" aria-label="Mục tiêu phiên học">
             <button className={`min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold ${sessionKind === "practice" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateWith({ session: null, view: "focus" })}>Luyện tập</button>
@@ -491,23 +566,25 @@ export default function FillFocusSession({
           </div>
           <div className="inline-flex items-center gap-1 rounded-lg border border-line p-0.5" role="group" aria-label="Cách hiển thị câu hỏi">
             <button className="min-h-8 rounded-md bg-ink px-2.5 text-[0.75rem] font-bold text-white">Focus</button>
-            <button className="min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold text-muted" onClick={() => navigateWith({ view: "list" })}>Nhóm</button>
+            <button className="min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold text-muted" onClick={() => navigateWith({ view: "list" })}>Danh sách</button>
           </div>
           <label className="fill-session-group ml-auto flex min-h-8 items-center gap-1.5 text-xs font-semibold text-muted">Nhóm
             <select className="min-h-8 rounded-md border border-line bg-white px-1.5 text-xs font-bold text-ink" value={group} onChange={(event) => changeGroup(Number(event.target.value))}>{groups.map((items, index) => <option key={index} value={index}>{index + 1}/{groups.length} · {items.length} câu{groupResults[index] ? " · đã chấm" : ""}</option>)}</select>
           </label>
-          <button type="button" aria-haspopup="dialog" aria-expanded={navigatorOpen} onClick={() => setNavigatorOpen(true)} className="fill-session-qjump inline-flex min-h-8 items-center rounded-md border border-line bg-white px-2 text-xs font-bold text-ink hover:bg-[#F8F7FF]">{isRetry ? "↻ Ôn lại" : `Câu ${Math.min(cursor + 1, originalWords.length)}/${originalWords.length}`}</button>
-          <span className="fill-session-pct text-xs font-extrabold tabular-nums text-golddark">{progressPercent}%</span>
-          <button type="button" className="inline-flex min-h-8 items-center rounded-md px-1.5 text-xs font-bold text-muted transition hover:text-golddark" onClick={() => setCustomOpen((open) => !open)} aria-expanded={customOpen} title="Tùy chỉnh phạm vi từ">⚙</button>
+          <span className="fill-session-qjump inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-2 py-1 text-xs font-bold tabular-nums" aria-live="polite"><button type="button" aria-haspopup="dialog" aria-expanded={navigatorOpen} onClick={() => setNavigatorOpen(true)} className="inline-flex min-h-6 items-center font-bold text-ink hover:text-golddark">{isRetry ? "↻ Ôn lại" : `Câu ${Math.min(cursor + 1, originalWords.length)}/${originalWords.length}`}</button><span className="fill-session-pct font-extrabold text-golddark">{progressPercent}%</span>{firstTryStreak >= 2 && <span className="inline-flex items-center rounded-full bg-[#FFF1DA] px-2 py-0.5 text-[0.68rem] font-extrabold text-[#8A5A00]" aria-label={`Chuỗi ${firstTryStreak} câu đúng ngay`}>🔥 {firstTryStreak}</span>}</span>
+          <button type="button" aria-label="Tùy chỉnh phạm vi từ" title="Tùy chỉnh phạm vi từ" className="inline-flex min-h-8 items-center rounded-md px-1.5 text-xs font-bold text-muted transition hover:text-golddark" onClick={() => setCustomOpen((open) => !open)} aria-expanded={customOpen}>⚙</button>
         </div>
         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${progressPercent}%` }} /></div>
-        {customOpen && <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-line pt-3"><label className="text-xs text-muted">Từ câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label><label className="text-xs text-muted">Đến câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => applyRangeSafely(Number(rangeStart) || 1, Number(rangeEnd) || totalWordCount)}>Áp dụng</button>{hasRange && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => applyRangeSafely(1, totalWordCount)}>Cả bộ</button>}</div>}
+        {customOpen && <div className="mt-2 grid gap-3 border-t border-line pt-3">
+          <div className="grid gap-2">{settingsPanel}</div>
+          <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3"><label className="text-xs text-muted">Từ câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label><label className="text-xs text-muted">Đến câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => applyRangeSafely(Number(rangeStart) || 1, Number(rangeEnd) || totalWordCount)}>Áp dụng</button>{hasRange && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => applyRangeSafely(1, totalWordCount)}>Cả bộ</button>}</div>
+        </div>}
       </section>
 
       {phase === "complete" ? (
         <div>
           {wordScope === "unknown" && <p className="mb-2 text-center text-sm font-semibold text-[#6550DB]">Bạn đã hoàn thành {overall.total} từ chưa nhớ.</p>}
-          <CompletionSummary summary={overall} setId={set.id} onRestart={restart} onChooseSet={onChooseSet} />
+          <CompletionSummary summary={overall} words={set.words} setId={set.id} onRestart={restart} onChooseSet={onChooseSet} />
         </div>
       ) : phase === "group_result" && result ? (
         <GroupSummary summary={result} words={originalWords} onCorrect={beginWeakCorrection} onNext={nextGroup} lastGroup={group === groups.length - 1} />
@@ -515,7 +592,7 @@ export default function FillFocusSession({
         <>
           <section className={`fill-focus-card mx-auto w-full ${expandOpen ? "max-w-[120rem]" : "max-w-4xl"} fill-focus-card-inner rounded-2xl border border-line bg-white shadow-sm sm:shadow ${chrome === "compact" ? "p-3 sm:p-4" : "p-3.5 sm:p-5"}`} aria-live="polite">
             {isRetry && <div className="mb-3 inline-flex rounded-full border border-[#CFC7FF] bg-[#F7F5FF] px-3 py-1 text-xs font-bold text-[#6550DB]">↻ Từ yếu quay lại sau vài câu</div>}
-            <div className="text-center">{languageCode === "zh-CN" && target === "pronunciation" ? <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Chữ Hán</div><div className="mt-2 font-serif text-3xl font-bold sm:text-4xl">{getWordDisplayForms(currentWord,set).primary}</div><div className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-1 text-lg font-bold">{currentWord.meaning}</div></> : <><div className="text-[0.72rem] font-extrabold uppercase tracking-[0.18em] text-golddark">Nghĩa tiếng Việt</div><div className="fill-question-meaning mt-1 font-serif text-[1.35rem] font-extrabold leading-snug sm:text-[1.6rem]">{currentWord.meaning}</div></>}{currentWord.wtype && <div className="mt-1.5 text-sm text-muted"><span className="font-semibold">Loại từ:</span> {currentWord.wtype}</div>}</div>
+            <div className="text-center">{languageCode === "zh-CN" && target === "pronunciation" ? <><div className="text-xs font-bold uppercase tracking-[0.16em] text-muted">Chữ Hán</div><div className="mt-2 font-serif text-3xl font-bold sm:text-4xl">{getWordDisplayForms(currentWord,set).primary}</div><div className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-muted">Nghĩa tiếng Việt</div><div className="mt-1 text-lg font-bold">{currentWord.meaning}</div></> : <><div className="text-[0.72rem] font-extrabold uppercase tracking-[0.18em] text-golddark">Nghĩa tiếng Việt</div><div className="fill-question-meaning mt-2 font-serif text-[1.7rem] font-extrabold leading-tight sm:text-[2.35rem]">{currentWord.meaning}</div></>}{currentWord.wtype && <div className="fill-question-wtype mt-2.5 inline-flex items-center gap-1.5 rounded-full bg-[#F4F2FA] px-3 py-0.5 text-xs font-semibold text-muted"><span>Loại từ</span><span className="text-ink">{currentWord.wtype}</span></div>}</div>
 
             {!feedback && effectiveSessionKind === "practice" && <div className="mt-1.5 flex flex-wrap justify-center gap-1.5">
               {canPlayTargetAudioBeforeAnswer(effectiveSessionKind) && target === "term" && <span onClickCapture={markAudioBeforeAnswer}><SpeakButton text={getSpeakText(currentWord,set)} languageCode={languageCode} /></span>}
@@ -531,17 +608,17 @@ export default function FillFocusSession({
                   const responseCorrect = feedback?.corrected || feedback?.groupGrade?.groupResults.some((result) => result.matchedResponseIndex === groupIndex);
                   return <div key={groupItem.id}>
                     <label className="text-sm font-bold uppercase tracking-[0.1em] text-muted" htmlFor={`fill-answer-${currentWord.id}-${groupIndex}`}>Cấu trúc {groupIndex + 1}</label>
-                    <input ref={(element) => { groupInputRefs.current[groupIndex] = element; }} id={`fill-answer-${currentWord.id}-${groupIndex}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={`Nhập cấu trúc ${groupIndex + 1}`} className={`${cx.input} !mb-0 mt-0.5 min-h-12 text-base ${feedback ? responseCorrect ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`} value={currentResponses[groupIndex]} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: currentResponses.map((value, index) => index === groupIndex ? event.target.value : value) })); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && !feedback && groupIndex < currentParsed.groups.length - 1) { event.preventDefault(); groupInputRefs.current[groupIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={groupIndex === currentParsed.groups.length - 1 ? "done" : "next"} />
+                    <input ref={(element) => { groupInputRefs.current[groupIndex] = element; }} id={`fill-answer-${currentWord.id}-${groupIndex}`} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={`Nhập cấu trúc ${groupIndex + 1}`} className={`${cx.input} !mb-0 mt-0.5 min-h-12 text-base ${feedback ? (responseCorrect ? "!border-ok !bg-okbg/40 fill-glow" : "!border-bad !bg-badbg/30 fill-shake") : ""}`} value={currentResponses[groupIndex]} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: currentResponses.map((value, index) => index === groupIndex ? event.target.value : value) })); }} onFocus={(event) => window.setTimeout(() => event.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" }), 180)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && !feedback && groupIndex < currentParsed.groups.length - 1) { event.preventDefault(); groupInputRefs.current[groupIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={groupIndex === currentParsed.groups.length - 1 ? "done" : "next"} />
                   </div>;
                 })}
               </div>
             ) : (
               <div className="mx-auto mt-2 w-full max-w-3xl">
-                <div className={`fill-answer-bar flex items-stretch overflow-hidden rounded-[16px] border-2 border-[#C9C2F5] bg-white shadow-[0_8px_24px_rgba(43,39,74,0.07)] transition focus-within:!border-gold focus-within:!shadow-[0_0_0_5px_rgba(120,101,238,0.14)] ${feedback ? feedback.correct ? "!border-ok !bg-okbg/40" : "!border-bad !bg-badbg/30" : ""}`}>
-                  <input ref={inputRef} id={`fill-answer-${currentWord.id}`} lang={languageCode} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={target === "pronunciation" ? "Nhập pinyin…" : "Nhập từ…"} aria-label={target === "pronunciation" ? "Nhập pinyin" : "Nhập từ"} className="fill-answer-input min-h-[3.25rem] flex-1 border-0 bg-transparent px-4 py-2.5 text-center text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-muted/60" value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onKeyDown={onInputKeyDown} enterKeyHint="done" />
-                  <button type="button" className="fill-check-btn shrink-0 border-l-2 border-[#C9C2F5] bg-[#7865EE] px-5 text-sm font-bold text-white transition hover:bg-[#5d4ed8] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[.98]" disabled={!currentResponseComplete} onClick={checkPracticeAnswer}>Kiểm tra</button>
+                <div className={`fill-answer-bar flex items-stretch overflow-hidden rounded-[16px] border-2 border-[#C9C2F5] bg-white shadow-[0_8px_24px_rgba(43,39,74,0.07)] transition focus-within:!border-gold focus-within:!shadow-[0_0_0_5px_rgba(120,101,238,0.14)] ${feedback ? (feedback.correct ? "!border-ok !bg-okbg/40 fill-glow" : "!border-bad !bg-badbg/30 fill-shake") : ""}`}>
+                  <input ref={inputRef} id={`fill-answer-${currentWord.id}`} lang={languageCode} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback)} placeholder={target === "pronunciation" ? "Nhập pinyin…" : "Nhập từ…"} aria-label={target === "pronunciation" ? "Nhập pinyin" : "Nhập từ"} className="fill-answer-input min-h-[3.25rem] flex-1 border-0 bg-transparent px-4 py-2.5 text-center text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-muted/60" value={currentAnswer} onChange={(event) => { if (!feedback) setAnswers((current) => ({ ...current, [currentWord.id]: event.target.value })); }} onFocus={(event) => { window.setTimeout(() => event.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" }), 180); if ("visualViewport" in window) { /* visualViewport will adjust; scrollIntoView handles keyboard cover */ } }} onKeyDown={onInputKeyDown} enterKeyHint="done" />
+                  <button type="button" className="fill-check-btn shrink-0 border-l-2 border-[#C9C2F5] bg-[#7865EE] px-5 text-sm font-bold text-white transition hover:bg-[#5d4ed8] disabled:cursor-not-allowed disabled:bg-[#E9E5FF] disabled:text-[#7C70D6] active:scale-[.98]" disabled={!currentResponseComplete} onClick={checkPracticeAnswer}>Kiểm tra</button>
                 </div>
-                <p className="mt-1.5 text-center text-[0.68rem] text-muted/70">Nhấn Enter để kiểm tra nhanh</p>
+                <p className="mt-1.5 text-center text-xs text-muted/70">Nhấn <kbd className="fill-kbd">Enter</kbd> để kiểm tra nhanh</p>
               </div>
             )}
 
@@ -554,15 +631,15 @@ export default function FillFocusSession({
       <div className="grid gap-2">
         {correction.map((value, correctionIndex) => (
           <div key={correctionIndex} className="flex items-stretch overflow-hidden rounded-[16px] border-2 border-[#C9C2F5] bg-white shadow-[0_8px_24px_rgba(43,39,74,0.07)] transition focus-within:!border-gold focus-within:!shadow-[0_0_0_5px_rgba(120,101,238,0.14)]">
-            <input ref={(element) => { correctionInputRefs.current[correctionIndex] = element; }} id={`fill-correction-${currentWord.id}-${correctionIndex}`} aria-label={`Cấu trúc cần sửa ${correctionIndex + 1}`} autoFocus={correctionIndex === 0} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} placeholder={`Cấu trúc ${correctionIndex + 1}`} className="fill-answer-input min-h-[3.25rem] flex-1 border-0 bg-transparent px-4 py-2.5 text-center text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-muted/60" value={value} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === correctionIndex ? event.target.value : item)); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && correctionIndex < correction.length - 1) { event.preventDefault(); correctionInputRefs.current[correctionIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={correctionIndex === correction.length - 1 ? "done" : "next"} />
+            <input ref={(element) => { correctionInputRefs.current[correctionIndex] = element; }} id={`fill-correction-${currentWord.id}-${correctionIndex}`} aria-label={`Cấu trúc cần sửa ${correctionIndex + 1}`} autoFocus={correctionIndex === 0} type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} placeholder={`Cấu trúc ${correctionIndex + 1}`} className="fill-answer-input min-h-[3.25rem] flex-1 border-0 bg-transparent px-4 py-2.5 text-center text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-muted/60" value={value} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === correctionIndex ? event.target.value : item)); }} onFocus={(event) => window.setTimeout(() => event.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" }), 180)} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing && !event.repeat && correctionIndex < correction.length - 1) { event.preventDefault(); correctionInputRefs.current[correctionIndex + 1]?.focus(); return; } onInputKeyDown(event); }} enterKeyHint={correctionIndex === correction.length - 1 ? "done" : "next"} />
           </div>
         ))}
-        <button type="button" className="fill-check-btn min-h-[3.25rem] w-full rounded-[16px] bg-[#7865EE] px-5 text-sm font-bold text-white transition hover:bg-[#5d4ed8] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[.98]" disabled={feedback.corrected || !correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button>
+        <button type="button" className="fill-check-btn min-h-[3.25rem] w-full rounded-[16px] bg-[#7865EE] px-5 text-sm font-bold text-white transition hover:bg-[#5d4ed8] disabled:cursor-not-allowed disabled:bg-[#E9E5FF] disabled:text-[#7C70D6] active:scale-[.98]" disabled={feedback.corrected || !correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button>
       </div>
     ) : (
       <div className="flex items-stretch overflow-hidden rounded-[16px] border-2 border-[#C9C2F5] bg-white shadow-[0_8px_24px_rgba(43,39,74,0.07)] transition focus-within:!border-gold focus-within:!shadow-[0_0_0_5px_rgba(120,101,238,0.14)]">
-        <input ref={(element) => { correctionInputRefs.current[0] = element; }} id={`fill-correction-${currentWord.id}-0`} aria-label={`Gõ lại ${target === "pronunciation" ? "Pinyin" : languageConfig.termLabel.toLowerCase()}`} autoFocus type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} placeholder="Nhập lại từ..." className="fill-answer-input min-h-[3.25rem] flex-1 border-0 bg-transparent px-4 py-2.5 text-center text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-muted/60" value={correction[0] || ""} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === 0 ? event.target.value : item)); }} onKeyDown={onInputKeyDown} enterKeyHint="done" />
-        <button type="button" className="fill-check-btn shrink-0 border-l-2 border-[#C9C2F5] bg-[#7865EE] px-5 text-sm font-bold text-white transition hover:bg-[#5d4ed8] disabled:cursor-not-allowed disabled:opacity-40 active:scale-[.98]" disabled={feedback.corrected || !correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button>
+        <input ref={(element) => { correctionInputRefs.current[0] = element; }} id={`fill-correction-${currentWord.id}-0`} aria-label={`Gõ lại ${target === "pronunciation" ? "Pinyin" : languageConfig.termLabel.toLowerCase()}`} autoFocus type="text" autoComplete="off" autoCapitalize="none" spellCheck={false} readOnly={Boolean(feedback.corrected)} placeholder="Nhập lại từ..." className="fill-answer-input min-h-[3.25rem] flex-1 border-0 bg-transparent px-4 py-2.5 text-center text-lg font-bold text-ink outline-none placeholder:font-normal placeholder:text-muted/60" value={correction[0] || ""} onChange={(event) => { if (!feedback.corrected) setCorrection((current) => current.map((item, index) => index === 0 ? event.target.value : item)); }} onFocus={(event) => window.setTimeout(() => event.currentTarget.scrollIntoView({ block: "center", behavior: "smooth" }), 180)} onKeyDown={onInputKeyDown} enterKeyHint="done" />
+        <button type="button" className="fill-check-btn shrink-0 border-l-2 border-[#C9C2F5] bg-[#7865EE] px-5 text-sm font-bold text-white transition hover:bg-[#5d4ed8] disabled:cursor-not-allowed disabled:bg-[#E9E5FF] disabled:text-[#7C70D6] active:scale-[.98]" disabled={feedback.corrected || !correction.length || correction.some((value) => !value.trim())} onClick={confirmCorrection}>Xác nhận sửa</button>
       </div>
     )}
   </div>
@@ -576,6 +653,7 @@ export default function FillFocusSession({
           <QuestionNavigator open={navigatorOpen} onToggle={() => setNavigatorOpen((open) => !open)} words={originalWords} currentWordId={currentWord.id} answers={answers} outcomes={outcomes} hintLevels={hintLevels} queue={queue} cursor={cursor} onSelect={(wordId) => { const index = queue.indexOf(wordId); if (index >= 0) { setCursors((current) => ({ ...current, [group]: index })); setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0); } }} />
         </>
       ) : null}
+      {confirmDialog}
     </div>
   );
 }
@@ -618,12 +696,12 @@ function QuestionNavigator({ open, onToggle, words, currentWordId, answers, outc
 function GroupSummary({ summary, words, onCorrect, onNext, lastGroup }: { summary: FillAttemptSummary; words: FillFocusWord[]; onCorrect: () => void; onNext: () => void; lastGroup: boolean }) {
   const weak = words.filter((word) => summary.weakWordIds.includes(word.id));
   const percent = summary.total ? Math.round((summary.firstTryCorrect / summary.total) * 100) : 0;
-  return <section className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-5 text-center shadow-sm sm:p-7"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Kết quả nhóm</p><h2 className="mt-2 text-2xl font-extrabold">{summary.firstTryCorrect}/{summary.total}</h2><p className="mt-1 text-sm text-muted">{percent}% đúng lần đầu</p><div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-2"><ResultStat label="Đúng ngay" value={summary.firstTryCorrect} tone="ok"/><ResultStat label="Dùng hỗ trợ" value={summary.assisted}/><ResultStat label="Sai lần đầu" value={summary.firstAttemptWrong} tone="bad"/></div><div className="mt-3 text-sm text-muted">Sau sửa lỗi: <b className="text-ink">{summary.finalCorrect}/{summary.total}</b></div>{weak.length > 0 && <div className="mt-5 text-left"><h3 className="text-sm font-bold">Từ cần củng cố</h3><div className="mt-2 flex flex-wrap gap-2">{weak.map((word) => <span key={word.id} className="rounded-full border border-bad/20 bg-badbg/30 px-3 py-1 text-sm">{word.term}</span>)}</div><p className="mt-2 text-xs text-muted">Các từ này đã được gửi vào Mistakes và ưu tiên trong Word SRS.</p></div>}<div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">{weak.length > 0 && <button className={`${cx.btn} ${cx.btnGold} min-h-12`} onClick={onCorrect}>Sửa {weak.length} từ sai</button>}<button className={`${cx.btn} ${weak.length ? cx.btnGhost : cx.btnGold} min-h-12`} onClick={onNext}>{lastGroup ? "Xem tổng kết" : "Nhóm tiếp theo →"}</button></div></section>;
+  return <section className="mx-auto max-w-3xl rounded-2xl border border-line bg-white p-5 text-center shadow-sm sm:p-7"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Kết quả nhóm</p><h2 className="mt-2 text-2xl font-extrabold">{summary.firstTryCorrect}/{summary.total}</h2><p className="mt-1 text-sm text-muted">{percent}% đúng lần đầu</p><div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-2"><ResultStat label="Đúng ngay" value={summary.firstTryCorrect} tone="ok"/><ResultStat label="Dùng hỗ trợ" value={summary.assisted}/><ResultStat label="Sai lần đầu" value={summary.firstAttemptWrong} tone="bad"/></div><div className="mt-3 text-sm text-muted">Sau sửa lỗi: <b className="text-ink">{summary.finalCorrect}/{summary.total}</b></div>{weak.length > 0 && <div className="mt-5 text-left"><h3 className="text-sm font-bold">Từ trả lời sai ({weak.length}) — đúng {summary.firstTryCorrect}/{summary.total} · sai {summary.firstAttemptWrong}/{summary.total}</h3><div className="mt-2 grid gap-1.5 rounded-xl border border-bad/15 bg-badbg/40 p-2">{weak.map((word) => <div key={word.id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm"><span className="font-bold text-ink">{word.term || word.alternateTerm || String(word.id)}</span><span className="shrink-0 text-xs text-muted">{word.meaning}</span></div>)}</div><p className="mt-2 text-xs text-muted">Các từ này đã được gửi vào Mistakes và ưu tiên trong Word SRS.</p></div>}<div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">{weak.length > 0 && <button className={`${cx.btn} ${cx.btnGold} min-h-12`} onClick={onCorrect}>Sửa {weak.length} từ sai</button>}<button className={`${cx.btn} ${weak.length ? cx.btnGhost : cx.btnGold} min-h-12`} onClick={onNext}>{lastGroup ? "Xem tổng kết" : "Nhóm tiếp theo →"}</button></div></section>;
 }
 
-function CompletionSummary({ summary, setId, onRestart, onChooseSet }: { summary: FillAttemptSummary; setId: number; onRestart: () => void; onChooseSet: () => void }) {
+function CompletionSummary({ summary, words, setId, onRestart, onChooseSet }: { summary: FillAttemptSummary; words?: FillFocusWord[]; setId: number; onRestart: () => void; onChooseSet: () => void }) {
   const percent = summary.total ? Math.round((summary.firstTryCorrect / summary.total) * 100) : 0;
-  return <section className="mx-auto max-w-3xl rounded-2xl border border-gold/40 bg-white p-6 text-center shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Hoàn thành bài</p><h2 className="mt-3 text-3xl font-extrabold">{summary.firstTryCorrect}/{summary.total}</h2><p className="mt-1 text-muted">{percent}% đúng lần đầu</p><div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-2"><ResultStat label="Đúng ngay" value={summary.firstTryCorrect} tone="ok"/><ResultStat label="Đúng sau hỗ trợ" value={summary.assisted}/><ResultStat label="Từ còn yếu" value={summary.weakWordIds.length} tone="bad"/></div>{summary.weakWordIds.length > 0 && <p className="mt-4 text-sm text-muted">{summary.weakWordIds.length} từ đã được ưu tiên cho lần ôn tiếp theo.</p>}<div className="mt-6 flex flex-wrap justify-center gap-2">{summary.weakWordIds.length > 0 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => location.assign(`/review-today`)}>Ôn {summary.weakWordIds.length} từ yếu</button>}<button className={`${cx.btn} ${cx.btnGhost}`} onClick={onChooseSet}>Về bộ từ</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={onRestart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => location.assign(`/learn/${setId}`)}>Học bằng thẻ</button></div></section>;
+  return <section className="mx-auto max-w-3xl rounded-2xl border border-gold/40 bg-white p-6 text-center shadow-sm"><p className="text-xs font-bold uppercase tracking-[0.16em] text-gold">Hoàn thành bài</p><h2 className="mt-3 text-3xl font-extrabold">{summary.firstTryCorrect}/{summary.total}</h2><p className="mt-1 text-muted">{percent}% đúng lần đầu</p><div className="mx-auto mt-5 grid max-w-xl grid-cols-3 gap-2"><ResultStat label="Đúng ngay" value={summary.firstTryCorrect} tone="ok"/><ResultStat label="Đúng sau hỗ trợ" value={summary.assisted}/><ResultStat label="Từ còn yếu" value={summary.weakWordIds.length} tone="bad"/></div>{summary.weakWordIds.length > 0 && <p className="mt-4 text-sm text-muted">Đúng {summary.firstTryCorrect}/{summary.total} · Sai {summary.firstAttemptWrong}/{summary.total} · {summary.weakWordIds.length} từ đã được ưu tiên cho lần ôn tiếp theo.</p>}{summary.weakWordIds.length > 0 && words && <div className="mx-auto mt-4 max-w-xl text-left"><h3 className="text-sm font-bold text-ink">Từ trả lời sai</h3><div className="mt-2 grid gap-1.5 rounded-xl border border-bad/15 bg-badbg/40 p-2">{summary.weakWordIds.map((id) => { const word = words.find((wordItem) => wordItem.id === id); return <div key={id} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm"><span className="font-bold text-ink">{word?.term || word?.alternateTerm || String(id)}</span><span className="shrink-0 text-xs text-muted">{word?.meaning || ""}</span></div>; })}</div></div>}<div className="mt-6 flex flex-wrap justify-center gap-2">{summary.weakWordIds.length > 0 && <button className={`${cx.btn} ${cx.btnGold}`} onClick={() => location.assign(`/review-today`)}>Ôn {summary.weakWordIds.length} từ yếu</button>}<button className={`${cx.btn} ${cx.btnGhost}`} onClick={onChooseSet}>Về bộ từ</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={onRestart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => location.assign(`/learn/${setId}`)}>Học bằng thẻ</button></div></section>;
 }
 
 function ResultStat({ label, value, tone }: { label: string; value: number; tone?: "ok" | "bad" }) {

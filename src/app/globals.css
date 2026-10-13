@@ -11,7 +11,7 @@
   --color-golddark: 101 80 219;
   --color-goldpale: 238 235 255;
   --color-line: 235 234 242;
-  --color-muted: 139 137 159;
+  --color-muted: 107 105 133;
   --color-ok: 48 151 112;
   --color-okbg: 234 248 242;
   --color-bad: 212 76 91;
@@ -27,7 +27,7 @@ html.theme-dark {
   --color-golddark: 235 190 91;
   --color-goldpale: 58 48 32;
   --color-line: 55 65 81;
-  --color-muted: 156 163 175;
+  --color-muted: 168 174 200;
   --color-ok: 110 207 166;
   --color-okbg: 25 62 50;
   --color-bad: 248 145 125;
@@ -405,7 +405,7 @@ button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) 
 .fill-session-modenav nav { position: static; margin-bottom: 0.25rem; border-bottom: 0; background: transparent; padding-top: 0; backdrop-filter: none; }
 .fill-session-modenav nav > div:last-child { padding-bottom: 0; }
 .fill-session-modenav nav a, .fill-session-modenav nav button { min-height: 2rem; padding-left: 0.55rem; padding-right: 0.55rem; font-size: 0.76rem; }
-.fill-session-toolbar { box-shadow: 0 2px 12px rgba(43,39,74,0.05); }
+.fill-session-toolbar { box-shadow: 0 2px 12px rgba(43,39,74,0.05); overflow: hidden; }
 .fill-session-toolbar select { max-width: 7.5rem; }
 .fill-focus-card-inner { position: relative; }
 .fill-question-meaning { color: rgb(var(--color-ink)); text-wrap: balance; }
@@ -428,3 +428,57 @@ button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) 
 @keyframes fill-feedback-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .fill-correction-box { scroll-margin-bottom: 5.5rem; }
 @media (prefers-reduced-motion: reduce) { .fill-feedback-reveal { animation: none; } }
+
+/* ==== Lexora UI/UX upgrade: learn + fill ==== */
+.mode-nav-icon { display: inline-grid; width: 1.15rem; place-items: center; font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", system-ui, sans-serif; font-variant-emoji: text; font-size: .95em; line-height: 1; opacity: .8; }
+nav[aria-label="Chuyển chế độ học"] [aria-current="page"] { border-color: transparent; background: rgb(var(--color-gold)); color: #fff; font-weight: 700; box-shadow: 0 6px 16px rgb(var(--color-gold) / .28); }
+nav[aria-label="Chuyển chế độ học"] [aria-current="page"] .mode-nav-icon { opacity: 1; }
+html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page"] { color: rgb(17 24 39); }
+.fill-session-modenav nav > div:last-child { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+.fill-kbd, .learn-kbd-hint kbd { display: inline-block; margin: 0 .15rem; padding: 0 .4rem; border: 1px solid rgb(var(--color-line)); border-bottom-width: 2px; border-radius: 6px; background: rgb(var(--color-goldpale)); color: rgb(var(--color-golddark)); font-size: .68rem; font-weight: 700; line-height: 1.55; }
+.learn-kbd-hint kbd:first-child { margin-left: 0; }
+.fill-answer-bar { border-radius: 18px; }
+.fill-answer-bar input:focus, .fill-answer-bar input:focus-visible { outline: none; box-shadow: none; }
+.fill-answer-input { font-size: 1.3rem; letter-spacing: .01em; }
+.fill-check-btn { min-width: 7.5rem; letter-spacing: .01em; }
+@media (min-width: 768px) {
+  .fill-focus-card { display: flex; flex-direction: column; min-height: min(28rem, calc(100dvh - 17rem)); }
+  .fill-focus-card > :first-child { margin-top: auto; }
+  .fill-focus-card > :last-child { margin-bottom: auto; }
+  .fill-focus-card-inner { padding: 1.75rem 2rem; }
+  .flashcard-dock-trigger { top: calc(env(safe-area-inset-top, 0px) + .75rem); right: max(1rem, env(safe-area-inset-right)); min-width: 0; min-height: 2.5rem; padding: 0 .85rem; transform: none; box-shadow: 0 4px 14px rgba(36,35,55,.10); }
+  .flashcard-dock-trigger:active { transform: scale(.96); }
+  .flashcard-dock-panel { top: calc(env(safe-area-inset-top, 0px) + 3.75rem); right: max(1rem, env(safe-area-inset-right)); max-height: calc(100dvh - 5rem - env(safe-area-inset-top, 0px)) !important; transform: none; transform-origin: top right; animation-name: lexora-dock-in-desktop; }
+  @keyframes lexora-dock-in-desktop { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
+}
+@media (prefers-reduced-motion: reduce) { .flashcard-dock-panel { animation: none; } }
+
+/* C2 fill feedback: shake on wrong, glow on correct */
+@keyframes lexora-fill-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  50% { transform: translateX(5px); }
+  75% { transform: translateX(-3px); }
+}
+@keyframes lexora-fill-glow {
+  0% { box-shadow: 0 0 0 0 rgba(48, 151, 112, 0.42); border-color: rgb(var(--color-ok)); }
+  100% { box-shadow: 0 0 0 12px transparent; }
+}
+.fill-shake { animation: lexora-fill-shake 250ms ease-out; }
+.fill-glow { animation: lexora-fill-glow 520ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .fill-shake, .fill-glow { animation: none !important; }
+}
+
+/* C4 mobile checks: 375x667 and 390x844 — virtual keyboard, floating button, tap targets */
+@media (max-width: 767px) {
+  /* Ensure all tappable controls meet 44x44 */
+  button, a, [role="button"], select { min-height: 44px; }
+  .flashcard-dock-trigger { bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  .flashcard-dock-panel { bottom: calc(10.5rem + env(safe-area-inset-bottom)); }
+  /* Prevent input zoom on iOS: keep font-size >=16px already satisfied via text-base/text-lg */
+}
+@media (max-width: 767px) {
+  .fill-answer-bar input, .fill-answer-bar button { min-height: 44px; }
+}
+
