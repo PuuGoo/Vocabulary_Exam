@@ -558,7 +558,7 @@ export default function FillFocusSession({
 
       {!retest && !quickMode && <div className="fill-session-modenav"><StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} slim /></div>}
 
-      <section className="fill-session-toolbar overflow-hidden rounded-xl border border-line bg-white px-2.5 py-1.5 sm:px-3">
+      <section className="fill-session-toolbar rounded-xl border border-line bg-white px-2.5 py-1.5 sm:px-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <div className="inline-flex items-center gap-1 rounded-lg bg-[#F4F2FA] p-0.5" role="group" aria-label="Mục tiêu phiên học">
             <button className={`min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold ${sessionKind === "practice" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateWith({ session: null, view: "focus" })}>Luyện tập</button>
