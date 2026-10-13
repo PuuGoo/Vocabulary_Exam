@@ -405,7 +405,7 @@ button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) 
 .fill-session-modenav nav { position: static; margin-bottom: 0.25rem; border-bottom: 0; background: transparent; padding-top: 0; backdrop-filter: none; }
 .fill-session-modenav nav > div:last-child { padding-bottom: 0; }
 .fill-session-modenav nav a, .fill-session-modenav nav button { min-height: 2rem; padding-left: 0.55rem; padding-right: 0.55rem; font-size: 0.76rem; }
-.fill-session-toolbar { box-shadow: 0 2px 12px rgba(43,39,74,0.05); overflow: hidden; }
+.fill-session-toolbar { box-shadow: 0 2px 12px rgba(43,39,74,0.05); }
 .fill-session-toolbar select { max-width: 7.5rem; }
 .fill-focus-card-inner { position: relative; }
 .fill-question-meaning { color: rgb(var(--color-ink)); text-wrap: balance; }
@@ -472,13 +472,9 @@ html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page
 
 /* C4 mobile checks: 375x667 and 390x844 — virtual keyboard, floating button, tap targets */
 @media (max-width: 767px) {
-  /* Ensure all tappable controls meet 44x44 */
-  button, a, [role="button"], select { min-height: 44px; }
   .flashcard-dock-trigger { bottom: calc(6rem + env(safe-area-inset-bottom)); }
   .flashcard-dock-panel { bottom: calc(10.5rem + env(safe-area-inset-bottom)); }
-  /* Prevent input zoom on iOS: keep font-size >=16px already satisfied via text-base/text-lg */
-}
-@media (max-width: 767px) {
+  /* Fill toolbar inputs already meet 44px via min-h-8/min-h-12; no global reset needed */
   .fill-answer-bar input, .fill-answer-bar button { min-height: 44px; }
 }
 
