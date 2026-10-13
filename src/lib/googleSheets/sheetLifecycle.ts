@@ -23,6 +23,7 @@ import {
 import { writeAdminAudit } from "@/lib/adminAudit";
 import { GoogleSheetsError, safeGoogleErrorForLogs } from "@/lib/googleSheets/errors";
 import { syncIsPartial, type SyncRequest } from "./reliability";
+import { scanPendingAiCells } from "./aiPending";
 
 export type Actor = { userId: number; displayName?: string };
 
@@ -414,8 +415,12 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
       await db.update(googleSheetConnections).set({ sheetTitle: tab.title, rangeA1: connection.rangeA1, lastVerifiedAt: new Date(), externalState: "accessible", updatedAt: new Date() }).where(eq(googleSheetConnections.id, connectionId));
     }
     const grid = await readSheetGrid(connection as SyncConnection, (spreadsheetId, range) => api.readValues(spreadsheetId, range));
+    // Second view of the SAME rows: the raw =AI()/=Gemini() instructions that
+    // have not finished generating. Read right after the value grid so the two
+    // snapshots describe the same moment of the Sheet.
+    const pendingAi = scanPendingAiCells(await api.readValues(connection.spreadsheetId, `'${connection.sheetTitle.replace(/'/g, "''")}'!A:AZ`, { renderOption: "FORMULA" }));
     const result = await db.transaction(async (tx) => {
-      const outcome = await runVocabularySync(connection as SyncConnection, grid, tx, options);
+      const outcome = await runVocabularySync(connection as SyncConnection, grid, tx, options, { rowNumbers: pendingAi.rows, cellCount: pendingAi.cellCount });
       await tx.update(googleSheetSyncRuns).set({ metadata: JSON.stringify({ changes: outcome.stats.changes, changedWordIds: outcome.stats.changedWordIds, conflictRows: outcome.stats.conflicts, deletionBlocked: outcome.stats.deletionBlocked, deletionReview: outcome.stats.deletionReview, updateBlocked: outcome.stats.updateBlocked, updateReview: outcome.stats.updateReview }) }).where(eq(googleSheetSyncRuns.id, runId));
       return outcome;
     });
@@ -457,9 +462,10 @@ export async function syncConnection(connectionId: number, trigger: "manual" | "
         ...(result.stats.changedWordIds.length ? { changedWordIds: result.stats.changedWordIds } : {}),
       },
     });
-    await markConnectionSyncState(connectionId, { ok: true, partial: syncIsPartial(result.stats) });
+    await markConnectionSyncState(connectionId, { ok: true, partial: syncIsPartial(result.stats) || result.stats.aiPendingRetry });
+    if (result.stats.aiPendingRetry) await markSyncPending(connectionId, "ai_pending");
     await clearSyncPending(connectionId, readStartedAt);
-    console.log(`[google-sheet-sync] connectionId=${connectionId} trigger=${trigger} rowsCreated=${result.stats.rowsCreated} rowsUpdated=${result.stats.rowsUpdated} rowsDeleted=${result.stats.rowsDeleted} changedWordIds=[${result.stats.changedWordIds.join(",")}] webhookReceived=${trigger === "webhook"}`);
+    console.log(`[google-sheet-sync] connectionId=${connectionId} trigger=${trigger} rowsCreated=${result.stats.rowsCreated} rowsUpdated=${result.stats.rowsUpdated} rowsDeleted=${result.stats.rowsDeleted} rowsUnchanged=${result.stats.rowsUnchanged} rowsRead=${result.stats.rowsRead} duplicateCount=${result.stats.duplicateCount} validationErrors=${result.stats.validationErrorCount} invalidRows=[${result.stats.invalidRows.map((row) => row.rowNumber).join(",")}] aiPendingRows=${result.stats.aiPendingRowCount} aiPendingCells=${result.stats.aiPendingCellCount} retries=${result.stats.aiPendingRetry ? 1 : 0} syncRunId=${runId} webhookReceived=${trigger === "webhook"} status=${result.stats.aiPendingRetry ? "partial" : syncIsPartial(result.stats) ? "partial" : "success"}`);
     if (trigger !== "initial") await writeAdminAudit({ actorUserId: options?.actorUserId ?? connection.createdBy ?? 1, action: "google_sheet.sync", resourceType: "google_sheet_connection", resourceId: connectionId, metadata: { trigger, created: result.stats.rowsCreated, updated: result.stats.rowsUpdated, unchanged: result.stats.rowsUnchanged, deleted: result.stats.rowsDeleted, conflicts: result.stats.conflicts.length } });
     return { stats: result.stats, connectionId };
   } catch (error) {

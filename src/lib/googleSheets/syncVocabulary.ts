@@ -6,6 +6,7 @@ import { googleSheetConnections, googleSheetRowMappings, vocabSets, words } from
 import { gridFromValuesRange, mapHeadersToFieldKeys, parseSheetGrid, type SheetGrid } from "@/lib/googleSheets/parser";
 import { getGoogleSheetTemplate, SOURCE_ID_HEADER, type GoogleSheetTemplate } from "@/lib/googleSheets/template";
 import { aiColumnsForTemplate, buildAiColumnFormulas, aiColumnLetters, parseAiPromptOverrides } from "@/lib/googleSheets/aiFormula";
+import { resolvePendingAiRows, type PendingAiInput } from "@/lib/googleSheets/aiPending";
 import { changedFingerprintFields, fingerprintDbWord, fingerprintSheetValues } from "@/lib/googleSheets/fingerprint";
 import { generateSourceId, readSourceIdCell } from "@/lib/googleSheets/identity";
 import { draftToWordInsert, parseVocabularyRows, type ParsedWordDraft } from "@/lib/vocabImport/parse";
@@ -35,6 +36,17 @@ export type SyncStats = {
   rowsSkipped: number;
   duplicateCount: number;
   validationErrorCount: number;
+  /**
+   * Rows whose Google Sheets AI cells were still generating at read time.
+   *
+   * They are not validation errors and not deleted rows: Lexora could not read
+   * a finished value yet, so it asks for another pass instead of persisting
+   * half-generated content or archiving the row.
+   */
+  aiPendingRowCount: number;
+  aiPendingRows: number[];
+  aiPendingCellCount: number;
+  aiPendingRetry: boolean;
   /**
    * Structured conflicts. The UI renders sourceId / word / fieldsChanged
    * directly, so nothing has to be parsed back out of a message string.
@@ -86,6 +98,7 @@ export async function runVocabularySync(
   grid: SheetGrid,
   tx: Tx,
   options?: SyncRequest,
+  pendingAi?: PendingAiInput,
 ): Promise<SyncEngineResult> {
   await lockVocabularySets(tx, [connection.setId]);
   const [set] = await tx.select().from(vocabSets).where(eq(vocabSets.id, connection.setId)).limit(1);
@@ -95,6 +108,10 @@ export async function runVocabularySync(
   // Falls back to the built-in defaults when the column is NULL.
   const aiPromptOverrides = parseAiPromptOverrides(connection.aiPrompts);
   const parsedRows = parseSheetGrid(grid, template);
+  // Rows that were still generating when the Sheet was read. This comes from the
+  // FORMULA view of the same read, so "the AI cell is still blank" is never
+  // confused with "the AI cell has not finished" and never with a real error.
+  const pendingAiRows = resolvePendingAiRows(pendingAi, parsedRows);
   const [existingWords, mappings] = await Promise.all([
     tx.select().from(words).where(eq(words.setId, set.id)).orderBy(asc(words.position), asc(words.id)).for("update"),
     tx.select().from(googleSheetRowMappings).where(eq(googleSheetRowMappings.connectionId, connection.id)),
@@ -122,7 +139,11 @@ export async function runVocabularySync(
     { dedupeAgainstExisting: false },
   );
 
-  const invalidRows = draftsByRow.issues.filter((issue) => issue.code !== "DUPLICATE").map((issue) => ({ rowNumber: issue.rowNumber, message: issue.message }));
+  // A row that only misses fields because Google Sheets AI has not finished yet
+  // is not a validation error: it is a row Lexora cannot read yet, so it is
+  // reported as pending and retried, not failed and not archived.
+  const aiPendingRowNumbers = [...pendingAiRows].sort((left, right) => left - right);
+  const invalidRows = draftsByRow.issues.filter((issue) => !pendingAiRows.has(issue.rowNumber)).filter((issue) => issue.code !== "DUPLICATE").map((issue) => ({ rowNumber: issue.rowNumber, message: issue.message }));
   let duplicateCount = draftsByRow.duplicateCount;
   // Each draft carries its own source row so blank/invalid rows never shift identity.
   const draftByRowNumber = new Map(draftsByRow.rows.map((draft) => [draft.rowNumber, draft]));
@@ -353,6 +374,12 @@ export async function runVocabularySync(
   }
 
   const stats: SyncStats = {
+    // Unfinished AI output is recoverable work, not a success: the caller must
+    // schedule another pass instead of clearing pending and losing these rows.
+    aiPendingRowCount: aiPendingRowNumbers.length,
+    aiPendingRows: aiPendingRowNumbers,
+    aiPendingCellCount: pendingAi?.cellCount ?? aiPendingRowNumbers.length,
+    aiPendingRetry: aiPendingRowNumbers.length > 0,
     rowsRead: parsedRows.length,
     rowsCreated: createdRows.length,
     rowsUpdated: updateBlocked ? 0 : updatedDrafts.length,
