@@ -129,6 +129,16 @@ export default function FillFocusSession({
   }, [expandOpen]);
   const [rangeStart, setRangeStart] = useState(hasRange ? String(rangeFrom) : "1");
   const [rangeEnd, setRangeEnd] = useState(hasRange ? String(rangeTo) : String(totalWordCount));
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("lexora-auto-speak") === "1" || localStorage.getItem("lexora-auto-speak") === "true") setAutoSpeak(true);
+      if (localStorage.getItem("lexora-auto-advance") === "1" || localStorage.getItem("lexora-auto-advance") === "true") setAutoAdvance(true);
+    } catch {}
+  }, []);
+  const persistAutoSpeak = (next: boolean) => { setAutoSpeak(next); try { localStorage.setItem("lexora-auto-speak", next ? "1" : "0"); } catch {} };
+  const persistAutoAdvance = (next: boolean) => { setAutoAdvance(next); try { localStorage.setItem("lexora-auto-advance", next ? "1" : "0"); } catch {} };
   const hydratedRef = useRef(false);
   const actionLockRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -255,6 +265,39 @@ export default function FillFocusSession({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
+
+  // D1: auto-speak on new question when enabled. Fire when feedback appears (new question is revealed)
+  useEffect(() => {
+    if (!autoSpeak || !currentWord || !feedback || !feedback.correct || needsCorrection) return;
+    // Speak the target term/phrase after a short delay to let feedback render
+    const timer = window.setTimeout(() => {
+      try {
+        const text = getSpeakText(currentWord, set);
+        if (!text) return;
+        const lang = getLanguageConfig(languageCode).ttsLanguage;
+        if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+        window.speechSynthesis.cancel();
+        const clean = (languageCode === "zh-CN" ? text.trim() : text.split("/")[0].trim()) || text.trim();
+        const utter = new SpeechSynthesisUtterance(clean);
+        utter.lang = lang;
+        utter.rate = 0.9;
+        window.speechSynthesis.speak(utter);
+      } catch {}
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [autoSpeak, currentWord?.id, feedback?.correct, needsCorrection]);
+
+  // D2: auto-advance after correct (~1.5s) when enabled
+  useEffect(() => {
+    if (!autoAdvance) return;
+    if (!feedback || !feedback.correct || needsCorrection) return;
+    if (effectiveSessionKind === "test") return;
+    const timer = window.setTimeout(() => {
+      if (needsCorrection) return;
+      advancePractice();
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [autoAdvance, feedback?.correct, needsCorrection, effectiveSessionKind]);
 
   function navigateWith(updates: Record<string, string | null>) {
     if (hasActivity && !confirm("Tiến độ đã được tự động lưu. Bạn muốn chuyển chế độ?")) return;
@@ -479,6 +522,20 @@ export default function FillFocusSession({
   const overall = summarizeOverall(groupResults, groups.length);
   const progressPercent = originalWords.length ? Math.round(((Math.min(cursor, originalWords.length - 1) + (feedback ? 1 : 0)) / originalWords.length) * 100) : 0;
 
+  // D1/D2 settings panel content (rendered as inline when customOpen)
+  const settingsPanel = (
+    <div className="grid gap-2">
+      <button type="button" role="menuitemcheckbox" aria-checked={autoSpeak} onClick={() => persistAutoSpeak(!autoSpeak)} className="flex min-h-11 w-full items-center justify-between rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-goldpale">
+        <span className="flex items-center gap-2"><span aria-hidden="true">🔊</span> Tự phát âm khi có câu mới</span>
+        <span aria-hidden="true" className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${autoSpeak ? "bg-gold" : "bg-line"}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${autoSpeak ? "translate-x-4" : "translate-x-0"}`} /></span>
+      </button>
+      <button type="button" role="menuitemcheckbox" aria-checked={autoAdvance} onClick={() => persistAutoAdvance(!autoAdvance)} className="flex min-h-11 w-full items-center justify-between rounded-lg border border-line px-3 py-2 text-left text-sm hover:bg-goldpale">
+        <span className="flex items-center gap-2"><span aria-hidden="true">⏭</span> Tự chuyển câu sau khi đúng (1,5s)</span>
+        <span aria-hidden="true" className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${autoAdvance ? "bg-gold" : "bg-line"}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${autoAdvance ? "translate-x-4" : "translate-x-0"}`} /></span>
+      </button>
+    </div>
+  );
+
   return (
     <div className={`fill-focus-session lexora-page-enter relative ${expandOpen ? "fixed inset-0 z-[90] overflow-y-auto bg-[rgb(var(--color-paper))] p-3 sm:p-6" : ""} ${chrome === "compact" ? "space-y-1 pb-1" : "space-y-1 pb-1"}`}>
       {chrome === "full" && <section className="fill-session-head flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[0.8rem]">
@@ -505,7 +562,10 @@ export default function FillFocusSession({
           <button type="button" aria-label="Tùy chỉnh phạm vi từ" title="Tùy chỉnh phạm vi từ" className="inline-flex min-h-8 items-center rounded-md px-1.5 text-xs font-bold text-muted transition hover:text-golddark" onClick={() => setCustomOpen((open) => !open)} aria-expanded={customOpen}>⚙</button>
         </div>
         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${progressPercent}%` }} /></div>
-        {customOpen && <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-line pt-3"><label className="text-xs text-muted">Từ câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label><label className="text-xs text-muted">Đến câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => applyRangeSafely(Number(rangeStart) || 1, Number(rangeEnd) || totalWordCount)}>Áp dụng</button>{hasRange && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => applyRangeSafely(1, totalWordCount)}>Cả bộ</button>}</div>}
+        {customOpen && <div className="mt-2 grid gap-3 border-t border-line pt-3">
+          <div className="grid gap-2">{settingsPanel}</div>
+          <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3"><label className="text-xs text-muted">Từ câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label><label className="text-xs text-muted">Đến câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => applyRangeSafely(Number(rangeStart) || 1, Number(rangeEnd) || totalWordCount)}>Áp dụng</button>{hasRange && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => applyRangeSafely(1, totalWordCount)}>Cả bộ</button>}</div>
+        </div>}
       </section>
 
       {phase === "complete" ? (
