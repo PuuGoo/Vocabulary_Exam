@@ -50,12 +50,36 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
   const [swipe, setSwipe] = useState(0); const swipeRef = useRef<{x:number;y:number;t:number}|null>(null); const suppressClick = useRef(false);
   const [pinyinRevealed,setPinyinRevealed]=useState(false); const [examplePinyinRevealed,setExamplePinyinRevealed]=useState(false); const [exampleMeaningRevealed,setExampleMeaningRevealed]=useState(false);
   const [direction, setDirection] = useState<"vi-en" | "en-vi">("vi-en");
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  useEffect(() => {
+    try { const v = localStorage.getItem("lexora-auto-speak"); if (v === "1" || v === "true") setAutoSpeak(true); } catch {}
+  }, []);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null); const savingRef = useRef(false);
   const sessionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const visitedInThisRun = useRef(new Set<number>()); const initialCompletionSent = useRef(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null); const menuRef = useRef<HTMLDivElement>(null); const jumpInputRef = useRef<HTMLInputElement>(null);
   const sessionKey = sourceKey || (authenticatedSetId ? `set:${authenticatedSetId}` : `set:${initialSet?.id || "unknown"}`);
   const exit = () => onExit ? onExit() : router.push("/study");
+  const persistAutoSpeak = (next: boolean) => {
+    setAutoSpeak(next);
+    try { localStorage.setItem("lexora-auto-speak", next ? "1" : "0"); } catch {}
+  };
+  useEffect(() => {
+    const current = order[index];
+    if (!autoSpeak || !flipped || !current) return;
+    const text = getSpeakText(current, set || {});
+    if (!text) return;
+    try {
+      const lang = getLanguageConfig(set?.languageCode).ttsLanguage;
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+      window.speechSynthesis.cancel();
+      const clean = (set?.languageCode === "zh-CN" ? text.trim() : text.split("/")[0].trim());
+      const utter = new SpeechSynthesisUtterance(clean);
+      utter.lang = lang;
+      utter.rate = 0.9;
+      window.speechSynthesis.speak(utter);
+    } catch {}
+  }, [autoSpeak, flipped, index, order, set]);
   const selectLearningMode = (nextMode: string, target?: "term" | "pronunciation") => {
     if (allowedModes && !allowedModes.includes(nextMode)) return;
     if (onSelectMode) return onSelectMode(nextMode, target);
@@ -331,6 +355,13 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
           {!isVerb && (!allowedModes || allowedModes.includes("sentence")) && <button data-menu-item role="menuitem" aria-keyshortcuts="C" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-goldpale focus:bg-goldpale" onClick={()=>selectLearningMode("sentence")}><ActionLabel icon="≡">Xếp câu</ActionLabel><Shortcut>C</Shortcut></button>}
           {(!allowedModes || allowedModes.includes("timed")) && <button data-menu-item role="menuitem" aria-keyshortcuts="T" className="flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-goldpale focus:bg-goldpale" onClick={()=>selectLearningMode("timed")}><ActionLabel icon="◷">Thi thử tính giờ</ActionLabel><Shortcut>T</Shortcut></button>}
           <button data-menu-item role="menuitem" aria-keyshortcuts="X" className="mt-1 flex min-h-10 items-center justify-between rounded-lg border-t border-line px-3 py-2 text-left text-sm text-bad hover:bg-badbg focus:bg-badbg" onClick={exit}><ActionLabel icon="←">Thoát về danh sách bộ từ</ActionLabel><Shortcut>X</Shortcut></button>
+        </div>
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Tùy chọn</div>
+          <button data-menu-item role="menuitemcheckbox" aria-checked={autoSpeak} onClick={() => persistAutoSpeak(!autoSpeak)} className="flex min-h-11 w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-goldpale focus:bg-goldpale">
+            <ActionLabel icon="🔊">Tự phát âm khi lật thẻ</ActionLabel>
+            <span aria-hidden="true" className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition ${autoSpeak ? "bg-gold" : "bg-line"}`}><span className={`h-4 w-4 rounded-full bg-white shadow-sm transition ${autoSpeak ? "translate-x-4" : "translate-x-0"}`} /></span>
+          </button>
         </div>
         <div className="mt-3 border-t border-line pt-3 text-[0.72rem] leading-5 text-muted"><b className="text-inksoft">Điều khiển:</b> <Shortcut>↑↓</Shortcut> chọn · <Shortcut>Enter</Shortcut> mở · <Shortcut>Esc</Shortcut> đóng</div>
       </div>}
