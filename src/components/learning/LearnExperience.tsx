@@ -264,7 +264,25 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
     return () => window.removeEventListener("keydown", key);
   });
 
-  if (loading) return <main className="fixed inset-0 z-[80] grid place-items-center bg-paper text-muted">Đang tải bộ từ…</main>;
+  if (loading) return <main role="status" aria-live="polite" className="fixed inset-0 z-[80] flex flex-col bg-paper text-ink">
+    <header className="shrink-0 border-b border-line bg-panel px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+      <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
+        <div className="h-9 w-20 animate-pulse rounded-xl bg-line" />
+        <div className="h-4 w-32 animate-pulse rounded bg-line" />
+        <div className="h-8 w-16 animate-pulse rounded-full bg-line" />
+      </div>
+      <div className="mx-auto mt-3 h-1.5 max-w-4xl overflow-hidden rounded-full bg-line"><div className="h-full w-2/5 animate-pulse rounded-full bg-line" /></div>
+    </header>
+    <section className="flex flex-1 items-center justify-center p-4">
+      <div className="w-full max-w-3xl rounded-[24px] border border-line bg-panel p-6 shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-8">
+        <div className="h-3 w-28 animate-pulse rounded bg-line" />
+        <div className="mt-4 h-9 animate-pulse rounded-xl bg-line sm:h-12" />
+        <div className="mt-3 h-9 animate-pulse rounded-xl bg-line sm:h-12" />
+        <div className="mt-6 h-10 animate-pulse rounded-xl bg-line/70" />
+        <span className="sr-only">Đang tải bộ từ…</span>
+      </div>
+    </section>
+  </main>;
   if (error || !set) return <main className="fixed inset-0 z-[80] grid place-items-center bg-paper p-6 text-center"><div>Không thể tải bộ từ.<div className="mt-4 flex gap-2 justify-center"><button className="rounded-xl bg-gold px-4 py-2 text-white" onClick={()=>void loadSet()}>Thử lại</button><button className="rounded-xl border border-line bg-panel px-4 py-2" onClick={exit}>Chọn bộ khác</button></div></div></main>;
   if (!word || finished) return <main className="fixed inset-0 z-[80] overflow-y-auto bg-paper p-4 pb-[max(24px,env(safe-area-inset-bottom))] pt-[max(24px,env(safe-area-inset-top))] text-ink">
     <button ref={menuButtonRef} type="button" aria-label="Mở menu thao tác nhanh" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((value) => !value)} className="flashcard-dock-trigger fixed right-4 top-[max(16px,env(safe-area-inset-top))] z-[91]"><span aria-hidden="true">⚡</span><span className="hidden sm:inline"><Shortcut>M</Shortcut></span></button>
