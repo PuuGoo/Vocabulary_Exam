@@ -435,7 +435,7 @@ nav[aria-label="Chuyển chế độ học"] [aria-current="page"] { border-colo
 nav[aria-label="Chuyển chế độ học"] [aria-current="page"] .mode-nav-icon { opacity: 1; }
 html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page"] { color: rgb(17 24 39); }
 .fill-session-modenav nav > div:last-child { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
-.fill-kbd, .learn-kbd-hint kbd { display: inline-block; margin: 0 .15rem; padding: 0 .4rem; border: 1px solid #DCD8F3; border-bottom-width: 2px; border-radius: 6px; background: #F8F7FF; color: #6550DB; font-size: .68rem; font-weight: 700; line-height: 1.55; }
+.fill-kbd, .learn-kbd-hint kbd { display: inline-block; margin: 0 .15rem; padding: 0 .4rem; border: 1px solid rgb(var(--color-line)); border-bottom-width: 2px; border-radius: 6px; background: rgb(var(--color-goldpale)); color: rgb(var(--color-golddark)); font-size: .68rem; font-weight: 700; line-height: 1.55; }
 .learn-kbd-hint kbd:first-child { margin-left: 0; }
 .fill-answer-bar { border-radius: 18px; }
 .fill-answer-bar input:focus, .fill-answer-bar input:focus-visible { outline: none; box-shadow: none; }
