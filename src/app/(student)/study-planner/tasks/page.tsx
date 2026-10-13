@@ -26,6 +26,7 @@ export default async function PlannerTasksPage({ searchParams }: { searchParams:
       </section>
     );
   }
+  const disconnected = !connection.enabled || connection.status === "disconnected";
   const tasks = await listPlannerTasks(connection.id, { from: searchParams.from, to: searchParams.to });
   const total = tasks.length;
   const completed = tasks.filter((t) => t.completed).length;
@@ -75,7 +76,14 @@ export default async function PlannerTasksPage({ searchParams }: { searchParams:
         </div>
       </div>
 
-      <PlannerTaskList initial={tasks} />
+      {disconnected ? (
+        <div role="alert" className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">Kết nối Study Planner đang bị ngắt — dữ liệu đang xem là bản đọc từ lần đồng bộ trước.</p>
+          <p className="mt-1 text-xs text-amber-800">Thêm / sửa / đồng bộ sẽ bị từ chối cho đến khi kết nối lại. Hãy kết nối lại ở Tổng quan hoặc liên hệ quản trị viên nếu Sheet đã bị xoá/thu hồi quyền.</p>
+        </div>
+      ) : null}
+
+      <PlannerTaskList initial={tasks} disabled={disconnected} />
     </section>
   );
 }

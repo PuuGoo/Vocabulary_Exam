@@ -193,7 +193,7 @@ const emptyDraft = (): Draft => ({
   completed: false,
 });
 
-export default function PlannerTaskList({ initial }: { initial: PlannerTask[] }) {
+export default function PlannerTaskList({ initial, disabled = false }: { initial: PlannerTask[]; disabled?: boolean }) {
   const [tasks, setTasks] = useState<PlannerTask[]>(initial);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "todo" | "late" | "done">("all");
@@ -291,6 +291,10 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
   }, [filtered]);
 
   async function toggle(task: PlannerTask) {
+    if (disabled) {
+      setError("Kết nối Study Planner đang bị ngắt — hãy kết nối lại ở Tổng quan trước khi thao tác.");
+      return;
+    }
     const nextCompleted = !task.completed;
     setTasks((current) => current.map((item) => (item.id === task.id ? { ...item, completed: nextCompleted } : item)));
     setError("");
@@ -300,7 +304,10 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: task.id, completed: nextCompleted }),
       });
-      if (!response.ok) throw new Error("Không cập nhật được trạng thái");
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Không cập nhật được trạng thái");
+      }
       toast(nextCompleted ? "Đã đánh dấu hoàn thành" : "Đã bỏ đánh dấu hoàn thành");
     } catch (failure) {
       setTasks((current) => current.map((item) => (item.id === task.id ? { ...item, completed: !nextCompleted } : item)));
@@ -309,6 +316,10 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
   }
 
   function openCreate() {
+    if (disabled) {
+      setError("Kết nối Study Planner đang bị ngắt — hãy kết nối lại ở Tổng quan trước khi thao tác.");
+      return;
+    }
     setDraft(emptyDraft());
     setEditing({ id: null, task: null });
     setError("");
@@ -321,6 +332,10 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
   }
 
   async function save() {
+    if (disabled) {
+      setError("Kết nối Study Planner đang bị ngắt — hãy kết nối lại ở Tổng quan trước khi thao tác.");
+      return;
+    }
     const title = draft.taskTitle.trim();
     if (!title) {
       toast("Nhập tên nhiệm vụ trước nhé");
@@ -370,13 +385,20 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
   }
 
   async function confirmDelete() {
+    if (disabled) {
+      setError("Kết nối Study Planner đang bị ngắt — hãy kết nối lại ở Tổng quan trước khi thao tác.");
+      return;
+    }
     const target = pendingDelete;
     if (!target) return;
     setPendingDelete(null);
     setError("");
     try {
       const response = await fetch(`/api/study-planner/tasks?id=${encodeURIComponent(String(target.id))}`, { method: "DELETE" });
-      if (!response.ok) throw new Error("Lưu trữ nhiệm vụ thất bại");
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error ?? "Lưu trữ nhiệm vụ thất bại");
+      }
       setEditing(null);
       await reload();
       toast("Đã lưu trữ nhiệm vụ");
@@ -394,6 +416,13 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
 
   return (
     <div className="space-y-3">
+      {disabled ? (
+        <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p className="font-semibold">Planner chưa được kết nối</p>
+          <p className="mt-1 text-xs text-red-600">Kết nối Study Planner đang bị ngắt nên không thể thêm/sửa/đánh dấu nhiệm vụ. Hãy kết nối lại ở trang Tổng quan.</p>
+          <a href="/study-planner" className="mt-2 inline-block rounded-full bg-white px-3 py-1 text-xs font-medium text-red-700 shadow hover:bg-red-100">Đi tới Tổng quan</a>
+        </div>
+      ) : null}
       <div className="lexora-card border-slate-200 bg-white p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex min-w-[200px] flex-1 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3">
@@ -451,7 +480,8 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
           <button
             type="button"
             onClick={openCreate}
-            className="rounded-xl bg-[#1A3A6E] px-4 py-2 text-sm font-semibold text-white hover:bg-[#16305a]"
+            disabled={disabled}
+            className="rounded-xl bg-[#1A3A6E] px-4 py-2 text-sm font-semibold text-white hover:bg-[#16305a] disabled:opacity-40"
           >
             ＋ Thêm nhiệm vụ
           </button>
@@ -517,9 +547,10 @@ export default function PlannerTaskList({ initial }: { initial: PlannerTask[] })
                         <button
                           type="button"
                           onClick={() => void toggle(task)}
+                          disabled={disabled}
                           aria-pressed={task.completed}
                           aria-label="Đánh dấu hoàn thành"
-                          className={`grid h-6 w-6 flex-none place-items-center rounded-full border-2 text-xs transition ${
+                          className={`grid h-6 w-6 flex-none place-items-center rounded-full border-2 text-xs transition disabled:opacity-40 ${
                             task.completed
                               ? "border-emerald-500 bg-emerald-500 text-white"
                               : "border-slate-300 bg-transparent text-transparent hover:border-[#1A3A6E]"
