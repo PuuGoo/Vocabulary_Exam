@@ -311,15 +311,38 @@ export async function runVocabularySync(
     changedWordIds.push(word.id);
   }
 
-  const updateBlocked = !options?.updateApproval && blocksBulkUpdate(existingWords.length, updatedDrafts.length) ? updatedDrafts.length : 0;
-  const proposedUpdates: WordChange[] = updatedDrafts.map(entry => {
+  // AI-filled cells that were blank before must not trigger the bulk-update
+  // safety gate. Google Sheets' own =AI() filling 70 empty Example Pronunciation
+  // cells is the expected workflow and would otherwise be blocked as a 100%
+  // mass update, forcing a manual approval on every AI batch.
+  const aiColumnKeys = new Set(aiColumnsForTemplate(template.templateType).map((column) => column.key));
+  function isAiEmptyFill(entry: (typeof updatedDrafts)[number]): boolean {
+    const previous = wordById.get(entry.wordId);
+    if (!previous) return false;
+    const before = templateValuesForWord(template, previous);
+    const after = templateValuesForWord(template, draftToWordInsert(entry.draft));
+    const changed = changedFingerprintFields(template, before, after);
+    if (changed.length === 0) return false;
+    // Every changed field must be an AI-eligible column whose DB value was empty.
+    for (const header of changed) {
+      const field = template.fields.find((candidate) => candidate.header === header);
+      if (!field || !aiColumnKeys.has(field.key)) return false;
+      if ((before[field.key] ?? "").trim() !== "") return false;
+    }
+    return true;
+  }
+  const aiFillUpdates = updatedDrafts.filter(isAiEmptyFill);
+  const manualUpdates = updatedDrafts.filter((entry) => !isAiEmptyFill(entry));
+  const updateBlocked = !options?.updateApproval && blocksBulkUpdate(existingWords.length, manualUpdates.length) ? manualUpdates.length : 0;
+  const proposedUpdates: WordChange[] = manualUpdates.map(entry => {
     const previous = wordById.get(entry.wordId)!;
     const before = templateValuesForWord(template, previous);
     const after = templateValuesForWord(template, draftToWordInsert(entry.draft));
     return { wordId: entry.wordId, sourceId: mappingByWordId.get(entry.wordId)?.sourceId, rowNumber: entry.rowNumber, fieldsChanged: changedFingerprintFields(template, before, after), word: String(previous.term ?? previous.v1 ?? ""), action: "update", before, after };
   });
   const updateReview: UpdateReview | undefined = updateBlocked ? { fingerprint: reviewFingerprint, activeCount: existingWords.length, changedCount: updateBlocked, rows: proposedUpdates } : undefined;
-  for (const entry of updateBlocked ? [] : updatedDrafts) {
+  const updatesToApply = updateBlocked ? aiFillUpdates : updatedDrafts;
+  for (const entry of updatesToApply) {
     const previous = wordById.get(entry.wordId)!;
     const before = templateValuesForWord(template, previous);
     const after = templateValuesForWord(template, draftToWordInsert(entry.draft));
@@ -382,7 +405,7 @@ export async function runVocabularySync(
     aiPendingRetry: aiPendingRowNumbers.length > 0,
     rowsRead: parsedRows.length,
     rowsCreated: createdRows.length,
-    rowsUpdated: updateBlocked ? 0 : updatedDrafts.length,
+    rowsUpdated: updateBlocked ? aiFillUpdates.length : updatedDrafts.length,
     rowsUnchanged: unchangedWordIds.size,
     rowsDeleted,
     rowsSkipped: invalidRows.length,

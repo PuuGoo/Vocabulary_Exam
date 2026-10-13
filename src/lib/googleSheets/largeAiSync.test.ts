@@ -247,3 +247,79 @@ test("unfinished AI output must be reflected in the run status", async () => {
   const done = await run(70);
   assert.equal(done.stats.aiPendingRetry, false);
 });
+
+test("70 rows: AI filling blank columns bypasses bulk-update review", async () => {
+  // 70 rows where only Example Pronunciation was blank in the DB and is now
+  // filled by Google Sheets AI. This must sync without a manual approval -
+  // the bulk guard protects manual mass edits, not AI filling empty cells.
+  const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
+  const sourceIds = Array.from({ length: 70 }, (_, index) => makeSourceId(index));
+  const words = Array.from({ length: 70 }, (_, index) => ({
+    id: index + 1, setId: 1, position: index + 1, term: `word${index}`, meaning: `meaning ${index}`, example: `example ${index}`,
+    examplePronunciation: "", // blank before AI
+  }));
+  const mappings = words.map((word, index) => ({
+    id: index + 1, connectionId: 1, wordId: word.id, sourceId: sourceIds[index], sheetRowNumber: index + 2,
+    sourceFingerprint: fingerprintSheetValues(template, { term: word.term, meaning: word.meaning, example: word.example, examplePronunciation: "" }),
+    lastSyncedFingerprint: fingerprintSheetValues(template, { term: word.term, meaning: word.meaning, example: word.example, examplePronunciation: "" }),
+    deletedAt: null,
+  }));
+  const connection: SyncConnection = {
+    id: 1, setId: 1, spreadsheetId: "sheet", sheetTitle: template.sheetTitle,
+    deleteBehavior: "archive", conflictPolicy: "review", status: "connected", enabled: true,
+  };
+  // Sheet now carries the AI-generated pronunciation.
+  const grid = gridFromValuesRange([
+    template.fields.map((field) => field.header),
+    ...words.map((word, index) => template.fields.map((field) => {
+      if (field.key === SOURCE_ID_HEADER) return sourceIds[index];
+      if (field.displayOnly) return String(index + 1);
+      if (field.key === "examplePronunciation") return `/ipa ${index}/`;
+      if (field.key === "term") return word.term;
+      if (field.key === "meaning") return word.meaning;
+      if (field.key === "example") return word.example;
+      return "";
+    })),
+  ]);
+  const { tx } = makeTx(words, mappings, { id: 1, name: "Regression", type: "ielts_vocab", languageCode: "en" });
+  const { stats } = await runVocabularySync(connection, grid, tx as never);
+  assert.equal(stats.rowsRead, 70);
+  assert.equal(stats.updateBlocked, 0, "AI filling blanks must not be blocked");
+  assert.equal(stats.rowsUpdated, 70, "all 70 AI fills apply automatically");
+  assert.equal(stats.rowsCreated, 0);
+});
+
+test("70 rows: manual mass edit still requires review even when AI columns exist", async () => {
+  // Every row changes a non-AI field (meaning was overwritten manually). This
+  // is a real mass edit and must still be blocked.
+  const template = getGoogleSheetTemplate({ type: "ielts_vocab", languageCode: "en" });
+  const sourceIds = Array.from({ length: 70 }, (_, index) => makeSourceId(index));
+  const words = Array.from({ length: 70 }, (_, index) => ({
+    id: index + 1, setId: 1, position: index + 1, term: `word${index}`, meaning: `meaning ${index}`, example: `example ${index}`,
+  }));
+  const mappings = words.map((word, index) => ({
+    id: index + 1, connectionId: 1, wordId: word.id, sourceId: sourceIds[index], sheetRowNumber: index + 2,
+    sourceFingerprint: fingerprintSheetValues(template, { term: word.term, meaning: word.meaning, example: word.example }),
+    lastSyncedFingerprint: fingerprintSheetValues(template, { term: word.term, meaning: word.meaning, example: word.example }),
+    deletedAt: null,
+  }));
+  const connection: SyncConnection = {
+    id: 1, setId: 1, spreadsheetId: "sheet", sheetTitle: template.sheetTitle,
+    deleteBehavior: "archive", conflictPolicy: "review", status: "connected", enabled: true,
+  };
+  const grid = gridFromValuesRange([
+    template.fields.map((field) => field.header),
+    ...words.map((word, index) => template.fields.map((field) => {
+      if (field.key === SOURCE_ID_HEADER) return sourceIds[index];
+      if (field.displayOnly) return String(index + 1);
+      if (field.key === "meaning") return `NEW meaning ${index}`;
+      if (field.key === "term") return word.term;
+      if (field.key === "example") return word.example;
+      return "";
+    })),
+  ]);
+  const { tx } = makeTx(words, mappings, { id: 1, name: "Regression", type: "ielts_vocab", languageCode: "en" });
+  const { stats } = await runVocabularySync(connection, grid, tx as never);
+  assert.equal(stats.updateBlocked, 70, "mass manual edit must still be blocked");
+  assert.equal(stats.rowsUpdated, 0);
+});
