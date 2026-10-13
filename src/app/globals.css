@@ -469,3 +469,16 @@ html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page
 @media (prefers-reduced-motion: reduce) {
   .fill-shake, .fill-glow { animation: none !important; }
 }
+
+/* C4 mobile checks: 375x667 and 390x844 — virtual keyboard, floating button, tap targets */
+@media (max-width: 767px) {
+  /* Ensure all tappable controls meet 44x44 */
+  button, a, [role="button"], select { min-height: 44px; }
+  .flashcard-dock-trigger { bottom: calc(6rem + env(safe-area-inset-bottom)); }
+  .flashcard-dock-panel { bottom: calc(10.5rem + env(safe-area-inset-bottom)); }
+  /* Prevent input zoom on iOS: keep font-size >=16px already satisfied via text-base/text-lg */
+}
+@media (max-width: 767px) {
+  .fill-answer-bar input, .fill-answer-bar button { min-height: 44px; }
+}
+
