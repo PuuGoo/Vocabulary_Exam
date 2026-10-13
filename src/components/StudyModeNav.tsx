@@ -16,19 +16,19 @@ type StudyModeNavItem = {
 };
 
 const items: StudyModeNavItem[] = [
-  { key: "learn", mode: "learn", label: "Học bài", icon: "📖", href: (id) => `/learn/${id}` },
-  { key: "fill-term", mode: "fill", target: "term", label: "Điền từ tiếng Anh", icon: "✍️", href: (id) => `/quiz/${id}?mode=fill` },
+  { key: "learn", mode: "learn", label: "Học bài", icon: "▤", href: (id) => `/learn/${id}` },
+  { key: "fill-term", mode: "fill", target: "term", label: "Điền từ tiếng Anh", icon: "✎", href: (id) => `/quiz/${id}?mode=fill` },
   { key: "tone", mode: "tone", label: "Thanh điệu", icon: "〽", href: (id) => `/tone/${id}` },
   { key: "cloze", mode: "cloze", label: "Điền từ trong câu", icon: "文", href: (id) => `/cloze/${id}` },
-  { key: "mc", mode: "mc", label: "Trắc nghiệm", icon: "☑️", href: (id) => `/quiz/${id}?mode=mc` },
-  { key: "match", mode: "match", label: "Ghép cặp", icon: "🧩", href: (id) => `/match/${id}` },
-  { key: "dictation", mode: "dictation", label: "Nghe và viết", icon: "🎧", href: (id) => `/dictation/${id}` },
-  { key: "listen", mode: "listen", label: "Nghe rảnh tay", icon: "🔊", href: (id) => `/listen/${id}` },
-  { key: "pronunciation", mode: "pronunciation", label: "Luyện phát âm", icon: "🎙️", href: (id) => `/pronunciation/${id}` },
-  { key: "collocation", mode: "collocation", label: "Luyện collocation", icon: "📝", href: (id) => `/collocation/${id}` },
-  { key: "pattern", mode: "pattern", label: "Luyện cấu trúc", icon: "🏐", href: (id) => `/pattern/${id}` },
-  { key: "sentence", mode: "sentence", label: "Xếp câu", icon: "🧩", href: (id) => `/sentence/${id}` },
-  { key: "timed", mode: "timed", label: "Thi thử tính giờ", icon: "⏱", href: (id) => `/quiz/${id}?mode=fill&timed=1&minutes=15` },
+  { key: "mc", mode: "mc", label: "Trắc nghiệm", icon: "☑", href: (id) => `/quiz/${id}?mode=mc` },
+  { key: "match", mode: "match", label: "Ghép cặp", icon: "⌘", href: (id) => `/match/${id}` },
+  { key: "dictation", mode: "dictation", label: "Nghe và viết", icon: "♬", href: (id) => `/dictation/${id}` },
+  { key: "listen", mode: "listen", label: "Nghe rảnh tay", icon: "◖", href: (id) => `/listen/${id}` },
+  { key: "pronunciation", mode: "pronunciation", label: "Luyện phát âm", icon: "◉", href: (id) => `/pronunciation/${id}` },
+  { key: "collocation", mode: "collocation", label: "Luyện collocation", icon: "❝", href: (id) => `/collocation/${id}` },
+  { key: "pattern", mode: "pattern", label: "Luyện cấu trúc", icon: "◈", href: (id) => `/pattern/${id}` },
+  { key: "sentence", mode: "sentence", label: "Xếp câu", icon: "≡", href: (id) => `/sentence/${id}` },
+  { key: "timed", mode: "timed", label: "Thi thử tính giờ", icon: "◷", href: (id) => `/quiz/${id}?mode=fill&timed=1&minutes=15` },
 ];
 
 type Props = {
@@ -54,7 +54,7 @@ export default function StudyModeNav({ setId, active, isVerb = false, languageCo
         mode: "fill",
         target: "pronunciation",
         label: "Điền Pinyin",
-        icon: "🔤",
+        icon: "Aa",
         href: (id) => `/quiz/${id}?mode=fill&target=pronunciation`,
       });
     }
@@ -99,8 +99,8 @@ export default function StudyModeNav({ setId, active, isVerb = false, languageCo
     <div ref={scrollerRef} className="hidden snap-x gap-1 overflow-x-auto pb-2 [scrollbar-width:none] [touch-action:pan-x] [&::-webkit-scrollbar]:hidden sm:flex">
       {visibleItems.map((item) => {
         const selected = item.key === selectedKey;
-        const className = `flex ${slim ? "min-h-9" : "min-h-11"} shrink-0 snap-start items-center rounded-lg border ${slim ? "px-2.5 text-[0.76rem]" : "px-3 text-[0.82rem]"} font-medium transition-all duration-200 ${selected ? "border-gold bg-goldpale text-golddark shadow-[0_4px_14px_rgba(120,101,238,0.12)]" : "border-transparent text-muted hover:-translate-y-0.5 hover:border-line hover:bg-white hover:text-ink"}`;
-        const content = <><span aria-hidden="true">{item.icon}</span> {labelFor(item)}</>;
+        const className = `flex ${slim ? "min-h-9" : "min-h-11"} shrink-0 snap-start items-center gap-1.5 rounded-lg border ${slim ? "px-2.5 text-[0.76rem]" : "px-3 text-[0.82rem]"} font-medium transition-all duration-200 ${selected ? "border-gold bg-goldpale text-golddark shadow-[0_4px_14px_rgba(120,101,238,0.12)]" : "border-transparent text-muted hover:-translate-y-0.5 hover:border-line hover:bg-white hover:text-ink"}`;
+        const content = <><span aria-hidden="true" className="mode-nav-icon">{item.icon}</span><span>{labelFor(item)}</span></>;
         return onSelectMode
           ? <button type="button" key={item.key} onClick={() => choose(item)} aria-current={selected ? "page" : undefined} className={className}>{content}</button>
           : <Link key={item.key} href={item.href(setId)} aria-current={selected ? "page" : undefined} className={className}>{content}</Link>;

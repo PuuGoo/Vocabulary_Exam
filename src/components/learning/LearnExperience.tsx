@@ -341,11 +341,11 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
         <span className={`pointer-events-none absolute right-4 top-4 z-20 rounded-full px-2.5 py-1 text-[0.68rem] font-bold shadow-sm ${currentRatingClass}`}>{currentRatingLabel}</span>
         {Math.abs(swipe)>12&&<span aria-hidden="true" style={{opacity:Math.min(1,Math.abs(swipe)/70)}} className={`pointer-events-none absolute top-1/2 z-30 -translate-y-1/2 rounded-full bg-[#242337]/90 px-3 py-2 text-xs font-bold text-white shadow-xl ${swipe<0?"right-4":"left-4"}`}>{swipe<0?(index>=total-1?"Kết thúc lượt học →":"Thẻ tiếp theo →"):(index===0?"Đang ở thẻ đầu":"← Thẻ trước")}</span>}
         <div className={`flashcard-flipper relative h-full w-full ${flipped?"is-flipped":""}`}>
-          <article className="flashcard-face absolute inset-0 flex h-full flex-col items-center justify-center overflow-y-auto rounded-3xl border border-[#EBEAF2] bg-white p-6 text-center shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-10">{direction==="vi-en" ? <><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">Nghĩa tiếng Việt</div><div className="mt-4 font-serif text-3xl font-bold sm:text-5xl">{word.meaning}</div><div className="mt-5 text-sm text-[#8B899F]">Chạm vào thẻ để xem đáp án</div></> : <><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">{isVerb ? "V1 — V2 — V3" : languageConfig.termLabel}</div><div lang={normalizeLanguageCode(set?.languageCode)} className="mt-4 font-serif text-3xl font-bold sm:text-5xl">{answer}</div><div className="mt-5 text-sm text-[#8B899F]">Chạm vào thẻ để xem nghĩa</div></>}</article>
+          <article className="flashcard-face absolute inset-0 flex h-full flex-col items-center justify-center overflow-y-auto rounded-3xl border border-[#EBEAF2] bg-white p-6 text-center shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-10">{direction==="vi-en" ? <><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">Nghĩa tiếng Việt</div><div className="mt-4 font-serif text-3xl font-bold leading-tight [text-wrap:balance] sm:text-5xl">{word.meaning}</div><div className="mt-5 text-sm text-[#8B899F]">Chạm vào thẻ để xem đáp án</div></> : <><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">{isVerb ? "V1 — V2 — V3" : languageConfig.termLabel}</div><div lang={normalizeLanguageCode(set?.languageCode)} className="mt-4 font-serif text-3xl font-bold leading-tight [text-wrap:balance] sm:text-5xl">{answer}</div><div className="mt-5 text-sm text-[#8B899F]">Chạm vào thẻ để xem nghĩa</div></>}</article>
           <article className="flashcard-face flashcard-back absolute inset-0 flex h-full flex-col items-center justify-center overflow-y-auto rounded-3xl border border-[#7865EE]/20 bg-white p-6 text-center shadow-[0_14px_40px_rgba(36,35,55,0.08)] sm:p-10">
 {direction==="vi-en" ? (
   <><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">{isVerb ? "V1 — V2 — V3" : languageConfig.termLabel}</div>
-  <div lang={normalizeLanguageCode(set?.languageCode)} className="mt-4 flex flex-wrap items-center justify-center gap-3 font-serif text-3xl font-bold sm:text-5xl">{answer}<SpeakButton text={getSpeakText(word,set||{})} languageCode={set?.languageCode||"en"}/></div>
+  <div lang={normalizeLanguageCode(set?.languageCode)} className="mt-4 flex flex-wrap items-center justify-center gap-3 font-serif text-3xl font-bold leading-tight [text-wrap:balance] sm:text-5xl">{answer}<SpeakButton text={getSpeakText(word,set||{})} languageCode={set?.languageCode||"en"}/></div>
   {!isVerb && forms.secondary && <div className="mt-2 text-xl text-[#6E6A83]">{forms.secondary}</div>}
   {isVerb ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-3 text-lg"/> :
     pronunciation && (isChinese && !pinyinRevealed ?
@@ -362,7 +362,7 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
 </>
 ) : (
   <><div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8B899F]">Nghĩa tiếng Việt</div>
-  <div className="mt-4 font-serif text-3xl font-bold sm:text-5xl">{word.meaning}</div>
+  <div className="mt-4 font-serif text-3xl font-bold leading-tight [text-wrap:balance] sm:text-5xl">{word.meaning}</div>
   {pronunciation && <div className="mt-2 text-xl text-[#765FD5]">{pronunciation}</div>}
   {!isVerb && word.wtype && <div className="mt-2 text-sm text-[#8B899F]">({word.wtype}){word.level ? ` · ${word.level}` : ""}</div>}
   {!isVerb && word.example && <div className="mt-4 max-w-xl text-sm italic text-[#8B899F]">“{word.example}”
@@ -374,6 +374,7 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
       </div>
       <button type="button" aria-label={index>=total-1 ? "Kết thúc lượt học" : "Thẻ tiếp theo"} onClick={next} className="absolute right-4 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-[#EBEAF2] bg-white text-xl text-[#6550DB] shadow-sm transition hover:-translate-y-[55%] hover:border-[#CFC7FF] hover:shadow-md md:flex">→</button>
       <p className="text-center text-xs text-[#8B899F] sm:hidden">Vuốt sang trái/phải để chuyển thẻ</p>
+      <p className="learn-kbd-hint hidden flex-wrap items-center justify-center gap-x-5 gap-y-1 text-xs text-[#8B899F] md:flex"><span><Shortcut>Space</Shortcut> lật thẻ</span><span><Shortcut>←</Shortcut><Shortcut>→</Shortcut> chuyển thẻ</span><span><Shortcut>1</Shortcut> chưa nhớ</span><span><Shortcut>2</Shortcut> đã nhớ</span></p>
     </section>
     <footer className="shrink-0 border-t border-[#EBEAF2] bg-white px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
       {mode === "unknown" && unknown > 0 && authenticatedSetId && <div className="mx-auto mb-2 grid w-full max-w-2xl gap-2 sm:grid-cols-2">

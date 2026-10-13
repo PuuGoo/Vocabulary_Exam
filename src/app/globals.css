@@ -428,3 +428,27 @@ button:active:not(:disabled), a:active:not([href]) { transform: translateY(1px) 
 @keyframes fill-feedback-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .fill-correction-box { scroll-margin-bottom: 5.5rem; }
 @media (prefers-reduced-motion: reduce) { .fill-feedback-reveal { animation: none; } }
+
+/* ==== Lexora UI/UX upgrade: learn + fill ==== */
+.mode-nav-icon { display: inline-grid; width: 1.15rem; place-items: center; font-family: "Segoe UI Symbol", "Noto Sans Symbols 2", "Apple Symbols", system-ui, sans-serif; font-variant-emoji: text; font-size: .95em; line-height: 1; opacity: .8; }
+nav[aria-label="Chuyển chế độ học"] [aria-current="page"] { border-color: transparent; background: rgb(var(--color-gold)); color: #fff; font-weight: 700; box-shadow: 0 6px 16px rgb(var(--color-gold) / .28); }
+nav[aria-label="Chuyển chế độ học"] [aria-current="page"] .mode-nav-icon { opacity: 1; }
+html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page"] { color: rgb(17 24 39); }
+.fill-session-modenav nav > div:last-child { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 36px), transparent); }
+.fill-kbd, .learn-kbd-hint kbd { display: inline-block; margin: 0 .15rem; padding: 0 .4rem; border: 1px solid #DCD8F3; border-bottom-width: 2px; border-radius: 6px; background: #F8F7FF; color: #6550DB; font-size: .68rem; font-weight: 700; line-height: 1.55; }
+.learn-kbd-hint kbd:first-child { margin-left: 0; }
+.fill-answer-bar { border-radius: 18px; }
+.fill-answer-bar input:focus, .fill-answer-bar input:focus-visible { outline: none; box-shadow: none; }
+.fill-answer-input { font-size: 1.3rem; letter-spacing: .01em; }
+.fill-check-btn { min-width: 7.5rem; letter-spacing: .01em; }
+@media (min-width: 768px) {
+  .fill-focus-card { display: flex; flex-direction: column; min-height: min(28rem, calc(100dvh - 17rem)); }
+  .fill-focus-card > :first-child { margin-top: auto; }
+  .fill-focus-card > :last-child { margin-bottom: auto; }
+  .fill-focus-card-inner { padding: 1.75rem 2rem; }
+  .flashcard-dock-trigger { top: calc(env(safe-area-inset-top, 0px) + .75rem); right: max(1rem, env(safe-area-inset-right)); min-width: 0; min-height: 2.5rem; padding: 0 .85rem; transform: none; box-shadow: 0 4px 14px rgba(36,35,55,.10); }
+  .flashcard-dock-trigger:active { transform: scale(.96); }
+  .flashcard-dock-panel { top: calc(env(safe-area-inset-top, 0px) + 3.75rem); right: max(1rem, env(safe-area-inset-right)); max-height: calc(100dvh - 5rem - env(safe-area-inset-top, 0px)) !important; transform: none; transform-origin: top right; animation-name: lexora-dock-in-desktop; }
+  @keyframes lexora-dock-in-desktop { from { opacity: 0; transform: translateY(-6px) scale(.98); } to { opacity: 1; transform: none; } }
+}
+@media (prefers-reduced-motion: reduce) { .flashcard-dock-panel { animation: none; } }
