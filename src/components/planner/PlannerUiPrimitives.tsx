@@ -120,4 +120,40 @@ export function PlannerBulkReviewBanner({ fingerprint, onApprove }: { fingerprin
     </div>
   );
 }
-
+/** Sheet-faithful pill used across the task table. */
+export function PlannerPill({ variant, children }: { variant: "category" | "priority" | "status" | "skill" | "neutral"; children: React.ReactNode }) {
+  const map: Record<string, string> = {
+    category: "bg-sky-100 text-sky-800 ring-sky-200",
+    priority: "bg-amber-100 text-amber-800 ring-amber-200",
+    status: "bg-emerald-100 text-emerald-700 ring-emerald-200",
+    skill: "bg-violet-100 text-violet-700 ring-violet-200",
+    neutral: "bg-slate-100 text-slate-700 ring-slate-200",
+  };
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${map[variant]}`}>{children}</span>;
+}
+export function pillForCategory(value: string | null): { variant: "category" | "priority" | "status" | "skill" | "neutral"; label: string } {
+  const v = (value ?? "").trim().toLowerCase();
+  if (!v) return { variant: "neutral", label: "—" };
+  if (v.includes("ielts")) return { variant: "skill", label: value! };
+  if (v.includes("học")) return { variant: "category", label: value! };
+  if (v.includes("làm thêm") || v.includes("lam them")) return { variant: "status", label: value! };
+  return { variant: "category", label: value! };
+}
+export function pillForPriority(value: string | null): { variant: "category" | "priority" | "status" | "skill" | "neutral"; label: string } {
+  const v = (value ?? "").trim().toLowerCase();
+  if (!v) return { variant: "neutral", label: "—" };
+  if (v === "cao" || v.includes("khẩn") || v === "high" || v === "urgent") return { variant: "priority", label: value! };
+  return { variant: "neutral", label: value! };
+}
+export function pillForStatus(value: string | null, completed: boolean, dueDate: string | null): { variant: "category" | "priority" | "status" | "skill" | "neutral"; tone: "success" | "danger" | "warning" | "neutral" | "info"; label: string } {
+  if (completed) return { variant: "status", tone: "success", label: (value && value.trim()) || "Hoàn thành" };
+  const raw = (value ?? "").trim();
+  const lower = raw.toLowerCase();
+  if (lower.includes("quá hạn") || lower.includes("qua han") || lower === "overdue") return { variant: "status", tone: "danger", label: raw || "Quá hạn" };
+  if (dueDate) {
+    const today = new Date().toISOString().slice(0,10);
+    if (dueDate < today) return { variant: "status", tone: "danger", label: raw || "Quá hạn" };
+  }
+  if (!raw) return { variant: "neutral", tone: "neutral", label: "—" };
+  return { variant: "neutral", tone: "neutral", label: raw };
+}
