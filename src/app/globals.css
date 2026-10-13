@@ -11,7 +11,7 @@
   --color-golddark: 101 80 219;
   --color-goldpale: 238 235 255;
   --color-line: 235 234 242;
-  --color-muted: 139 137 159;
+  --color-muted: 107 105 133;
   --color-ok: 48 151 112;
   --color-okbg: 234 248 242;
   --color-bad: 212 76 91;
@@ -27,7 +27,7 @@ html.theme-dark {
   --color-golddark: 235 190 91;
   --color-goldpale: 58 48 32;
   --color-line: 55 65 81;
-  --color-muted: 156 163 175;
+  --color-muted: 168 174 200;
   --color-ok: 110 207 166;
   --color-okbg: 25 62 50;
   --color-bad: 248 145 125;
