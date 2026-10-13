@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ConfirmDialog, { useConfirmDialog } from "@/components/ConfirmDialog";
 import { useRouter, useSearchParams } from "next/navigation";
 import SpeakButton from "@/components/SpeakButton";
 import StudyModeNav from "@/components/StudyModeNav";
@@ -117,6 +118,7 @@ export default function FillFocusSession({
   const [saving, setSaving] = useState(false);
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  const { confirm: confirmRestart, dialog: confirmDialog } = useConfirmDialog();
   const [expandOpen, setExpandOpen] = useState(false);
 
   useEffect(() => {
@@ -447,8 +449,11 @@ export default function FillFocusSession({
     changeGroup(group + 1);
   }
 
-  function restart() {
-    if (hasActivity && !confirm("Xóa toàn bộ tiến độ của bài Điền từ này để làm lại?")) return;
+  async function restart() {
+    if (hasActivity) {
+      const ok = await confirmRestart({ title: "Làm lại bài này?", description: "Tiến độ của phiên hiện tại sẽ bị xóa và bạn bắt đầu lại từ câu 1.", confirmLabel: "Làm lại", tone: "danger" });
+      if (!ok) return;
+    }
     try { localStorage.removeItem(draftKey); } catch {}
     setGroup(0); setQueues(buildQueues(groups)); setCursors({ 0: 0 }); setAnswers({}); setOutcomes({});
     setHintLevels({}); setAudioBeforeAnswer({}); setGroupResults({}); setPhase("questions");
@@ -478,7 +483,7 @@ export default function FillFocusSession({
     <div className={`fill-focus-session lexora-page-enter relative ${expandOpen ? "fixed inset-0 z-[90] overflow-y-auto bg-[rgb(var(--color-paper))] p-3 sm:p-6" : ""} ${chrome === "compact" ? "space-y-1 pb-1" : "space-y-1 pb-1"}`}>
       {chrome === "full" && <section className="fill-session-head flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-[0.8rem]">
         <div className="flex min-w-0 items-baseline gap-2"><p className="shrink-0 text-xs font-bold uppercase tracking-[0.16em] text-gold">{getFillModeLabel(set,target)}{wordScope === "unknown" ? " · Từ chưa nhớ" : ""}</p><h1 className="mt-1 truncate text-base font-extrabold sm:text-lg">{set.name}</h1></div>
-        <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setExpandOpen((o) => !o)} title={expandOpen ? "Thu nh\u00f3" : "M\u1edf r\u1ed9ng to\u00e0n m\u00e0n h\u00ecnh"}>{expandOpen ? "\u21BB Thu nh\u00f3" : "\u27F6 M\u1edf r\u1ed9ng"}</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={restart}>Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
+        <div className="flex flex-wrap gap-2"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setExpandOpen((o) => !o)} title={expandOpen ? "Thu nh\u00f3" : "M\u1edf r\u1ed9ng to\u00e0n m\u00e0n h\u00ecnh"}>{expandOpen ? "\u21BB Thu nh\u00f3" : "\u27F6 M\u1edf r\u1ed9ng"}</button><span aria-hidden="true" className="hidden h-6 w-px bg-line sm:block" /><button className="min-h-9 rounded-lg border border-dashed border-line px-3 text-xs font-semibold text-muted hover:border-gold/30 hover:bg-goldpale hover:text-golddark" onClick={() => void restart()}>↺ Làm lại</button><button className={`${cx.btn} ${cx.btnGhost}`} onClick={leaveSafely}>Chọn bộ khác</button></div>
       </section>}
 
       {!retest && !quickMode && <div className="fill-session-modenav"><StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} slim /></div>}
@@ -575,6 +580,7 @@ export default function FillFocusSession({
           <QuestionNavigator open={navigatorOpen} onToggle={() => setNavigatorOpen((open) => !open)} words={originalWords} currentWordId={currentWord.id} answers={answers} outcomes={outcomes} hintLevels={hintLevels} queue={queue} cursor={cursor} onSelect={(wordId) => { const index = queue.indexOf(wordId); if (index >= 0) { setCursors((current) => ({ ...current, [group]: index })); setFeedback(null); setNeedsCorrection(false); setCorrection([]); setActiveHintLevel(0); } }} />
         </>
       ) : null}
+      {confirmDialog}
     </div>
   );
 }
