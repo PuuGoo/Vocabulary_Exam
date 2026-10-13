@@ -5,6 +5,9 @@ out
 .env.local
 .env.*.local
 npm-debug.log*
+
+# Local test/build logs produced by npm runs; never committed
+*.log
 .DS_Store
 *.tsbuildinfo
 .vs/

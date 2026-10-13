@@ -126,3 +126,22 @@ Steps 1–20 of Phase 12 — including sheet→web / web→sheet, duplicate-free
 * **No-go for the 20 standing Phase-12 E2E steps** (see §7): cell-address wiring is verified offline against the real workbook *and* the template-switch/snapshot/watch/channel/pending/webhook path is verified live once (user 8, §6). What is still missing is the human-in-the-loop confirmation for each domain (edit a cell → watch the matching page update without reload).
 * **Go for the template-registry + switch + grid-expansion changes as deployed** (`2d5e6d2`): typecheck, 75 isolated planner tests, 4 embedded-Postgres DB tests, and the production build are green; the production connection they target is `connected` with `last_error` NULL; the failure that would reappear (grid limits on a never-synced copy) is guarded by `ensureMetadataColumnWidth` with an idempotent retry.
 * Before any future claim of full acceptance: run `db:migrate:study-planner` on staging, have the owner execute steps 1–20 against a disposable account, and reconcile the missed-notification + revoked-OAuth + vocabulary-regression paths on staging first.
+
+## 10. User-8 rebuild (option B) - 2026-10-13
+
+- Backup (outside repo, recovery path): C:/Users/PuuGoo/Desktop/planner-backups/user8-conn2-backup-2026-10-13T00-58-16-004.json (12.6 MB, 22,013 rows, valid JSON). Connection 2 row (1mM61Htw...) + legacy row (1WrStBz...) recorded.
+- Drive lexora.admin.2027@gmail.com: all 6 files carrying the planner appProperty for user 8 moved to Trash (recoverable, 0 live copies remain): 1mM61Htw..., 11O76Szc..., 1VaixV-..., 1Mtp3Zh..., 1sWBaFR..., 1WrStBz.... This unblocks ensureStudyPlanner, which throws on >1 live copy with the same key.
+- Wipe (study_planner_* only, connection 2 / user 8): habit_completions 372, attendance_marks 38, tasks 8815, assignments 2665, reading 1230, curriculum 2460, courses 3075, todos 1230, activities 1845, habits 12, sessions 30, plus channels/runs/revisions/settings/snapshots/pending. Verified after: words=2951 untouched, google_sheet_connections=50 untouched, oauth row for user 8 kept, remaining planner rows belong to user 1 only (tasks 508, courses 182).
+- Rebuild via the real code path ensureStudyPlanner({userId:8}): Drive files.copy from active template 1B6HNR-7... -> new personal file 121-nxnr4ib_oMqQ670oxPIrDQ9JT3lzXID1ee11jFXw. study_planners + study_planner_connections (id 3, managed_by_lexora=true, template_id=1B6HNR-7...) agree on the new id.
+- Sync is blocked on real OAuth state, not code: the user-8 refresh token returns invalid_grant (expires_at 2026-10-12T13:54Z). Runs 236/237 started then hung in Sheets reads; both marked error, lock released, connection 3 set to status=error with last_error=OAUTH_REVOKED (reconnect Google), pending=oauth_reconnect. Zero rows imported into the fresh copy - correct, avoids writing junk while the token is dead.
+- Owner action: reconnect Google as lexora.admin.2027@gmail.com on production, then one manual sync. Expect run 1 rows_created~104 / run 2 rows_created=0 (idempotent after 8f3fc9b, verified live on run 234 before the rebuild: rows_created=0, rows_updated=104).
+- Phase 12 steps 1-20 remain unverified and are not claimed.
+
+## 11. Verification snapshot (this run, 2026-10-13)
+
+- npx tsc --noEmit: 0 errors.
+- npm run test:study-planner: 77 pass, 0 fail.
+- npm run test:study-planner-db: 4 pass, 0 fail (embedded Postgres).
+- npm run test:google-sheets-reliability: 53 pass, 0 fail.
+- npm run build: compiled, 119/119 static pages, all 13 /study-planner/* routes present.
+- .gitignore now ignores *.log so local test/build logs are never committed.
