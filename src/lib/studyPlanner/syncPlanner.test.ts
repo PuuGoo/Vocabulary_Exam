@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -104,4 +105,35 @@ test("grid slicing reads source columns by letter and merges id backfill writes"
   ]);
   assert.equal(merged.length, 2, "contiguous rows merge into one range write");
   assert.equal(merged[0].values.length, 2);
+});
+test("__lexora_id column must be part of the read or repeat sync duplicates rows", () => {
+  // Regression: the read column list was sourceColumns + controlColumns only,
+  // so row.cells[metadataColumn] was always undefined. importTaskRow then
+  // reported no identity, the engine minted a fresh lexoraId on every run,
+  // and each webhook INSERTed a new row instead of updating the existing one
+  // (observed live: assignments reached 402 rows for a single due date).
+  const syncSource = fs.readFileSync("src/lib/studyPlanner/sync.ts", "utf8");
+  assert.match(syncSource, /range\.metadataColumn \? \[range\.metadataColumn\] : \[\]/, "metadataColumn must be appended to the read columns");
+  const widened = syncSource.match(/metadataColumn \? \[range\.metadataColumn\] : \[\]/g) ?? [];
+  assert.ok(widened.length >= 2, "planFor and gridFor must both include the metadata column");
+});
+
+test("reading the metadata column preserves identity (behavioral)", () => {
+  const { gridFromPlannerValues } = require("@/lib/studyPlanner/columnGrid") as typeof import("@/lib/studyPlanner/columnGrid");
+  const { importTaskRow } = require("@/lib/studyPlanner/importers") as typeof import("@/lib/studyPlanner/importers");
+  const { WORKBOOK_RANGES } = require("@/lib/studyPlanner/workbookMap") as typeof import("@/lib/studyPlanner/workbookMap");
+  const col = WORKBOOK_RANGES["Nhật ký nhiệm vụ"]!.metadataColumn!;
+  const existingId = "v_abc123def456";
+  const ci = (l: string) => { let i = 0; for (const ch of l.toUpperCase()) i = i * 26 + (ch.charCodeAt(0) - 64); return i - 1; };
+  const values = Array.from({ length: 7 }, () => Array(50).fill("")) as unknown as (string | number | boolean | null)[][];
+  values[6][ci("B")] = "2026-10-26";
+  values[6][ci("H")] = "On tap";
+  values[6][ci(col)] = existingId;
+  const withCol = gridFromPlannerValues({ tab: "Nhật ký nhiệm vụ", values, dataFrom: 7, dataTo: 7, columns: ["B", "C", "H", col] });
+  const ok = importTaskRow(withCol.rows[0], { metadataColumn: col });
+  assert.equal(ok.status, "ok");
+  assert.equal((ok as any).lexoraId, existingId);
+  const noCol = gridFromPlannerValues({ tab: "Nhật ký nhiệm vụ", values, dataFrom: 7, dataTo: 7, columns: ["B", "C", "H"] });
+  const stale = importTaskRow(noCol.rows[0], { metadataColumn: col });
+  assert.equal((stale as any).lexoraId, "", "without the column in the read, the importer sees no identity; the engine will mint a fresh id");
 });

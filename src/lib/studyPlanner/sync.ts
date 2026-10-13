@@ -99,7 +99,10 @@ function planFor(tab: WorkbookTab): TabPlan | null {
     tab,
     dataFrom: range.dataFrom,
     dataTo: range.dataTo,
-    columns: [...range.sourceColumns, ...(range.controlColumns ?? [])],
+    // The hidden __lexora_id column MUST be read: without it the importer
+    // always returns undefined and invents a fresh lexoraId, so repeat syncs
+    // INSERT duplicate rows instead of updating the existing record.
+    columns: [...range.sourceColumns, ...(range.controlColumns ?? []), ...(range.metadataColumn ? [range.metadataColumn] : [])],
     metadataColumn: range.metadataColumn,
   };
 }
@@ -114,7 +117,7 @@ function gridFor(tab: WorkbookTab, valuesByTab: ReadonlyMap<string, SheetsValue 
     values,
     dataFrom: range.dataFrom,
     dataTo: range.dataTo,
-    columns: [...range.sourceColumns, ...(range.controlColumns ?? [])],
+    columns: [...range.sourceColumns, ...(range.controlColumns ?? []), ...(range.metadataColumn ? [range.metadataColumn] : [])],
   });
 }
 
