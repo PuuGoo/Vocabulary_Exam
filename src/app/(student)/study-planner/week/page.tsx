@@ -1,10 +1,19 @@
 import { getSession } from "@/lib/auth";
 import { loadPlannerConnectionForUser, listPlannerTasks, listPlannerAssignments, listPlannerActivities, listPlannerCourses } from "@/lib/studyPlanner/queries";
 import { todayLocal } from "@/lib/studyPlanner/values";
+import {
+  PlannerEmpty,
+  PlannerKpiStrip,
+  PlannerPageHeader,
+  PlannerPill,
+  PlannerSection,
+  PlannerTable,
+  formatClock,
+} from "@/components/planner/PlannerShell";
 
 export const dynamic = "force-dynamic";
 
-const WEEKDAY = ["", "T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const WEEKDAY_LONG = ["", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"];
 
 function mondayOf(dateIso: string): string {
   const [year, month, day] = dateIso.split("-").map(Number);
@@ -23,8 +32,7 @@ function addDays(dateIso: string, offset: number): string {
 
 function weekdayIndex(dateIso: string): number {
   const [year, month, day] = dateIso.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  const dow = date.getUTCDay();
+  const dow = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
   return dow === 0 ? 7 : dow;
 }
 
@@ -44,9 +52,16 @@ export default async function PlannerWeekPage({ searchParams }: { searchParams: 
   const session = await getSession();
   const connection = session ? await loadPlannerConnectionForUser(session.userId) : null;
   if (!connection) {
-    return <section className="space-y-4"><h1 className="text-2xl font-bold">Lịch tuần</h1><p className="text-sm text-muted">Hãy kết nối Study Planner để xem lịch tuần.</p></section>;
+    return (
+      <section className="space-y-4">
+        <PlannerPageHeader title="LỊCH TUẦN" subtitle="Kết nối Study Planner để xem lịch tuần." />
+        <PlannerEmpty title="Chưa kết nối Study Planner." body="Hãy kết nối Google Sheet ở Tổng quan trước khi xem lịch tuần." />
+      </section>
+    );
   }
-  const cursor = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.day ?? "") ? searchParams.day! : todayLocal();
+
+  const today = todayLocal();
+  const cursor = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.day ?? "") ? searchParams.day! : today;
   const monday = mondayOf(cursor);
   const week = Array.from({ length: 7 }, (_, index) => addDays(monday, index));
   const [tasks, assignments, activities, { courses, sessions }] = await Promise.all([
@@ -59,46 +74,118 @@ export default async function PlannerWeekPage({ searchParams }: { searchParams: 
   const days = week.map((date) => ({
     date,
     weekday: weekdayIndex(date),
-    sessions: sessions.filter((item) => item.weekday === weekdayIndex(date)),
+    sessions: sessions.filter((item) => item.weekday === weekdayIndex(date)).sort((a, b) => a.startTime - b.startTime),
     tasks: tasks.filter((task) => task.taskDate === date),
     activities: activities.filter((activity) => activity.activityDate === date),
   }));
   const deadlines = assignments.filter((item) => item.dueDate && item.dueDate >= week[0] && item.dueDate <= week[6]);
-  const conflicts = days.filter((day) => {
-    const timed = [
-      ...day.sessions.map((item) => ({ start: item.startTime, end: item.endTime })),
-      ...day.activities.map((activity) => ({ start: activity.startTime, end: activity.endTime })),
-    ];
-    for (let a = 0; a < timed.length; a += 1) for (let b = a + 1; b < timed.length; b += 1) if (overlaps(timed[a], timed[b])) return true;
-    return false;
-  }).map((day) => day.date);
+  const conflicts = days
+    .filter((day) => {
+      const timed = [
+        ...day.sessions.map((item) => ({ start: item.startTime, end: item.endTime })),
+        ...day.activities.map((activity) => ({ start: activity.startTime, end: activity.endTime })),
+      ];
+      for (let a = 0; a < timed.length; a += 1) for (let b = a + 1; b < timed.length; b += 1) if (overlaps(timed[a], timed[b])) return true;
+      return false;
+    })
+    .map((day) => day.date);
+
+  const weekTasks = days.reduce((sum, day) => sum + day.tasks.length, 0);
+  const weekSessions = days.reduce((sum, day) => sum + day.sessions.length, 0);
+
   return (
     <section className="space-y-4">
-      <header className="flex flex-wrap items-end justify-between gap-2">
-        <div><h1 className="text-2xl font-bold">Lịch tuần</h1><p className="text-sm text-muted">{week[0]} → {week[6]}</p></div>
-        <form method="get" className="flex items-center gap-2">
-          <a className="rounded-xl bg-slate-100 px-3 py-2 text-sm" href={`/study-planner/week?day=${encodeURIComponent(addDays(monday, -7))}`}>Tuần trước</a>
-          <input aria-label="Chọn ngày trong tuần" type="date" name="day" defaultValue={cursor} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" />
-          <button className="rounded-xl bg-slate-100 px-3 py-2 text-sm" type="submit">Xem</button>
-          <a className="rounded-xl bg-slate-100 px-3 py-2 text-sm" href={`/study-planner/week?day=${encodeURIComponent(addDays(monday, 7))}`}>Tuần sau</a>
-        </form>
-      </header>
-      {conflicts.length ? <p role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">Có khung giờ trùng lặp vào {conflicts.join(", ")}. Hãy kiểm tra chi tiết từng ngày.</p> : null}
+      <PlannerPageHeader
+        title="LỊCH TUẦN"
+        subtitle={`${week[0]} → ${week[6]} · ${weekSessions} buổi học · ${weekTasks} nhiệm vụ · ${deadlines.length} deadline`}
+        actions={
+          <form method="get" className="flex flex-wrap items-center gap-2">
+            <a className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 text-sm font-medium text-white" href={`/study-planner/week?day=${encodeURIComponent(addDays(monday, -7))}`}>← Tuần trước</a>
+            <input aria-label="Chọn ngày trong tuần" type="date" name="day" defaultValue={cursor} className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 text-sm text-white" />
+            <button className="rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-[#1E3989]" type="submit">Xem</button>
+            <a className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 text-sm font-medium text-white" href={`/study-planner/week?day=${encodeURIComponent(addDays(monday, 7))}`}>Tuần sau →</a>
+          </form>
+        }
+      />
+
+      <PlannerKpiStrip
+        items={[
+          { label: "Buổi học", value: weekSessions },
+          { label: "Nhiệm vụ", value: weekTasks },
+          { label: "Deadline", value: deadlines.length },
+          { label: "Ngày có trùng giờ", value: conflicts.length, tone: conflicts.length ? "or" : "ok" },
+        ]}
+      />
+
+      {conflicts.length ? (
+        <p role="alert" className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Có khung giờ trùng lặp vào {conflicts.join(", ")}. Hãy kiểm tra chi tiết từng ngày.
+        </p>
+      ) : null}
+
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
-        {days.map((day) => (
-          <div key={day.date} className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3">
-            <p className="text-xs font-semibold text-slate-600">{WEEKDAY[day.weekday]} · {day.date}</p>
-            {day.sessions.length ? <p className="text-xs text-slate-600"><span className="font-semibold">{day.sessions.length}</span> buổi học: {day.sessions.map((item) => courseName.get(item.courseId) ?? "Môn học").join(", ")}</p> : null}
-            {day.tasks.map((task) => <a key={task.id} href="/study-planner/tasks" className="block rounded-xl bg-slate-50 px-3 py-2 text-sm">{task.taskTitle}</a>)}
-            {day.activities.map((activity) => <a key={activity.id} href="/study-planner/activities" className="block rounded-xl bg-indigo-50 px-3 py-2 text-sm">{activity.activityName}</a>)}
-          </div>
-        ))}
+        {days.map((day) => {
+          const isToday = day.date === today;
+          return (
+            <div
+              key={day.date}
+              className={`space-y-2 rounded-2xl border bg-white p-3 ${isToday ? "border-[#1E3989] ring-1 ring-[#1E3989]/30" : "border-slate-200"}`}
+            >
+              <div className="flex items-baseline justify-between gap-1">
+                <p className="text-xs font-semibold text-slate-700">{WEEKDAY_LONG[day.weekday]}</p>
+                {isToday ? <span className="rounded-full bg-[#1E3989] px-2 py-0.5 text-[10px] font-medium text-white">Hôm nay</span> : null}
+              </div>
+              <p className="text-[11px] text-slate-500">{day.date.slice(8, 10)}/{day.date.slice(5, 7)}/{day.date.slice(0, 4)}</p>
+
+              {day.sessions.map((item) => (
+                <div key={`s-${item.id}`} className="rounded-xl bg-[#e9eeff] px-3 py-2 text-xs">
+                  <p className="font-medium text-[#1E3989]">{formatClock(item.startTime)}–{formatClock(item.endTime)}</p>
+                  <p className="text-slate-700">{courseName.get(item.courseId) ?? "Môn học"}{item.room ? ` · ${item.room}` : ""}</p>
+                </div>
+              ))}
+              {day.tasks.map((task) => (
+                <a key={`t-${task.id}`} href="/study-planner/tasks" className={`block rounded-xl px-3 py-2 text-xs ${task.completed ? "bg-slate-50 text-slate-400 line-through" : "bg-slate-50 text-slate-700"}`}>
+                  {task.taskTitle}
+                </a>
+              ))}
+              {day.activities.map((activity) => (
+                <a key={`a-${activity.id}`} href="/study-planner/activities" className="block rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  {activity.startTime != null ? `${formatClock(activity.startTime)} · ` : ""}{activity.activityName}
+                </a>
+              ))}
+              {conflicts.includes(day.date) ? <PlannerPill tone="or">⚠ Trùng giờ</PlannerPill> : null}
+              {!day.sessions.length && !day.tasks.length && !day.activities.length ? (
+                <p className="text-[11px] text-slate-400">Trống</p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
+
       {deadlines.length ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4">
-          <p className="text-sm font-semibold">Deadline tuần này ({deadlines.length})</p>
-          <ul className="mt-2 space-y-1 text-sm">{deadlines.map((item) => <li key={item.id}><a href="/study-planner/assignments" className="underline">{item.description}</a> <span className="text-slate-500">— hạn {item.dueDate}</span></li>)}</ul>
-        </div>
+        <PlannerSection title={`Deadline tuần này (${deadlines.length})`}>
+          <PlannerTable columns={["Môn học", "Mô tả", "Hạn nộp", "Trạng thái"]} minWidth={620}>
+            {deadlines
+              .slice()
+              .sort((left, right) => (left.dueDate ?? "").localeCompare(right.dueDate ?? ""))
+              .map((item) => (
+                <tr key={item.id} className="hover:bg-slate-50">
+                  <td className="px-3 py-2.5 font-semibold text-slate-900">{item.subject || "—"}</td>
+                  <td className="px-3 py-2.5 text-slate-800">
+                    <a href="/study-planner/assignments" className="underline">{item.description}</a>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2.5 text-slate-700">
+                    {item.dueDate}{item.dueTime != null ? ` ${formatClock(item.dueTime)}` : ""}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <PlannerPill tone={item.grade ? "ok" : (item.dueDate ?? "") < today ? "late" : "prog"}>
+                      {item.grade ? "Đã xong" : (item.dueDate ?? "") < today ? "Quá hạn" : "Đang chờ"}
+                    </PlannerPill>
+                  </td>
+                </tr>
+              ))}
+          </PlannerTable>
+        </PlannerSection>
       ) : null}
     </section>
   );

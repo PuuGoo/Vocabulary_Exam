@@ -43,9 +43,43 @@ export default function PlannerHabitCheckin({
     }
   }
 
+  const firstWeekday = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1).getDay();
+  const leadingBlanks = (firstWeekday + 6) % 7;
+
   return (
     <div className="mt-3">
-      <div className="hidden gap-1 overflow-x-auto pb-1 sm:grid sm:grid-cols-[repeat(auto-fit,minmax(28px,1fr))]">
+      {/* Desktop: day grid that matches the workbook's month layout. */}
+      <div className="hidden sm:block">
+        <div className="grid grid-cols-7 gap-1">
+          {["T2", "T3", "T4", "T5", "T6", "T7", "CN"].map((label) => (
+            <span key={label} className="text-center text-[10px] font-semibold text-slate-400">{label}</span>
+          ))}
+          {Array.from({ length: leadingBlanks }, (_, index) => (
+            <span key={`pad-${index}`} />
+          ))}
+          {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => {
+            const date = `${month}-${String(day).padStart(2, "0")}`;
+            const active = done.has(date);
+            return (
+              <button
+                key={day}
+                type="button"
+                disabled={pending}
+                onClick={() => void toggle(day)}
+                aria-pressed={active}
+                aria-label={`Ngày ${day}`}
+                className={`flex h-8 items-center justify-center rounded-lg border text-[11px] transition ${
+                  active ? "border-emerald-500 bg-emerald-500 font-semibold text-white" : "border-slate-200 bg-white text-slate-500 hover:border-[#1E3989]"
+                }`}
+              >
+                {day}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      {/* Mobile: a compact wrap beats a 31-column spreadsheet. */}
+      <div className="flex flex-wrap gap-1.5 sm:hidden">
         {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => {
           const date = `${month}-${String(day).padStart(2, "0")}`;
           const active = done.has(date);
@@ -57,26 +91,7 @@ export default function PlannerHabitCheckin({
               onClick={() => void toggle(day)}
               aria-pressed={active}
               aria-label={`Ngày ${day}`}
-              className={`flex h-7 w-full min-w-[28px] items-center justify-center rounded-md border text-[10px] ${active ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-200 bg-white text-slate-500"}`}
-            >
-              {day}
-            </button>
-          );
-        })}
-      </div>
-      {/* Mobile: a compact list beats a 31-column spreadsheet. */}
-      <div className="flex flex-wrap gap-1 sm:hidden">
-        {Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => {
-          const date = `${month}-${String(day).padStart(2, "0")}`;
-          const active = done.has(date);
-          return (
-            <button
-              key={day}
-              type="button"
-              disabled={pending}
-              onClick={() => void toggle(day)}
-              aria-pressed={active}
-              className={`h-8 w-8 rounded-full border text-xs ${active ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-200 bg-white text-slate-600"}`}
+              className={`h-8 w-8 rounded-full border text-xs transition ${active ? "border-emerald-500 bg-emerald-500 text-white" : "border-slate-200 bg-white text-slate-600"}`}
             >
               {day}
             </button>
