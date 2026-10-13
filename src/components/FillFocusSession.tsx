@@ -483,7 +483,7 @@ export default function FillFocusSession({
 
       {!retest && !quickMode && <div className="fill-session-modenav"><StudyModeNav setId={set.id} active="fill" isVerb={false} languageCode={languageCode} fillTarget={target} slim /></div>}
 
-      <section className="fill-session-toolbar rounded-xl border border-line bg-white px-2.5 py-1.5 sm:px-3">
+      <section className="fill-session-toolbar overflow-hidden rounded-xl border border-line bg-white px-2.5 py-1.5 sm:px-3">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <div className="inline-flex items-center gap-1 rounded-lg bg-[#F4F2FA] p-0.5" role="group" aria-label="Mục tiêu phiên học">
             <button className={`min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold ${sessionKind === "practice" ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateWith({ session: null, view: "focus" })}>Luyện tập</button>
@@ -491,14 +491,13 @@ export default function FillFocusSession({
           </div>
           <div className="inline-flex items-center gap-1 rounded-lg border border-line p-0.5" role="group" aria-label="Cách hiển thị câu hỏi">
             <button className="min-h-8 rounded-md bg-ink px-2.5 text-[0.75rem] font-bold text-white">Focus</button>
-            <button className="min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold text-muted" onClick={() => navigateWith({ view: "list" })}>Nhóm</button>
+            <button className="min-h-8 rounded-md px-2.5 text-[0.75rem] font-bold text-muted" onClick={() => navigateWith({ view: "list" })}>Danh sách</button>
           </div>
           <label className="fill-session-group ml-auto flex min-h-8 items-center gap-1.5 text-xs font-semibold text-muted">Nhóm
             <select className="min-h-8 rounded-md border border-line bg-white px-1.5 text-xs font-bold text-ink" value={group} onChange={(event) => changeGroup(Number(event.target.value))}>{groups.map((items, index) => <option key={index} value={index}>{index + 1}/{groups.length} · {items.length} câu{groupResults[index] ? " · đã chấm" : ""}</option>)}</select>
           </label>
-          <button type="button" aria-haspopup="dialog" aria-expanded={navigatorOpen} onClick={() => setNavigatorOpen(true)} className="fill-session-qjump inline-flex min-h-8 items-center rounded-md border border-line bg-white px-2 text-xs font-bold text-ink hover:bg-[#F8F7FF]">{isRetry ? "↻ Ôn lại" : `Câu ${Math.min(cursor + 1, originalWords.length)}/${originalWords.length}`}</button>
-          <span className="fill-session-pct text-xs font-extrabold tabular-nums text-golddark">{progressPercent}%</span>
-          <button type="button" className="inline-flex min-h-8 items-center rounded-md px-1.5 text-xs font-bold text-muted transition hover:text-golddark" onClick={() => setCustomOpen((open) => !open)} aria-expanded={customOpen} title="Tùy chỉnh phạm vi từ">⚙</button>
+          <span className="fill-session-qjump inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-2 py-1 text-xs font-bold tabular-nums" aria-live="polite"><button type="button" aria-haspopup="dialog" aria-expanded={navigatorOpen} onClick={() => setNavigatorOpen(true)} className="inline-flex min-h-6 items-center font-bold text-ink hover:text-golddark">{isRetry ? "↻ Ôn lại" : `Câu ${Math.min(cursor + 1, originalWords.length)}/${originalWords.length}`}</button><span className="fill-session-pct font-extrabold text-golddark">{progressPercent}%</span></span>
+          <button type="button" aria-label="Tùy chỉnh phạm vi từ" title="Tùy chỉnh phạm vi từ" className="inline-flex min-h-8 items-center rounded-md px-1.5 text-xs font-bold text-muted transition hover:text-golddark" onClick={() => setCustomOpen((open) => !open)} aria-expanded={customOpen}>⚙</button>
         </div>
         <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${progressPercent}%` }} /></div>
         {customOpen && <div className="mt-2 flex flex-wrap items-end gap-2 border-t border-line pt-3"><label className="text-xs text-muted">Từ câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} /></label><label className="text-xs text-muted">Đến câu<input className={`${cx.input} !mb-0 mt-1 !w-24 text-base`} type="number" min={1} max={totalWordCount} value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} /></label><button className={`${cx.btn} ${cx.btnGold}`} onClick={() => applyRangeSafely(Number(rangeStart) || 1, Number(rangeEnd) || totalWordCount)}>Áp dụng</button>{hasRange && <button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => applyRangeSafely(1, totalWordCount)}>Cả bộ</button>}</div>}
