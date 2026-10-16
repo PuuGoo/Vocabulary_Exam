@@ -131,7 +131,7 @@ export default function AdminResultsPage() {
             <Stat value={passing} label="Đạt (≥70%)" tone="bad" />
           </div>
 
-          <div className="mb-4 grid gap-2 rounded-lg border border-line bg-white p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 grid gap-2 rounded-lg border border-line bg-panel shadow-2xs p-3 sm:grid-cols-2 lg:grid-cols-4">
             <input type="search" className={`${cx.input} !mb-0`} placeholder="Tìm học sinh, tài khoản, bộ từ..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <select className={`${cx.input} !mb-0`} value={studentFilter} onChange={(e) => setStudentFilter(e.target.value)}>
               <option value="">Mọi học sinh</option>
@@ -175,7 +175,7 @@ export default function AdminResultsPage() {
 
           <div className="space-y-3 md:hidden">
             {paged.map((r) => (
-              <article key={r.id} className="rounded-[13px] border border-line bg-white p-4">
+              <article key={r.id} className="rounded-[13px] border border-line bg-panel shadow-2xs p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1"><b>{r.displayName || r.username}</b><p className="text-xs text-muted">@{r.username}</p><p className="mt-1 truncate text-sm">{r.setName}</p></div>
                   <div className="text-right"><b className="text-golddark">{r.score}/{r.total}</b><div className="text-xs text-muted">{r.total ? Math.round(r.score / r.total * 100) : 0}%</div></div>
@@ -207,5 +207,5 @@ export default function AdminResultsPage() {
 }
 
 function Stat({ value, label, tone }: { value: string | number; label: string; tone?: "ok" | "bad" }) {
-  return <div className="rounded-lg border border-line bg-white p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
+  return <div className="rounded-lg border border-line bg-panel shadow-2xs p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
 }

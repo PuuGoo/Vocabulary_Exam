@@ -111,7 +111,7 @@ export default function AdminProgressPage() {
               </div>
               <div className="space-y-3 md:hidden">
                 {filteredStudents.map((student) => (
-                  <button key={student.id} type="button" onClick={() => setDetail(student)} className="w-full rounded-[13px] border border-line bg-white p-4 text-left">
+                  <button key={student.id} type="button" onClick={() => setDetail(student)} className="w-full rounded-[13px] border border-line bg-panel shadow-2xs p-4 text-left">
                     <div className="flex items-start justify-between gap-3">
                       <div><b>{student.displayName}</b><p className="text-xs text-muted">@{student.username}</p></div>
                       <span className={student.accuracy === null ? "text-muted" : student.accuracy < 60 ? "font-bold text-bad" : "font-bold text-ok"}>{student.accuracy === null ? "—" : `${student.accuracy}%`}</span>
@@ -149,9 +149,9 @@ export default function AdminProgressPage() {
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg border border-line bg-white p-3"><div className="text-[0.7rem] font-bold uppercase tracking-wide text-muted">{label}</div><div className="mt-1 text-sm font-semibold">{value}</div></div>;
+  return <div className="rounded-lg border border-line bg-panel shadow-2xs p-3"><div className="text-[0.7rem] font-bold uppercase tracking-wide text-muted">{label}</div><div className="mt-1 text-sm font-semibold">{value}</div></div>;
 }
 
 function Stat({ value, label, tone }: { value: string | number; label: string; tone?: "ok" | "bad" }) {
-  return <div className="rounded-lg border border-line bg-white p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
+  return <div className="rounded-lg border border-line bg-panel shadow-2xs p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
 }
