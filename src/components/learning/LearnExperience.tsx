@@ -8,6 +8,7 @@ import VerbIpa from "@/components/VerbIpa";
 import { toast } from "@/components/Toast";
 import { getFillModeLabel, getFillUnknownLabel, getLanguageConfig, getSpeakText, getWordDisplayForms, getWordPronunciation, normalizeLanguageCode } from "@/lib/languages";
 
+export type CognitiveStage = "recall" | "context" | "audio" | "mastery";
 export type LearnWord = {
   id: number; meaning: string; term?: string | null; example?: string | null;
   wtype?: string | null; ipa?: string | null; v1?: string | null; v2?: string | null; v3?: string | null;
@@ -346,6 +347,12 @@ export default function LearnExperience({ authenticatedSetId, initialSet, source
       ) : (
         <button type="button" onClick={()=>setDirection("vi-en")} className="min-h-9 rounded-lg border border-gold/30 bg-goldpale px-2.5 text-xs font-bold text-golddark transition hover:bg-goldpale">EN → VI</button>
       )}<div className="min-w-0 text-center" aria-live="polite"><div className="truncate text-sm font-bold">{set.name}</div><div className="mt-0.5 flex items-center justify-center gap-1.5 text-xs text-muted"><span>{modeLabel[mode]}</span><span aria-hidden="true">·</span><span>Thẻ {index+1}/{total}</span></div></div>{unknown > 0 ? <button type="button" onClick={()=>chooseMode("unknown")} aria-label={`Ôn ${unknown} từ chưa nhớ`} className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full border border-bad/20 bg-badbg px-2.5 text-xs font-bold text-bad transition hover:bg-badbg"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-bad" /><span className="hidden sm:inline">{unknown} chưa nhớ</span><span className="sm:hidden">{unknown}</span></button> : <div aria-hidden="true" className="w-16 sm:w-[74px]" />}</div>
+      <div className="mx-auto mt-2.5 flex max-w-4xl flex-wrap items-center justify-center gap-1.5" role="group" aria-label="4 cấp độ nhận thức">
+        <button type="button" className="rounded-lg bg-gold px-2.5 py-1 text-[11px] font-bold text-white">1. Recall (Flashcard)</button>
+        <button type="button" onClick={() => selectLearningMode(isChinese && word?.example ? "cloze" : "fill")} className="rounded-lg border border-line bg-paper px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-gold/40 hover:text-ink">2. Context (Cloze/Fill)</button>
+        <button type="button" onClick={() => selectLearningMode(isChinese ? "tone" : "dictation")} className="rounded-lg border border-line bg-paper px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-gold/40 hover:text-ink">3. Audio &amp; Tone</button>
+        <button type="button" onClick={() => { if (set?.id) router.push(`/feynman?setId=${set.id}`); }} className="rounded-lg border border-line bg-paper px-2.5 py-1 text-[11px] font-semibold text-muted transition hover:border-gold/40 hover:text-ink">4. Feynman Mastery</button>
+      </div>
       <div role="progressbar" aria-label="Tiến độ lượt học" aria-valuemin={0} aria-valuemax={total} aria-valuenow={index+1} className="mx-auto mt-3 h-1.5 max-w-4xl overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width] duration-300" style={{width:`${total?((index+1)/total)*100:0}%`}} /></div>
       <button ref={menuButtonRef} type="button" aria-label="Mở Quick Actions" aria-haspopup="menu" aria-expanded={menuOpen} aria-controls="flashcard-quick-menu" aria-keyshortcuts="M ." title="Mở thao tác nhanh (phím M hoặc dấu chấm)" onClick={()=>setMenuOpen(v=>!v)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><span className="hidden sm:inline"><Shortcut>M</Shortcut></span></button>
       {menuOpen && <button type="button" aria-label="Đóng menu tùy chọn" className="fixed inset-0 z-[85] cursor-default" onClick={()=>setMenuOpen(false)} />}

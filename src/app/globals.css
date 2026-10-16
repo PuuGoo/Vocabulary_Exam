@@ -478,3 +478,55 @@ html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page
   .fill-answer-bar input, .fill-answer-bar button { min-height: 44px; }
 }
 
+
+/* ==== Lexora Global B2C Multi-Theme Tokens ==== */
+:root,
+[data-theme="saas"] {
+  --bg-paper: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-muted: #f1f5f9;
+  --border-line: #e2e8f0;
+  --text-main: #0f172a;
+  --text-secondary: #475569;
+  --text-golddark: #4f46e5;
+  --accent-primary: #4f46e5;
+  --accent-soft: #e0e7ff;
+}
+
+[data-theme="editorial"] {
+  --bg-paper: #fbf8f1;
+  --bg-surface: #ffffff;
+  --bg-muted: #f3ede0;
+  --border-line: #e5dccb;
+  --text-main: #1f1a14;
+  --text-secondary: #5c5143;
+  --text-golddark: #b47b22;
+  --accent-primary: #b47b22;
+  --accent-soft: #f6e7c8;
+  --color-ink: 31 26 20;
+  --color-inksoft: 92 81 67;
+  --color-paper: 251 248 241;
+  --color-panel: 255 255 255;
+  --color-gold: 180 123 34;
+  --color-golddark: 150 98 20;
+  --color-goldpale: 246 231 200;
+  --color-line: 229 220 203;
+  --color-muted: 92 81 67;
+}
+
+[data-theme="dark"] {
+  --bg-paper: #090d16;
+  --bg-surface: #111827;
+  --bg-muted: #1e293b;
+  --border-line: #1f2937;
+  --text-main: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-golddark: #818cf8;
+  --accent-primary: #6366f1;
+  --accent-soft: rgba(99, 102, 241, 0.18);
+}
+
+.lexora-surface {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-line);
+}

@@ -1,9 +1,11 @@
-﻿export type RouteMeta = { label: string };
+export type RouteMeta = { label: string };
 export type Breadcrumb = { href: string; label: string };
 
 /** Central route metadata keyed by the leading path segment (without slash), one per context. */
 export const ROUTE_META: Record<string, RouteMeta> = {
   dashboard: { label: "Tổng quan" },
+  library: { label: "Library & Vault" },
+  analytics: { label: "Insights & Tiến độ" },
   study: { label: "Học & luyện" },
   assignments: { label: "Bài tập" },
   "my-words": { label: "Từ của tôi" },
@@ -64,50 +66,37 @@ export function breadcrumbsForPath(pathname: string): Breadcrumb[] {
     }
     if (parts.length > 2) {
       const parent = parts[parts.length - 2];
-      const segment = parts[parts.length - 1];
-      crumb.push({ href: pathname, label: safeSegmentLabel(segment, safeSegmentLabel(parent, "Chi tiết")) });
+      const label = parent === "sets" ? "Chi tiết bộ nội dung" : parts[parts.length - 1];
+      crumb.push({ href: pathname, label });
     }
-    return dedup(crumb);
+    return crumb;
   }
 
-  // Student
-  const rootKey = parts[0] || "dashboard";
-  const rootMeta = ROUTE_META[rootKey];
-  if (rootKey && rootKey !== "dashboard") {
-    // If root is a learning mode with an id child, label the mode.
-    if (MODE_ROUTES.has(rootKey)) {
-      crumb.push({ href: `/${rootKey}`, label: ROUTE_META[rootKey]?.label || MODE_ROUTES.get(rootKey)! });
-      const modeLabel = MODE_ROUTES.get(rootKey)!;
+  crumb.push({ href: "/dashboard", label: "Tổng quan" });
+  if (parts.length >= 1 && parts[0] !== "dashboard") {
+    const modeLabel = MODE_ROUTES.get(parts[0]);
+    if (modeLabel) {
+      crumb.push({ href: "/study", label: "Học & luyện" });
       crumb.push({ href: pathname, label: modeLabel });
-      return dedup(crumb);
+      return crumb;
     }
-    crumb.push({ href: `/${rootKey}`, label: rootMeta?.label || rootKey.replaceAll("-", " ") });
-  } else {
-    crumb.push({ href: "/dashboard", label: "Tổng quan" });
+    const meta = ROUTE_META[parts[0]];
+    if (meta) crumb.push({ href: "/" + parts[0], label: meta.label });
   }
-
-  if (parts.length > 1 && !MODE_ROUTES.has(rootKey)) {
-    const child = parts[parts.length - 1];
-    const childMeta = ROUTE_META[child];
-    crumb.push({ href: pathname, label: childMeta?.label || safeSegmentLabel(child, rootMeta?.label || "Chi tiết") });
-  }
-  return dedup(crumb);
+  return crumb;
 }
 
-function safeSegmentLabel(segment: string, fallback: string): string {
-  if (!segment || /^\d+$/.test(segment)) return fallback;
-  return ROUTE_META[segment]?.label || ADMIN_ROUTE_META["admin/" + segment]?.label || segment.replaceAll("-", " ");
-}
-
-function dedup(crumb: Breadcrumb[]): Breadcrumb[] {
-  const out: Breadcrumb[] = [];
-  for (const item of crumb) {
-    if (out.length && out[out.length - 1].label === item.label) continue;
-    out.push(item);
+export function routePageTitle(pathname: string): string | null {
+  const parts = pathname.split("/").filter(Boolean);
+  if (!parts.length) return null;
+  if (parts[0] === "admin") {
+    if (parts.length === 1) return ADMIN_ROUTE_META.admin.label;
+    const key = "admin/" + parts[1];
+    const meta = ADMIN_ROUTE_META[key];
+    if (parts.length > 2 && parts[1] === "sets") return "Chi tiết bộ nội dung";
+    return meta?.label ?? null;
   }
-  return out.length ? out : [{ href: "/", label: "Dashboard" }];
-}
-
-export function routePageTitle(pathname: string): string {
-  return breadcrumbsForPath(pathname).at(-1)?.label || "Lexora";
+  const modeLabel = MODE_ROUTES.get(parts[0]);
+  if (modeLabel) return modeLabel;
+  return ROUTE_META[parts[0]]?.label ?? null;
 }

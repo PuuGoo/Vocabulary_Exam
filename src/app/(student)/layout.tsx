@@ -16,7 +16,7 @@ export default async function StudentLayout({ children }: { children: React.Reac
         displayName={session.displayName}
         roleLabel={session.role === "admin" ? "Admin" : "Học sinh"}
         mode="student"
-        tabs={session.role === "admin" ? [...LEARNING_TABS, { href: "/admin", label: "Mở khu quản trị" }] : LEARNING_TABS}
+        tabs={[]}
       >
         <StudyPlannerBootstrap />
         {children}

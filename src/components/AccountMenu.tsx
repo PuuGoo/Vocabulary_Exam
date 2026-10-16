@@ -157,14 +157,14 @@ export default function AccountMenu({
             />
             {!adminMode && (
               <MenuLink
-                href="/progress"
+                href="/analytics"
                 icon="↗"
                 title="Tiến độ học tập"
                 description="Xem kết quả và mục tiêu của bạn"
                 onClick={() => setOpen(false)}
               />
             )}
-            {isAdmin && (
+            {isAdmin && adminMode && (
               <MenuLink
                 href={adminMode ? "/dashboard" : "/admin"}
                 icon={adminMode ? "A" : "⚙"}
