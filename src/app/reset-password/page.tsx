@@ -43,36 +43,64 @@ function ResetPasswordForm() {
   }
 
   return (
-    <div className="max-w-[400px] mx-auto mt-16 px-4">
-      <div className="bg-panel border border-line rounded-2xl px-8 py-9 text-center shadow-lg">
-        <div className="w-16 h-16 mx-auto mb-3.5 rounded-full border-2 border-gold flex items-center justify-center font-serif text-2xl text-gold font-bold">
-          IV
+    <main className="flex min-h-screen items-center justify-center bg-paper p-4 sm:p-6">
+      <div className="lexora-bento w-full max-w-[430px] p-7 text-center sm:p-10">
+        <Link
+          href="/"
+          className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-[15px] bg-gold text-xl font-extrabold text-white shadow-[0_10px_24px_-6px_rgb(var(--color-gold)/0.45)]"
+        >
+          L
+        </Link>
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-goldpale px-3 py-1 text-[0.7rem] font-extrabold uppercase tracking-wider text-golddark">
+          Security Update
         </div>
-        <h1 className="font-serif text-[1.3rem] mb-0.5">Đặt lại mật khẩu</h1>
+        <h1 className="mt-3 font-serif text-2xl font-extrabold tracking-[-0.03em] text-ink sm:text-3xl">
+          Đặt lại mật khẩu
+        </h1>
 
         {done ? (
-          <div className="text-[0.85rem] text-ok bg-okbg rounded-lg px-4 py-3 mt-4">
+          <div className="mt-6 rounded-[14px] border border-ok/25 bg-okbg px-4 py-3.5 text-sm text-ok">
             Đã đặt lại mật khẩu thành công! Đang chuyển tới trang đăng nhập...
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="text-left mt-4">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left">
             {error && <div className={cx.errMsg}>{error}</div>}
-            <label className={cx.label}>Mật khẩu mới</label>
-            <input className={cx.input} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            <label className={cx.label}>Nhập lại mật khẩu mới</label>
-            <input className={cx.input} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-            <button type="submit" disabled={loading} className={`${cx.btn} ${cx.btnGold} w-full mt-1`}>
-              {loading ? "Đang lưu..." : "Đặt mật khẩu mới"}
+            <label className="block">
+              <span className={cx.label}>Mật khẩu mới</span>
+              <input
+                className={cx.input}
+                type="password"
+                placeholder="Tối thiểu 6 ký tự"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            <label className="block">
+              <span className={cx.label}>Nhập lại mật khẩu mới</span>
+              <input
+                className={cx.input}
+                type="password"
+                placeholder="Nhập lại mật khẩu"
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value)}
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={loading}
+              className={`${cx.btn} ${cx.btnGold} w-full`}
+            >
+              {loading ? "Đang lưu..." : "Lưu mật khẩu mới →"}
             </button>
           </form>
         )}
 
-        <div className="text-[0.82rem] mt-4 text-muted">
-          <Link href="/login" className="text-golddark font-medium hover:underline">
+        <div className="mt-6 text-sm text-muted">
+          <Link href="/login" className="font-extrabold text-golddark hover:underline">
             ← Quay lại đăng nhập
           </Link>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

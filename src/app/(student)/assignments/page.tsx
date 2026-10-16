@@ -43,7 +43,7 @@ function AssignmentCard({ row }: { row: AssignmentRow }) {
   const meta = statusMeta[row.status];
   const cta = row.status === "excused" ? "Luyện thêm" : done ? "Làm lại" : row.attemptCount ? "Tiếp tục" : "Bắt đầu";
   return (
-    <article className="rounded-[10px] border border-line bg-white p-4 shadow-sm">
+    <article className="lexora-bento p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -57,7 +57,7 @@ function AssignmentCard({ row }: { row: AssignmentRow }) {
         </div>
         {row.bestAccuracy !== null && <div className="shrink-0 text-right"><b className="text-lg">{row.bestAccuracy}%</b><div className="text-[0.7rem] text-muted">cao nhất</div></div>}
       </div>
-      {row.instructions && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-[#faf8f2] p-3 text-[0.85rem]">{row.instructions}</p>}
+      {row.instructions && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-paper/70 p-3 text-[0.85rem]">{row.instructions}</p>}
       <div className="mt-3 grid gap-2 text-[0.8rem] text-muted sm:grid-cols-3">
         <span>Hạn: <b className="font-medium text-ink">{formatDate(row.dueAt)}</b></span>
         <span>Yêu cầu: <b className="font-medium text-ink">≥ {row.minScore}%</b></span>
@@ -117,13 +117,13 @@ export default function AssignmentsPage() {
         <div><h2 className={cx.h2}>Bài tập của tôi</h2><p className={cx.desc + " !mb-0"}>Bài được giao theo lớp và tự hoàn thành khi bạn đạt điểm yêu cầu.</p></div>
         {rows && rows.length > 0 && <div className="rounded-lg bg-goldpale px-3 py-2 text-sm"><b>{totalActive}</b> bài cần làm</div>}
       </div>
-      {rows && rows.length > 0 && <div className="mb-5 rounded-lg border border-line bg-white p-3"><input type="search" className={`${cx.input} !mb-2`} placeholder="Tìm theo tên bài, bộ từ hoặc lớp..." value={query} onChange={(event) => setQuery(event.target.value)} /><div className="flex flex-wrap gap-2">{([['all','Tất cả'],['active','Cần làm'],['urgent','Sắp hạn / quá hạn'],['done','Đã xử lý']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-full border px-3 py-1.5 text-[0.78rem] ${filter === value ? "border-ink bg-ink text-white" : "border-line hover:border-gold"}`}>{label}</button>)}<span className="ml-auto self-center text-[0.72rem] text-muted">{filteredRows.length}/{rows.length} bài</span></div></div>}
+      {rows && rows.length > 0 && <div className="mb-5 rounded-lg border border-line bg-panel p-3"><input type="search" className={`${cx.input} !mb-2`} placeholder="Tìm theo tên bài, bộ từ hoặc lớp..." value={query} onChange={(event) => setQuery(event.target.value)} /><div className="flex flex-wrap gap-2">{([['all','Tất cả'],['active','Cần làm'],['urgent','Sắp hạn / quá hạn'],['done','Đã xử lý']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} className={`rounded-full border px-3 py-1.5 text-[0.78rem] ${filter === value ? "border-ink bg-ink text-white" : "border-line hover:border-gold"}`}>{label}</button>)}<span className="ml-auto self-center text-[0.72rem] text-muted">{filteredRows.length}/{rows.length} bài</span></div></div>}
       {rows === null ? <div className={cx.empty} role="status">Đang tải bài tập...</div>
         : error ? <div className={cx.empty}>Không thể tải bài tập.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => void load()}>Thử lại</button></div></div>
         : rows.length === 0 ? <div className={cx.empty}>Bạn chưa có bài tập nào được giao.<div className="mt-3"><Link href="/study" className={`${cx.btn} ${cx.btnGold}`}>Tự luyện tập</Link></div></div>
         : filteredRows.length === 0 ? <div className={cx.empty}>Không tìm thấy bài tập phù hợp.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => { setQuery(""); setFilter("all"); }}>Xóa bộ lọc</button></div></div>
         : <div className="space-y-6">
-          <section><h3 className="mb-3 font-serif text-base">Cần hoàn thành ({groups.active.length})</h3>{groups.active.length ? <div className="grid gap-3 lg:grid-cols-2">{groups.active.map((row) => <AssignmentCard key={row.id} row={row} />)}</div> : <div className="rounded-lg border border-line bg-[#faf8f2] p-4 text-sm text-ok">Bạn đã hoàn thành tất cả bài tập hiện tại.</div>}</section>
+          <section><h3 className="mb-3 font-serif text-base">Cần hoàn thành ({groups.active.length})</h3>{groups.active.length ? <div className="grid gap-3 lg:grid-cols-2">{groups.active.map((row) => <AssignmentCard key={row.id} row={row} />)}</div> : <div className="rounded-lg border border-line bg-paper/70 p-4 text-sm text-ok">Bạn đã hoàn thành tất cả bài tập hiện tại.</div>}</section>
           {groups.done.length > 0 && <section><h3 className="mb-3 font-serif text-base">Đã hoàn thành ({groups.done.length})</h3><div className="grid gap-3 lg:grid-cols-2">{groups.done.map((row) => <AssignmentCard key={row.id} row={row} />)}</div></section>}
         </div>}
     </div>

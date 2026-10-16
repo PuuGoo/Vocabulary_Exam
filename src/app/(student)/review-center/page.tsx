@@ -81,9 +81,9 @@ export default function ReviewCenterPage() {
       <div className="mt-8 rounded-xl border border-gold/40 bg-gold/5 p-4 text-sm text-muted">
         <b className="text-ink">Mẹo:</b> Smart Review tự đặt lịch nhắc lại theo mức độ nhớ. Nếu bạn làm sai trong bài kiểm tra, từ đó cũng xuất hiện ở “Từ sai” để bạn ôn lại có chủ đích.
       </div>
-      <label className="mt-5 flex flex-col gap-2 rounded-xl border border-line bg-white p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <label className="mt-5 flex flex-col gap-2 rounded-xl border border-line bg-panel p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
         <span><b className="text-ink">Kế hoạch ôn mỗi ngày</b><small className="mt-1 block text-muted">Đây là mức đề xuất, không giới hạn bạn ôn thêm.</small></span>
-        <select className="min-h-11 rounded-xl border border-line bg-white px-3 font-bold text-ink" value={dailyReviewWords} onChange={async (event) => { const value = Number(event.target.value); setDailyReviewWords(value); const response = await fetch("/api/review/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dailyReviewWords: value }) }); if (!response.ok) void load(); }}>
+        <select className="min-h-11 rounded-xl border border-line bg-panel px-3 font-bold text-ink" value={dailyReviewWords} onChange={async (event) => { const value = Number(event.target.value); setDailyReviewWords(value); const response = await fetch("/api/review/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dailyReviewWords: value }) }); if (!response.ok) void load(); }}>
           {[20, 30, 40, 60, 80].map((value) => <option key={value} value={value}>{value} từ</option>)}
         </select>
       </label>

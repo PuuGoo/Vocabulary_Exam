@@ -22,7 +22,7 @@ function Section({ id, title, children }: { id: string; title: string; children:
 export default function PrivacyPolicyPage() {
   return (
     <div className="min-h-screen bg-paper">
-      <header className="border-b border-line bg-white">
+      <header className="border-b border-line bg-panel">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-4 sm:px-8">
           <Link href="/" className="flex items-center gap-3" aria-label="Lexora — trang chủ">
             <span className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-gold text-base font-extrabold text-white" aria-hidden="true">L</span>

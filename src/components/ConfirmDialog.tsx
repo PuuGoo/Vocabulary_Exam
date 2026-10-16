@@ -27,7 +27,7 @@ export default function ConfirmDialog({
   const danger = options.tone !== "warning";
   return (
     <Modal title={options.title} onClose={() => !busy && onCancel()}>
-      <div className="mb-5 rounded-[12px] border border-line/60 bg-[#FBFAFE] px-4 py-3 text-sm leading-6 text-muted">{options.description}</div>
+      <div className="mb-5 rounded-[12px] border border-line/60 bg-paper/70 px-4 py-3 text-sm leading-6 text-muted">{options.description}</div>
       <div className="flex flex-wrap justify-end gap-2">
         <button
           type="button"
@@ -41,7 +41,7 @@ export default function ConfirmDialog({
           type="button"
           disabled={busy}
           onClick={onConfirm}
-          className={`min-h-12 rounded-[12px] px-5 py-2.5 text-[0.85rem] font-semibold text-white shadow-[0_6px_16px_rgba(120,101,238,0.18)] transition hover:-translate-y-0.5 ${danger ? "bg-bad hover:bg-[#B23B4C]" : "bg-gold hover:bg-golddark"}`}
+          className={`min-h-12 rounded-[12px] px-5 py-2.5 text-[0.85rem] font-semibold text-white shadow-[0_8px_20px_-4px_rgb(var(--color-gold)/0.28)] transition hover:-translate-y-0.5 ${danger ? "bg-bad hover:bg-[#B23B4C]" : "bg-gold hover:bg-golddark"}`}
         >
           {busy ? "Đang xử lý..." : options.confirmLabel}
         </button>

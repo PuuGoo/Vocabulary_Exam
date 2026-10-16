@@ -133,7 +133,7 @@ export default function NotebookPage() {
         const speakText = bookmark.setType === "irregular_verb" ? bookmark.v1 : bookmark.term;
         const changed = (notes[bookmark.id] || "") !== bookmark.note;
         return (
-          <article key={bookmark.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
+          <article key={bookmark.id} className="mb-3 lexora-bento p-4">
             <div className="flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0 flex-1">
                 <div className="mb-1 text-[0.7rem] text-muted">{bookmark.setName}</div>

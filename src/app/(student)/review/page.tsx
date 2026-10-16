@@ -122,7 +122,7 @@ export default function ReviewPage() {
             </div>
 
             {g.items.map((r) => (
-              <div key={r.id} className="border border-line rounded-[10px] p-4 mb-3 bg-white">
+              <div key={r.id} className="border border-line rounded-[10px] p-4 mb-3 bg-panel">
                 <div className="flex justify-between items-start gap-3 flex-wrap">
                   <div className="flex-1 min-w-[200px]">
                     <div className="text-[0.72rem] text-muted mb-1">Sai {r.timesWrong} lần</div>

@@ -30,47 +30,67 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="max-w-[400px] mx-auto mt-16 px-4">
-      <div className="bg-panel border border-line rounded-2xl px-8 py-9 text-center shadow-lg">
-        <div className="w-16 h-16 mx-auto mb-3.5 rounded-full border-2 border-gold flex items-center justify-center font-serif text-2xl text-gold font-bold">
-          IV
+    <main className="flex min-h-screen items-center justify-center bg-paper p-4 sm:p-6">
+      <div className="lexora-bento w-full max-w-[430px] p-7 text-center sm:p-10">
+        <Link
+          href="/"
+          className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-[15px] bg-gold text-xl font-extrabold text-white shadow-[0_10px_24px_-6px_rgb(var(--color-gold)/0.45)]"
+        >
+          L
+        </Link>
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-goldpale px-3 py-1 text-[0.7rem] font-extrabold uppercase tracking-wider text-golddark">
+          Account Recovery
         </div>
-        <h1 className="font-serif text-[1.3rem] mb-0.5">Quên mật khẩu</h1>
-        <div className="text-muted text-[0.85rem] mb-5">
-          Nhập tên đăng nhập, hệ thống sẽ gửi hướng dẫn đặt lại mật khẩu tới email đã lưu (nếu có).
-        </div>
+        <h1 className="mt-3 font-serif text-2xl font-extrabold tracking-[-0.03em] text-ink sm:text-3xl">
+          Quên mật khẩu?
+        </h1>
+        <p className="mt-2 text-sm leading-6 text-muted">
+          Nhập tên đăng nhập của bạn, hệ thống sẽ gửi hướng dẫn đặt lại mật khẩu tới email khôi phục đã lưu.
+        </p>
 
         {message ? (
-          <div className="text-[0.85rem] text-ok bg-okbg rounded-lg px-4 py-3 text-left leading-relaxed">
+          <div className="mt-6 rounded-[14px] border border-ok/25 bg-okbg px-4 py-3.5 text-left text-sm leading-6 text-ok">
             {message}
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="text-left">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left">
             {error && <div className={cx.errMsg}>{error}</div>}
-            <label className={cx.label}>Tên đăng nhập</label>
-            <input className={cx.input} type="text" value={username} onChange={(e) => setUsername(e.target.value)} />
-            <button type="submit" disabled={loading} className={`${cx.btn} ${cx.btnGold} w-full mt-1`}>
-              {loading ? "Đang gửi..." : "Gửi yêu cầu đặt lại mật khẩu"}
+            <label className="block">
+              <span className={cx.label}>Tên đăng nhập</span>
+              <input
+                className={cx.input}
+                type="text"
+                placeholder="VD: minhtran_ielts"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={loading}
+              className={`${cx.btn} ${cx.btnGold} w-full`}
+            >
+              {loading ? "Đang gửi yêu cầu..." : "Gửi yêu cầu đặt lại mật khẩu →"}
             </button>
           </form>
         )}
 
         {devResetUrl && (
-          <div className="mt-3 text-[0.74rem] text-muted bg-goldpale px-3 py-2.5 rounded-lg text-left break-all">
+          <div className="mt-4 break-all rounded-[12px] border border-gold/25 bg-goldpale px-3.5 py-2.5 text-left text-xs text-muted">
             {devResetUrl}
           </div>
         )}
 
-        <div className="text-[0.82rem] mt-4 text-muted">
-          <Link href="/login" className="text-golddark font-medium hover:underline">
+        <div className="mt-6 text-sm text-muted">
+          <Link href="/login" className="font-extrabold text-golddark hover:underline">
             ← Quay lại đăng nhập
           </Link>
         </div>
 
-        <div className="mt-4 text-[0.74rem] text-muted bg-goldpale px-3 py-2.5 rounded-lg text-left leading-relaxed">
-          Chưa nhận được email hoặc chưa khai báo email? Liên hệ giáo viên/quản trị viên để được cấp lại mật khẩu trực tiếp.
+        <div className="mt-5 rounded-[14px] border border-line bg-paper/70 px-3.5 py-3 text-left text-xs leading-5 text-muted">
+          Chưa nhận được email hoặc chưa khai báo email khôi phục? Liên hệ quản trị viên để được cấp lại mật khẩu trực tiếp.
         </div>
       </div>
-    </div>
+    </main>
   );
 }

@@ -103,7 +103,7 @@ export default function AccountMenu({
         aria-label={`Mở menu tài khoản của ${displayName}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`group flex h-11 items-center gap-2 rounded-full border bg-white p-1 pr-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 sm:pr-2 ${open ? "border-[#CFC7FF] shadow-[0_8px_24px_rgba(36,35,55,0.12)]" : "border-transparent hover:border-line hover:shadow-sm"}`}
+        className={`group flex h-11 items-center gap-2 rounded-full border bg-panel p-1 pr-1 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40 sm:pr-2 ${open ? "border-[#CFC7FF] shadow-[0_8px_24px_rgba(36,35,55,0.12)]" : "border-transparent hover:border-line hover:shadow-sm"}`}
       >
         <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#ECE9FF] text-xs font-extrabold text-[#6550DB]">
           {initials(displayName)}
@@ -127,11 +127,11 @@ export default function AccountMenu({
         <div
           role="menu"
           aria-label="Tài khoản cá nhân"
-          className="lexora-account-menu fixed left-3 right-3 top-[68px] z-[70] overflow-hidden rounded-[18px] border border-line bg-white p-2 shadow-[0_20px_60px_rgba(36,35,55,0.18)] sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[320px]"
+          className="lexora-account-menu fixed left-3 right-3 top-[68px] z-[70] overflow-hidden rounded-[18px] border border-line bg-panel p-2 shadow-[0_20px_60px_rgba(36,35,55,0.18)] sm:absolute sm:left-auto sm:right-0 sm:top-[calc(100%+10px)] sm:w-[320px]"
         >
-          <div className="rounded-[14px] bg-[#F4F1FF] p-3.5">
+          <div className="rounded-[14px] bg-goldpale/55 border border-gold/20 p-3.5">
             <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-sm font-extrabold text-[#6550DB] shadow-sm">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-panel text-sm font-extrabold text-[#6550DB] shadow-sm">
                 {initials(displayName)}
               </span>
               <span className="min-w-0 flex-1">
@@ -141,7 +141,7 @@ export default function AccountMenu({
                   {accountLabel}
                 </span>
               </span>
-              <span className="rounded-full border border-[#DCD6FF] bg-white px-2 py-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#6550DB]">
+              <span className="rounded-full border border-[#DCD6FF] bg-panel px-2 py-1 text-[0.6rem] font-bold uppercase tracking-wide text-[#6550DB]">
                 {roleLabel}
               </span>
             </div>

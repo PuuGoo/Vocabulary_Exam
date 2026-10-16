@@ -8,7 +8,7 @@ import { SITE_CONFIG } from "@/lib/siteConfig";
  */
 export default function PublicFooter() {
   return (
-    <footer className="mt-auto border-t border-line bg-white">
+    <footer className="mt-auto border-t border-line bg-panel">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-5 py-10 sm:px-8 md:flex-row md:items-start md:justify-between">
         <div className="max-w-sm">
           <div className="flex items-center gap-3">

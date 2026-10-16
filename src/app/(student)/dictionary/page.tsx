@@ -122,7 +122,7 @@ export default function DictionaryPage() {
             const answer = word.setType === "irregular_verb" ? `${word.v1} — ${word.v2} — ${word.v3}` : word.term;
             const speakText = word.setType === "irregular_verb" ? word.v1 : word.term;
             return (
-              <article key={word.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
+              <article key={word.id} className="mb-3 lexora-bento p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 text-xs text-muted">{word.setName}</div>

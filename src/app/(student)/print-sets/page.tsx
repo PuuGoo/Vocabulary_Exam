@@ -82,7 +82,7 @@ export default function PrintSetsPage() {
         <div className={cx.desc}>Chọn bộ từ và mẫu trình bày, sau đó in trực tiếp hoặc chọn “Lưu dưới dạng PDF”.</div>
         {sets === null ? <div className={cx.empty} role="status">Đang tải các bộ từ...</div> : loadError ? <div className={cx.empty}>Không thể tải danh sách.<div className="mt-3"><button className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setLoadAttempt((value) => value + 1)}>Thử lại</button></div></div> : (
           <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
-            <div className="rounded-xl border border-line bg-white p-4">
+            <div className="rounded-xl border border-line bg-panel p-4">
               <div className="mb-3 flex items-center justify-between gap-2">
                 <div><h3 className="font-semibold">Chọn tối đa 5 bộ</h3><div className="text-xs text-muted">Đã chọn {selectedIds.length}/5</div></div>
                 {selectedIds.length > 0 && <button className="text-xs text-muted hover:underline" onClick={() => setSelectedIds([])}>Bỏ chọn</button>}
@@ -121,7 +121,7 @@ export default function PrintSetsPage() {
         )}
       </section>
 
-      {documentSets.length > 0 && <section id="print-preview" className="bg-white p-5 text-black shadow-sm print:p-0 print:shadow-none">
+      {documentSets.length > 0 && <section id="print-preview" className="bg-panel p-5 text-black shadow-sm print:p-0 print:shadow-none">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-black/20 pb-4 print:mb-4"><div><h1 className="font-serif text-2xl font-bold">{title.trim() || "Phiếu học từ vựng"}</h1><div className="mt-1 text-xs text-gray-600">{documentSets.map((item) => item.name).join(" · ")} · {totalWords} từ</div></div><button className={`${cx.btn} ${cx.btnGold} print:hidden`} onClick={() => window.print()}>🖨️ In / Lưu PDF</button></div>
         {truncated && <div className="mb-4 rounded border border-amber-500 bg-amber-50 p-2 text-xs text-amber-800 print:hidden">Bản xem trước được giới hạn ở 500 từ.</div>}
         {layout === "list" && <ListLayout sets={documentSets} showIpa={showIpa} showExample={showExample} />}

@@ -169,7 +169,7 @@ export default function NotebookPracticePage() {
         type="button"
         {...notebookSwipe.swipeProps}
         style={notebookSwipe.swipeStyle}
-        className="relative flex min-h-[250px] w-full cursor-pointer select-none flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gold bg-white px-6 py-10 text-center hover:border-golddark"
+        className="relative flex min-h-[250px] w-full cursor-pointer select-none flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gold bg-panel px-6 py-10 text-center hover:border-golddark"
         aria-label={flipped ? "Đang hiện đáp án, bấm để xem nghĩa" : "Đang hiện nghĩa, bấm để xem đáp án"}
         onClick={() => setFlipped((value) => !value)}
       >
