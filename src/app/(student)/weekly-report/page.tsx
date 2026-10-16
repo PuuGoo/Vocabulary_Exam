@@ -89,7 +89,7 @@ export default function WeeklyReportPage() {
         <Metric value={report.summary.accuracy === null ? "—" : `${report.summary.accuracy}%`} label="Độ chính xác" comparison={comparison(report.summary.accuracy, report.previous.accuracy, "%")} />
       </div>
 
-      <section className="mb-5 rounded-xl border border-line bg-white p-4" aria-labelledby="weekly-chart-title">
+      <section className="mb-5 rounded-xl border border-line bg-panel shadow-xs p-4" aria-labelledby="weekly-chart-title">
         <div className="flex items-start justify-between gap-3">
           <div><h3 id="weekly-chart-title" className="font-semibold">Nhịp học trong tuần</h3><div className="mt-1 text-xs text-muted">Số lượt ôn từ theo từng ngày.</div></div>
           <div className="text-xs text-muted">Cao nhất: {maxWords} từ/ngày</div>
@@ -106,7 +106,7 @@ export default function WeeklyReportPage() {
       </section>
 
       <div className="mb-5 grid gap-4 md:grid-cols-2">
-        <section className="rounded-xl border border-line bg-white p-4" aria-labelledby="weekly-modes-title">
+        <section className="rounded-xl border border-line bg-panel shadow-xs p-4" aria-labelledby="weekly-modes-title">
           <h3 id="weekly-modes-title" className="font-semibold">Chế độ đã luyện</h3>
           {report.modes.length === 0 ? <div className="py-6 text-center text-sm text-muted">Chưa có bài kiểm tra trong tuần.</div> : (
             <div className="mt-3 space-y-2">
@@ -119,7 +119,7 @@ export default function WeeklyReportPage() {
           )}
         </section>
 
-        <section className="rounded-xl border border-line bg-white p-4" aria-labelledby="weekly-hard-words-title">
+        <section className="rounded-xl border border-line bg-panel shadow-xs p-4" aria-labelledby="weekly-hard-words-title">
           <div className="flex items-center justify-between gap-2"><h3 id="weekly-hard-words-title" className="font-semibold">Từ khó trong tuần</h3>{report.difficultWords.length > 0 && <Link className="text-xs text-golddark hover:underline print:hidden" href="/review">Ôn ngay →</Link>}</div>
           {report.difficultWords.length === 0 ? <div className="py-6 text-center text-sm text-muted">Không có từ sai mới trong tuần.</div> : (
             <div className="mt-3 space-y-2">
@@ -152,7 +152,7 @@ export default function WeeklyReportPage() {
 
 function Metric({ value, label, comparison: detail }: { value: string | number; label: string; comparison: string }) {
   return (
-    <div className="rounded-xl border border-line bg-white p-3 text-center">
+    <div className="rounded-xl border border-line bg-panel shadow-xs p-3 text-center">
       <div className="font-serif text-2xl font-bold">{value}</div>
       <div className="mt-0.5 text-xs text-muted">{label}</div>
       <div className="mt-2 text-[0.65rem] text-golddark">{detail}</div>

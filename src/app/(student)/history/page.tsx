@@ -66,15 +66,15 @@ export default function HistoryPage() {
       {rows !== null && rows.length > 0 && (
         <>
           <div className="my-4 grid grid-cols-3 gap-2 sm:gap-3">
-            <div className="rounded-lg border border-line bg-white p-3 text-center">
+            <div className="rounded-lg border border-line bg-panel shadow-xs p-3 text-center">
               <div className="font-serif text-xl font-bold">{rows.length}</div>
               <div className="text-[0.72rem] text-muted">Lượt làm bài</div>
             </div>
-            <div className="rounded-lg border border-line bg-white p-3 text-center">
+            <div className="rounded-lg border border-line bg-panel shadow-xs p-3 text-center">
               <div className="font-serif text-xl font-bold">{average}%</div>
               <div className="text-[0.72rem] text-muted">Điểm trung bình</div>
             </div>
-            <div className="rounded-lg border border-line bg-white p-3 text-center">
+            <div className="rounded-lg border border-line bg-panel shadow-xs p-3 text-center">
               <div className="font-serif text-xl font-bold text-ok">{best}%</div>
               <div className="text-[0.72rem] text-muted">Cao nhất</div>
             </div>

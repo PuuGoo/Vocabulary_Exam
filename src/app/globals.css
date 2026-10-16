@@ -590,3 +590,16 @@ html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page
   font-weight: 700;
   transition: all 180ms ease;
 }
+
+/* ==== Theme-aware surface normalization ==== */
+[data-theme="editorial"] .bg-white,
+[data-theme="dark"] .bg-white,
+html.theme-dark .bg-white {
+  background-color: rgb(var(--color-panel));
+}
+
+.lexora-card {
+  background-color: rgb(var(--color-panel));
+  border-color: rgb(var(--color-line));
+  border-radius: 18px;
+}
