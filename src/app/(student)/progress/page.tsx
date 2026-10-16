@@ -125,9 +125,9 @@ export default function ProgressPage() {
         </div>
       </section>
 
-      <div role="tablist" aria-label="Tiến độ" className="flex gap-1.5 overflow-x-auto rounded-xl border border-line bg-white p-1.5 sm:w-fit">
+      <div role="tablist" aria-label="Tiến độ" className="lexora-pill-tabs sm:w-fit">
         {TABS.map((item) => (
-          <button key={item.id} role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-bold ${tab === item.id ? "bg-ink text-white" : "text-muted hover:bg-goldpale/40 hover:text-ink"}`}>{item.label}</button>
+          <button key={item.id} role="tab" aria-selected={tab === item.id} onClick={() => setTab(item.id)} className="lexora-pill-tab shrink-0">{item.label}</button>
         ))}
       </div>
 
@@ -152,7 +152,7 @@ export default function ProgressPage() {
             </section>
           )}
           {activity && (
-            <section className="rounded-xl border border-line bg-white p-4" aria-labelledby="activity-calendar-title">
+            <section className="rounded-xl border border-line bg-panel shadow-sm p-4" aria-labelledby="activity-calendar-title">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><h3 id="activity-calendar-title" className="font-semibold">Lịch học 30 ngày</h3><div className="mt-1 text-xs text-muted">Mỗi ô thể hiện mức độ hoạt động trong một ngày.</div></div>
                 <div className="flex gap-4 text-center text-xs">
@@ -174,7 +174,7 @@ export default function ProgressPage() {
             </section>
           )}
           {sets !== null && !loadError && (
-            <section className="rounded-xl border border-line bg-white p-4">
+            <section className="rounded-xl border border-line bg-panel shadow-sm p-4">
               <h3 className="font-semibold">Tổng quan ghi nhớ</h3>
               <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Stat value={`${reviewed}/${totalWords}`} label="Từ đã đánh giá" />
@@ -203,7 +203,7 @@ export default function ProgressPage() {
               {filteredSets.length === 0 ? <div className={cx.empty}>Không tìm thấy bộ từ phù hợp.</div> : filteredSets.map((set) => {
                 const percent = set.totalWords > 0 ? Math.round((set.reviewed / set.totalWords) * 100) : 0;
                 return (
-                  <div key={set.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
+                  <div key={set.id} className="mb-3 rounded-[10px] border border-line bg-panel shadow-sm p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <div className="font-semibold">{set.name}</div>
@@ -236,7 +236,7 @@ export default function ProgressPage() {
               <div className="flex items-center justify-between gap-2"><div><h2 className={cx.h2}>Huy hiệu thành tích</h2><p className={cx.desc}>Các cột mốc được cập nhật tự động theo hoạt động học tập.</p></div><span className={cx.badgeGold}>{achievementSummary.unlocked}/{achievementSummary.total} đã mở</span></div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 {achievementSummary.achievements.map((achievement) => (
-                  <article key={achievement.id} className={`rounded-lg border p-3 ${achievement.unlocked ? "border-gold bg-goldpale/40" : "border-line bg-[#faf9f5]"}`}>
+                  <article key={achievement.id} className={`rounded-lg border p-3 ${achievement.unlocked ? "border-gold bg-goldpale/40" : "border-line bg-paper/60"}`}>
                     <div className="flex items-start gap-3">
                       <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl ${achievement.unlocked ? "bg-goldpale" : "bg-line grayscale opacity-60"}`} aria-hidden="true">{achievement.icon}</div>
                       <div className="min-w-0 flex-1">
@@ -249,7 +249,7 @@ export default function ProgressPage() {
                   </article>
                 ))}
               </div>
-              <div className="mt-5 rounded-xl border border-line bg-white p-4">
+              <div className="mt-5 rounded-xl border border-line bg-panel shadow-sm p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div><h3 className="font-semibold">Bảng xếp hạng</h3><p className="mt-1 text-xs text-muted">Xem thứ hạng của bạn theo XP và độ chính xác.</p></div>
                   <Link className={`${cx.btn} ${cx.btnGhost}`} href="/leaderboard">Mở bảng xếp hạng</Link>
@@ -274,5 +274,5 @@ export default function ProgressPage() {
 }
 
 function Stat({ value, label, tone }: { value: string | number; label: string; tone?: "ok" | "bad" }) {
-  return <div className="rounded-lg border border-line bg-white p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
+  return <div className="rounded-lg border border-line bg-panel shadow-sm p-3 text-center"><div className={`font-serif text-xl font-bold ${tone === "ok" ? "text-ok" : tone === "bad" ? "text-bad" : ""}`}>{value}</div><div className="text-[0.72rem] text-muted">{label}</div></div>;
 }

@@ -125,7 +125,7 @@ export default function MyWordsPage() {
         </div>
       </section>
 
-      <div role="tablist" aria-label="Từ của tôi" className="flex gap-1.5 overflow-x-auto rounded-xl border border-line bg-white p-1.5 sm:w-fit">
+      <div role="tablist" aria-label="Từ của tôi" className="lexora-pill-tabs sm:w-fit">
         {TABS.map((item) => (
           <button
             key={item.id}
@@ -172,7 +172,7 @@ export default function MyWordsPage() {
                 const answer = displayAnswer(bookmark);
                 const speakText = getSpeakText(bookmark, bookmark);
                 return (
-                  <article key={bookmark.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
+                  <article key={bookmark.id} className="mb-3 rounded-[10px] border border-line bg-panel shadow-sm p-4">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div className="min-w-0 flex-1">
                         <div className="mb-1 text-[0.7rem] text-muted">{bookmark.setName}</div>
@@ -359,7 +359,7 @@ function DictionarySection() {
             const answer = displayAnswer(word);
             const speakText = getSpeakText(word, word);
             return (
-              <article key={word.id} className="mb-3 rounded-[10px] border border-line bg-white p-4">
+              <article key={word.id} className="mb-3 rounded-[10px] border border-line bg-panel shadow-sm p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 text-xs text-muted">{word.setName}</div>

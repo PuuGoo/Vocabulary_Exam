@@ -158,7 +158,7 @@ export default function StudyPage() {
           </p>
         </div>
         {sets && (
-          <div className="self-start rounded-full border border-line bg-white px-3 py-2 text-xs font-bold text-muted sm:self-auto">
+          <div className="self-start rounded-full border border-line bg-panel shadow-sm px-3 py-2 text-xs font-bold text-muted sm:self-auto">
             {sets.length} bộ từ có sẵn
           </div>
         )}
@@ -196,7 +196,7 @@ export default function StudyPage() {
             </span>
             <select
               aria-label="Số từ luyện nhanh"
-              className="rounded-[9px] border border-line bg-white px-2 py-1.5 text-xs font-bold"
+              className="rounded-[9px] border border-line bg-panel shadow-sm px-2 py-1.5 text-xs font-bold"
               value={quickCount}
               onChange={(event) => setQuickCount(event.target.value)}
             >
@@ -277,7 +277,7 @@ export default function StudyPage() {
               </span>
               <input
                 type="search"
-                className="h-10 w-full rounded-[11px] border border-line bg-white pl-9 pr-3 text-sm outline-none focus:border-gold"
+                className="h-10 w-full rounded-[11px] border border-line bg-panel shadow-sm pl-9 pr-3 text-sm outline-none focus:border-gold"
                 placeholder="Tìm thư mục hoặc bộ từ..."
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
@@ -286,7 +286,7 @@ export default function StudyPage() {
           )}
         </div>
         <div className="mb-4 flex flex-wrap gap-2" aria-label="Lọc bộ từ">
-          {([['all', 'Tất cả'], ['due', 'Cần ôn'], ['learning', 'Đang học'], ['consolidated', 'Đã củng cố']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setStudyFilter(value)} className={`min-h-10 rounded-xl px-3 text-xs font-bold ${studyFilter === value ? "bg-[#302A68] text-white" : "border border-line bg-white text-muted"}`}>{label}</button>)}
+          {([['all', 'Tất cả'], ['due', 'Cần ôn'], ['learning', 'Đang học'], ['consolidated', 'Đã củng cố']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setStudyFilter(value)} className={`min-h-10 rounded-xl px-3 text-xs font-bold ${studyFilter === value ? "bg-[#302A68] text-white" : "border border-line bg-panel shadow-sm text-muted"}`}>{label}</button>)}
         </div>
         {sets === null ? (
           <div className="grid gap-4 md:grid-cols-2">
@@ -321,7 +321,7 @@ export default function StudyPage() {
               <button type="button" onClick={() => setCurrentFolderPath("")} aria-current={!currentFolderPath ? "page" : undefined} className={!currentFolderPath ? "text-ink" : "text-gold hover:underline"}>Tất cả</button>
               {breadcrumbs.map((crumb) => <span key={crumb.path} className="flex items-center gap-2"><span className="text-muted">›</span><button type="button" onClick={() => setCurrentFolderPath(crumb.path)} aria-current={crumb.path === currentFolderPath ? "page" : undefined} className={crumb.path === currentFolderPath ? "text-ink" : "text-gold hover:underline"}>{crumb.label}</button></span>)}
             </nav>
-            {currentFolderPath && <button type="button" onClick={() => setCurrentFolderPath(currentFolderPath === UNCATEGORIZED_PATH ? "" : parentCategoryPath(currentFolderPath))} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line bg-white px-3 text-xs font-bold hover:border-[#CFC7FF] hover:text-gold">← Quay lại</button>}
+            {currentFolderPath && <button type="button" onClick={() => setCurrentFolderPath(currentFolderPath === UNCATEGORIZED_PATH ? "" : parentCategoryPath(currentFolderPath))} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-line bg-panel shadow-sm px-3 text-xs font-bold hover:border-[#CFC7FF] hover:text-gold">← Quay lại</button>}
             {childFolders.length > 0 && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{childFolders.map((folder) => { const dueCount = countDescendantDueSets(folder.path, sets || []); return <button key={folder.path} type="button" onClick={() => setCurrentFolderPath(folder.path)} aria-label={`Mở thư mục ${folder.name}, ${folder.count} bộ`} className="lexora-card flex min-h-24 items-center gap-4 p-4 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#EFECFF] text-xl" aria-hidden="true">📁</span><span className="min-w-0"><b className="line-clamp-2 text-sm leading-5">{folder.name}</b><span className="mt-1 block text-xs text-muted">{folder.count} bộ</span>{dueCount > 0 ? <span className="mt-1 block text-xs font-bold text-[#D87855]">{dueCount} bài cần ôn</span> : null}</span><span className="ml-auto text-muted" aria-hidden="true">›</span></button>; })}</div>}
             {directSets.length > 0 && <div className="grid items-start gap-4 md:grid-cols-2">{directSets.map(renderSetCard)}</div>}
             {childFolders.length === 0 && directSets.length === 0 && <EmptyState title="Thư mục này chưa có bộ từ" detail="Hãy quay lại và chọn một thư mục khác." />}
@@ -441,7 +441,7 @@ function CollectionCard({
   const reviewAt = set.nextSetReviewAt ? new Date(set.nextSetReviewAt) : null;
   const reviewDays = reviewAt ? Math.ceil((reviewAt.getTime() - Date.now()) / 86_400_000) : null;
   const modeClass =
-    "flex min-h-11 items-center rounded-[10px] border border-line bg-white px-3 py-2.5 text-left text-xs font-bold text-ink transition hover:border-[#CFC7FF] hover:bg-[#F8F7FC] disabled:cursor-not-allowed disabled:opacity-40";
+    "flex min-h-11 items-center rounded-[10px] border border-line bg-panel shadow-sm px-3 py-2.5 text-left text-xs font-bold text-ink transition hover:border-[#CFC7FF] hover:bg-[#F8F7FC] disabled:cursor-not-allowed disabled:opacity-40";
   return (
     <article className="lexora-card overflow-hidden">
       <div className="p-5">
