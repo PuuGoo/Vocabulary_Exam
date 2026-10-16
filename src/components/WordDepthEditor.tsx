@@ -173,7 +173,7 @@ export default function WordDepthEditor({ wordId, term, word, onSaved }: {
     list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 
   return (
-    <div className="md:col-span-2 rounded-xl border border-line bg-[#FBFAFE] p-3">
+    <div className="md:col-span-2 rounded-xl border border-line bg-paper/70 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-bold uppercase tracking-wide text-muted">Nâng cao · collocation, cấu trúc, chủ đề</p>
         <button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-9 !px-3 !py-1.5`} disabled={saving || loading} onClick={() => void save()}>

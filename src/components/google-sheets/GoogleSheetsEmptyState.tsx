@@ -7,7 +7,7 @@ import { primary, secondary } from "./types";
  */
 export default function GoogleSheetsEmptyState({ canManage, busy, resume, onCreate, onConnect }: { canManage: boolean; busy: boolean; resume: boolean; onCreate: () => void; onConnect: () => void }) {
   return (
-    <div className="rounded-2xl border border-line bg-[#FBFAFE] p-5 sm:p-6">
+    <div className="rounded-2xl border border-line bg-paper/70 p-5 sm:p-6">
       <h4 className="font-serif text-base font-semibold">Google Sheets</h4>
       <p className="mt-1 text-sm leading-6 text-muted">Quản lý vocabulary trực tiếp bằng Google Sheets.</p>
       <p className="mt-2 text-xs leading-5 text-muted">Lexora tạo Sheet theo template của bộ từ và tự động đồng bộ về PostgreSQL. Bạn chỉ cần chỉnh sửa trong Google Sheets.</p>

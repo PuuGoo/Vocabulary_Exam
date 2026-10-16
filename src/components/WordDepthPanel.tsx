@@ -44,7 +44,7 @@ export default function WordDepthPanel({ content, className = "" }: { content?: 
   return (
     <div className={`mt-4 w-full max-w-xl space-y-2 text-left ${className}`}>
       {pronunciations.length > 1 && (
-        <div className="rounded-xl border border-[#EBEAF2] bg-[#FBFAFE] p-3 text-xs">
+        <div className="rounded-xl border border-[#EBEAF2] bg-paper/70 p-3 text-xs">
           <p className="font-bold uppercase tracking-wide text-muted">Phát âm theo từ loại (UK)</p>
           <ul className="mt-1 space-y-0.5">
             {pronunciations.map((item, index) => (

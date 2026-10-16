@@ -329,7 +329,7 @@ export default function VocabularyDrillSession({ kind, title, intro, emptyTitle,
           <div className="h-full rounded-full bg-[#6550DB] transition-[width]" style={{ width: `${progress}%` }} />
         </div>
 
-        <div className="rounded-2xl border border-line bg-[#FBFAFE] p-4 sm:p-5">
+        <div className="rounded-2xl border border-line bg-paper/70 p-4 sm:p-5">
           <p className="text-[0.7rem] font-bold uppercase tracking-[0.14em] text-muted">
             {current.kind === "cloze" ? "Điền từ vào chỗ trống" : current.task === "phrase" || current.task === "recall" ? "Viết lại bằng tiếng Anh" : "Điền vào chỗ trống"}
           </p>

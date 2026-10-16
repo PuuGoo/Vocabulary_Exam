@@ -136,7 +136,7 @@ export default function FolderAccessManager({ folderId, folderName, onClose, onC
         {loading ? <div className="grid gap-3" aria-live="polite"><div className="h-20 animate-pulse rounded-xl bg-[#F4F2FA]" /><div className="h-40 animate-pulse rounded-xl bg-[#F4F2FA]" /><p className="text-center text-sm text-muted">Đang tải quyền truy cập…</p></div>
           : error ? <div className="rounded-xl border border-bad/30 bg-badbg p-4 text-sm text-bad">{error}<button className="ml-3 font-bold underline" onClick={() => void load()}>Thử lại</button></div>
           : data && <>
-            <section className="rounded-2xl border border-line bg-[#FAF9FD] p-4">
+            <section className="rounded-2xl border border-line bg-paper p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div><h3 className="font-black">Thêm người</h3><p className="text-xs text-muted">Chọn nhiều quản trị viên và cấp cùng một mức quyền.</p></div>
                 <button type="button" className="text-xs font-bold text-[#6550DB]" onClick={() => setSelected(new Set())}>Bỏ chọn</button>

@@ -1428,7 +1428,7 @@ export default function AdminSetsPage() {
         </div>
       </div>
       {sets && categories.length > 0 && (
-        <section className="mb-5 rounded-[14px] border border-line bg-[#FBFAFE] p-3 sm:p-4" aria-label="Trình duyệt thư mục bộ từ">
+        <section className="mb-5 rounded-[14px] border border-line bg-paper/70 p-3 sm:p-4" aria-label="Trình duyệt thư mục bộ từ">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <nav className="flex min-w-0 flex-wrap items-center gap-1.5 text-sm" aria-label="Đường dẫn thư mục">
               <button type="button" className={`rounded-lg px-2 py-1 font-bold ${selectedCategory === ALL_CATEGORIES ? "bg-[#7865EE] text-white" : "text-[#6550DB] hover:bg-[#F0EDFF]"}`} onClick={() => navigateCategory(ALL_CATEGORIES)}>Tất cả bộ từ</button>
@@ -1452,7 +1452,7 @@ export default function AdminSetsPage() {
             <div><h3 className="text-sm font-bold text-ink">Tài liệu PDF & Word</h3><p className="mt-1 text-xs text-muted">Tài liệu trong thư mục này và toàn bộ thư mục con sẽ được gom tại đây. File lớn được tự chia nhỏ khi tải lên nên không còn giới hạn 4–10 MB.{hasAggregatedCategoryDocuments ? " Danh sách tổng hợp được đánh số liên tục, không làm đổi tên trong thư mục con." : ""}</p></div>
             <span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">{categoryDocuments.length} tài liệu</span>
           </div>
-          <div className="grid gap-3 rounded-xl border border-line bg-[#FBFAFE] p-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-end">
+          <div className="grid gap-3 rounded-xl border border-line bg-paper/70 p-3 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] md:items-end">
             <label><span className={cx.label}>Tên tài liệu (chỉ áp dụng khi chọn 1 file)</span><input className={`${cx.input} !mb-0`} placeholder="VD: Tổng quan từ vựng sức khỏe" value={documentTitle} onChange={(event) => setDocumentTitle(event.target.value)} maxLength={256} /></label>
             <div>
               <span className={cx.label}>Chọn hoặc kéo thả nhiều PDF / Word · tải file lớn theo từng phần</span>
@@ -1468,7 +1468,7 @@ export default function AdminSetsPage() {
               </div>
             </div>
           </div>
-          {documentFiles.length > 0 && <div className="mt-3 rounded-xl border border-line bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-bold text-ink">Đã chọn {documentFiles.length} file · {(documentFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB</span><button type="button" disabled={documentUploading} className="text-xs font-bold text-bad hover:underline disabled:opacity-40" onClick={() => setDocumentFiles([])}>Xóa tất cả</button></div><div className="grid gap-1.5 sm:grid-cols-2">{documentFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FBFAFE] px-2.5 py-2 text-xs"><span className={`font-bold ${documentKind(file.name) === "PDF" ? "text-[#B64242]" : "text-[#3565A8]"}`}>{documentKind(file.name)}</span><span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span><span className="shrink-0 text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" disabled={documentUploading} className="px-1 text-muted hover:text-bad disabled:opacity-40" aria-label={`Xóa ${file.name}`} onClick={() => setDocumentFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div>{documentUploadProgress && <div className="mt-3" role="status"><div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-semibold">File {documentUploadProgress.fileIndex}/{documentUploadProgress.totalFiles}: {documentUploadProgress.fileName}</span><b>{documentUploadProgress.percent}%</b></div><div className="h-2 overflow-hidden rounded-full bg-[#EBEAF2]"><div className="h-full rounded-full bg-[#7865EE] transition-[width] duration-200" style={{ width: `${documentUploadProgress.percent}%` }} /></div></div>}<button type="button" className={`${cx.btn} ${cx.btnGold} mt-3 min-h-11 w-full`} disabled={documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? `Đang tải ${documentUploadProgress?.percent || 0}%…` : `↑ Tải ${documentFiles.length} tài liệu lên`}</button></div>}
+          {documentFiles.length > 0 && <div className="mt-3 rounded-xl border border-line bg-white p-3"><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-bold text-ink">Đã chọn {documentFiles.length} file · {(documentFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB</span><button type="button" disabled={documentUploading} className="text-xs font-bold text-bad hover:underline disabled:opacity-40" onClick={() => setDocumentFiles([])}>Xóa tất cả</button></div><div className="grid gap-1.5 sm:grid-cols-2">{documentFiles.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg bg-paper/70 px-2.5 py-2 text-xs"><span className={`font-bold ${documentKind(file.name) === "PDF" ? "text-[#B64242]" : "text-[#3565A8]"}`}>{documentKind(file.name)}</span><span className="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span><span className="shrink-0 text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</span><button type="button" disabled={documentUploading} className="px-1 text-muted hover:text-bad disabled:opacity-40" aria-label={`Xóa ${file.name}`} onClick={() => setDocumentFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></div>)}</div>{documentUploadProgress && <div className="mt-3" role="status"><div className="mb-1.5 flex items-center justify-between gap-3 text-xs"><span className="min-w-0 truncate font-semibold">File {documentUploadProgress.fileIndex}/{documentUploadProgress.totalFiles}: {documentUploadProgress.fileName}</span><b>{documentUploadProgress.percent}%</b></div><div className="h-2 overflow-hidden rounded-full bg-[#EBEAF2]"><div className="h-full rounded-full bg-[#7865EE] transition-[width] duration-200" style={{ width: `${documentUploadProgress.percent}%` }} /></div></div>}<button type="button" className={`${cx.btn} ${cx.btnGold} mt-3 min-h-11 w-full`} disabled={documentUploading} onClick={() => void uploadCategoryDocument()}>{documentUploading ? `Đang tải ${documentUploadProgress?.percent || 0}%…` : `↑ Tải ${documentFiles.length} tài liệu lên`}</button></div>}
           {!documentsLoading && categoryDocuments.length > 0 && <div className="mt-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
             <input type="search" value={documentQuery} onChange={(event) => setDocumentQuery(event.target.value)} className={`${cx.input} !mb-0`} placeholder="Tìm theo tên tài liệu, file hoặc thư mục..." aria-label="Tìm tài liệu PDF hoặc Word" />
             <select value={documentSort} onChange={(event) => setDocumentSort(event.target.value as DocumentSort)} className={`${cx.input} !mb-0`} aria-label="Sắp xếp tài liệu">
@@ -1476,7 +1476,7 @@ export default function AdminSetsPage() {
             </select>
           </div>}
           {documentsLoading ? <p className="mt-3 text-xs text-muted">Đang tải tài liệu...</p> : categoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Thư mục này và các thư mục con chưa có tài liệu PDF hoặc Word.</p> : visibleCategoryDocuments.length === 0 ? <p className="mt-3 text-sm text-muted">Không tìm thấy tài liệu phù hợp.</p> : <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-[#FBFAFE] p-3">
+            {visibleCategoryDocuments.map((document) => <article key={document.id} className="rounded-xl border border-line bg-paper/70 p-3">
               <div className="flex items-start gap-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-extrabold ${documentKind(document.fileName) === "PDF" ? "bg-[#FFF1F1] text-[#B64242]" : "bg-[#EAF2FF] text-[#3565A8]"}`} aria-hidden="true">{documentKind(document.fileName)}</span><div className="min-w-0"><div className="flex min-w-0 items-center gap-1.5"><b className="block min-w-0 truncate text-sm text-ink" title={document.displayTitle}>{document.displayTitle}</b>{document.aggregateOrder !== null && <span className="shrink-0 rounded-full bg-[#F0EDFF] px-1.5 py-0.5 text-[0.62rem] font-bold text-[#6550DB]">Số tổng hợp</span>}</div><span className="mt-0.5 block truncate text-xs text-muted" title={document.displayFileName}>{document.displayFileName} · {(document.fileSize / 1024 / 1024).toFixed(2)} MB</span>{document.category !== selectedCategory && <><span className="mt-1 block truncate text-[0.7rem] font-semibold text-[#6550DB]" title={document.category}>Từ thư mục: {document.category}</span><span className="mt-0.5 block truncate text-[0.68rem] text-muted" title={document.fileName}>Tên trong thư mục con: {document.fileName}</span></>}</div></div>
               <div className="mt-3 flex flex-wrap gap-2"><button type="button" className={`${cx.btn} ${cx.btnGold} flex-1 !px-3 !py-1.5`} onClick={() => setViewingDocument(document)}>Mở xem</button><a className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} href={`/api/admin/category-documents/${document.id}/file`} target="_blank" rel="noopener noreferrer">Tab mới</a><label className={`${cx.btn} ${cx.btnGhost} cursor-pointer !px-3 !py-1.5 ${replacingDocumentId !== null ? "pointer-events-none opacity-50" : ""}`}>{replacingDocumentId === document.id ? `Đang thay ${documentUploadProgress?.percent || 0}%` : "Thay file"}<input className="sr-only" type="file" accept={SUPPORTED_DOCUMENT_ACCEPT} disabled={replacingDocumentId !== null} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void replaceCategoryDocument(document, file); }} /></label><button type="button" className={`${cx.btn} ${cx.btnGhost} !px-3 !py-1.5`} onClick={() => startRenameDocument(document)}>Đổi tên</button><button type="button" className="px-2 text-xs font-bold text-bad" onClick={() => void deleteCategoryDocument(document)}>Xóa</button></div>
             </article>)}
@@ -1510,7 +1510,7 @@ export default function AdminSetsPage() {
           </div>
           <div className="mb-4 grid gap-2 rounded-xl border border-line bg-white p-3 sm:grid-cols-3"><label><span className={cx.label}>Tìm nhanh</span><input className={`${cx.input} !mb-0`} type="search" placeholder="Câu hỏi, đáp án, tag…" value={questionQuery} onChange={(event) => { setQuestionQuery(event.target.value); setQuestionPage(0); }} /></label><label><span className={cx.label}>Loại</span><select className={`${cx.input} !mb-0`} value={questionTypeFilter} onChange={(event) => { setQuestionTypeFilter(event.target.value); setQuestionPage(0); }}><option value="all">Tất cả</option><option value="multiple_choice">Trắc nghiệm</option><option value="essay">Tự luận</option><option value="speaking">IELTS Speaking</option></select></label><label><span className={cx.label}>Độ khó</span><select className={`${cx.input} !mb-0`} value={questionDifficultyFilter} onChange={(event) => { setQuestionDifficultyFilter(event.target.value); setQuestionPage(0); }}><option value="all">Tất cả</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option><option value="unset">Chưa đặt</option></select></label></div>
           {selectedQuestionIds.length > 0 && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#CFC7FF] bg-[#F5F2FF] p-3"><b className="mr-auto text-xs">Đã chọn {selectedQuestionIds.length} câu</b><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => previewOptionShuffle("random", true)}>Xáo trộn đáp án</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => previewOptionShuffle("balanced", true)}>Cân bằng vị trí đúng</button><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkDifficulty} onChange={(event) => setQuestionBulkDifficulty(event.target.value)}><option value="">Độ khó…</option><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option></select><input className={`${cx.input} !mb-0 !min-h-9 !w-36`} placeholder="tag1, tag2" value={questionBulkTags} onChange={(event) => setQuestionBulkTags(event.target.value)} /><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void updateQuestionBulkMetadata()}>Đổi metadata</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void exportSelectedQuestions()}>Export</button><select className={`${cx.input} !mb-0 !min-h-9 !w-auto`} value={questionBulkTarget} onChange={(event) => setQuestionBulkTarget(event.target.value)}><option value="">Thư mục đích…</option>{categoryOptions.filter((item) => item.name !== selectedCategory).map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("move")}>Move</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("copy")}>Copy</button><button className={`${cx.btn} ${cx.btnGhost} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("duplicate")}>Duplicate</button><button className={`${cx.btn} ${cx.btnDanger} !min-h-9 !px-3`} onClick={() => void runQuestionBulk("delete")}>Delete</button></div>}
-          <div className="mb-4 rounded-xl border border-line bg-[#FBFAFE] p-3">
+          <div className="mb-4 rounded-xl border border-line bg-paper/70 p-3">
             <div className="mb-3">
               <label className={cx.label}>Dạng câu hỏi</label>
               <select className={`${cx.input} !mb-0`} value={newQuestionType} onChange={(event) => setNewQuestionType(event.target.value as QuestionType)}>
@@ -1553,7 +1553,7 @@ export default function AdminSetsPage() {
                 const isEditing = editingQuestionId === q.id;
                 const isCollapsed = collapsedQuestions.has(q.id);
                 return (
-                  <article key={q.id} className={`rounded-xl border ${isEditing ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line bg-[#FBFAFE]"} p-3`}>
+                  <article key={q.id} className={`rounded-xl border ${isEditing ? "border-[#7865EE] bg-[#F5F2FF]" : "border-line bg-paper/70"} p-3`}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <input type="checkbox" checked={selectedQuestionIds.includes(q.id)} aria-label={`Chọn câu hỏi ${index + 1}`} onChange={(event) => setSelectedQuestionIds((current) => event.target.checked ? [...current, q.id] : current.filter((id) => id !== q.id))} />
@@ -1612,7 +1612,7 @@ export default function AdminSetsPage() {
         </section>
       )}
 
-      <section className="mb-6 rounded-[14px] border border-line bg-[#FBFAFE] p-4">
+      <section className="mb-6 rounded-[14px] border border-line bg-paper/70 p-4">
         <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
           <div>
             <h3 className="text-sm font-bold text-ink">Tìm từ trong tất cả bộ</h3>
@@ -1675,7 +1675,7 @@ export default function AdminSetsPage() {
       {optionShufflePreview && (
         <Modal title={optionShufflePreview.mode === "balanced" ? "Preview cân bằng vị trí đáp án đúng" : "Preview xáo trộn lựa chọn"} onClose={() => { if (!savingQuestionShuffle) setOptionShufflePreview(null); }} wide>
           <div className="grid gap-4">
-            <div className="grid gap-3 rounded-xl border border-line bg-[#FBFAFE] p-3 sm:grid-cols-2">
+            <div className="grid gap-3 rounded-xl border border-line bg-paper/70 p-3 sm:grid-cols-2">
               <div><b className="text-xs text-ink">Phân bố hiện tại</b><div className="mt-2 flex flex-wrap gap-2">{Object.entries(correctAnswerDistribution(optionShufflePreview.questions)).map(([label, count]) => <span key={label} className="rounded-full border border-line bg-white px-2.5 py-1 text-xs font-bold">{label}: {count}</span>)}</div></div>
               <div><b className="text-xs text-ink">Sau khi áp dụng</b><div className="mt-2 flex flex-wrap gap-2">{Object.entries(previewAnswerDistribution).map(([label, count]) => <span key={label} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800">{label}: {count}</span>)}</div></div>
             </div>
@@ -1793,7 +1793,7 @@ export default function AdminSetsPage() {
             {categoryOptions.length === 0 ? (
               <div className={cx.empty}>Chưa có danh mục. Hãy tạo danh mục đầu tiên ở phía trên.</div>
             ) : categoryOptions.map((category) => (
-              <div key={category.id} className="rounded-[12px] border border-line bg-[#FBFAFE] p-3">
+              <div key={category.id} className="rounded-[12px] border border-line bg-paper/70 p-3">
                 {editingCategoryId === category.id ? (
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <input
@@ -1943,7 +1943,7 @@ export default function AdminSetsPage() {
           <div className={cx.desc}>
             {detail.type === "irregular_verb" ? "Động từ bất quy tắc" : detail.type === "language_vocab" ? getLanguageConfig(detail.languageCode).label : "Từ vựng IELTS"} · {detail.words.length} mục
           </div>
-          <div className="mb-4 flex items-center justify-between gap-3 rounded-[12px] border border-line bg-[#FBFAFE] p-2.5">
+          <div className="mb-4 flex items-center justify-between gap-3 rounded-[12px] border border-line bg-paper/70 p-2.5">
             <button
               type="button"
               className={`${cx.btn} ${cx.btnGhost} min-h-10 shrink-0 !px-3`}
@@ -1985,13 +1985,13 @@ export default function AdminSetsPage() {
           </nav>
 
           {detailTab === "overview" && <section className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4"><span className="text-xs text-muted">Từ vựng</span><b className="mt-1 block text-2xl">{detail.words.length}</b></div>
-            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4"><span className="text-xs text-muted">Danh mục</span><b className="mt-1 block truncate text-sm">{detail.category || "Chưa phân loại"}</b></div>
-            <div className="rounded-xl border border-line bg-[#FBFAFE] p-4"><span className="text-xs text-muted">Phạm vi</span><b className="mt-1 block truncate text-sm">{detail.className || "Công khai"}</b></div>
+            <div className="rounded-xl border border-line bg-paper/70 p-4"><span className="text-xs text-muted">Từ vựng</span><b className="mt-1 block text-2xl">{detail.words.length}</b></div>
+            <div className="rounded-xl border border-line bg-paper/70 p-4"><span className="text-xs text-muted">Danh mục</span><b className="mt-1 block truncate text-sm">{detail.category || "Chưa phân loại"}</b></div>
+            <div className="rounded-xl border border-line bg-paper/70 p-4"><span className="text-xs text-muted">Phạm vi</span><b className="mt-1 block truncate text-sm">{detail.className || "Công khai"}</b></div>
             <div className="flex flex-wrap gap-2 sm:col-span-3"><button type="button" className={`${cx.btn} ${cx.btnGold}`} onClick={() => setDetailTab("vocabulary")}>Quản lý từ vựng</button><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setDetailTab("questions")}>Quản lý câu hỏi</button><button type="button" className={`${cx.btn} ${cx.btnGhost}`} onClick={() => setDetailTab("settings")}>Cài đặt bộ</button></div>
           </section>}
 
-          {(detailTab === "questions" || detailTab === "documents") && <section className="rounded-xl border border-line bg-[#FBFAFE] p-5">
+          {(detailTab === "questions" || detailTab === "documents") && <section className="rounded-xl border border-line bg-paper/70 p-5">
             <h3 className="font-serif text-lg font-bold">{detailTab === "questions" ? "Câu hỏi trong thư mục" : "Tài liệu trong thư mục"}</h3>
             <p className="mt-2 text-sm text-muted">Nội dung này được dùng chung theo hierarchy danh mục hiện có để các bộ cùng chủ đề không bị nhân bản dữ liệu.</p>
             {detail.category ? <button type="button" className={`${cx.btn} ${cx.btnGold} mt-4`} onClick={() => { navigateCategory(detail.category || ALL_CATEGORIES); setDetail(null); }}>{detailTab === "questions" ? "Mở quản lý câu hỏi" : "Mở quản lý tài liệu"}</button> : <p className="mt-3 text-sm font-semibold text-bad">Hãy gán bộ vào một danh mục trong tab Cài đặt trước.</p>}
@@ -2085,7 +2085,7 @@ export default function AdminSetsPage() {
           </div>
           </>}
           {detailTab === "vocabulary" && <>
-          <div className="mb-4 rounded-[11px] border border-line bg-[#FBFAFE] p-3">
+          <div className="mb-4 rounded-[11px] border border-line bg-paper/70 p-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-bold text-ink" htmlFor="detail-word-search">Tìm trong bộ này</label>
               {detailWordQuery.trim() && <span className="text-xs text-muted">Hiển thị {filteredDetailWords.length}/{detail.words.length} từ</span>}
@@ -2118,7 +2118,7 @@ export default function AdminSetsPage() {
               Đóng
             </button>
           </div>
-          {detail.words.length > 0 && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-[#FBFAFE] p-2.5">
+          {detail.words.length > 0 && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-paper/70 p-2.5">
             <label className="flex min-h-10 cursor-pointer items-center gap-2 px-2 text-xs font-bold"><input type="checkbox" className="h-4 w-4 accent-[#7865EE]" checked={filteredDetailWords.length > 0 && filteredDetailWords.every((word) => selectedWordIds.includes(word.id))} onChange={(event) => setSelectedWordIds((current) => event.target.checked ? [...new Set([...current, ...filteredDetailWords.map((word) => word.id)])] : current.filter((id) => !filteredDetailWords.some((word) => word.id === id)))} />Chọn tất cả từ đang hiển thị ({filteredDetailWords.length})</label>
             {selectedWordIds.length > 0 && <><span className="rounded-full bg-[#F0EDFF] px-2.5 py-1 text-xs font-bold text-[#6550DB]">Đã chọn {selectedWordIds.length}</span><select className={`${cx.input} !mb-0 !min-h-10 !w-auto`} value={moveTargetSetId} onChange={(event) => setMoveTargetSetId(event.target.value)} aria-label="Chọn bộ từ đích"><option value="">Di chuyển sang...</option>{compatibleMoveTargets.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}</select><button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-10 !px-3 !py-1.5`} disabled={movingWords || !moveTargetSetId} onClick={() => void moveSelectedWords()}>{movingWords ? "Đang chuyển..." : "Di chuyển"}</button><button type="button" className={`${cx.btn} ${cx.btnDanger} !min-h-10 !px-3 !py-1.5`} disabled={bulkDeletingWords} onClick={() => void deleteSelectedWords()}>{bulkDeletingWords ? "Đang xóa…" : `Xóa ${selectedWordIds.length} từ`}</button><button type="button" className="min-h-10 px-2 text-xs font-bold text-muted hover:text-ink" onClick={() => setSelectedWordIds([])}>Bỏ chọn</button></>}
           </div>}
@@ -2193,11 +2193,11 @@ export default function AdminSetsPage() {
           )}
 
           {detail.words.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-line bg-[#fffefb] px-4 py-8 text-center text-[0.88rem] text-muted">
+            <div className="rounded-lg border border-dashed border-line bg-paper px-4 py-8 text-center text-[0.88rem] text-muted">
               Bộ này chưa có từ nào. Chọn “Thêm từ thủ công” để bắt đầu.
             </div>
           ) : filteredDetailWords.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-line bg-[#fffefb] px-4 py-8 text-center text-[0.88rem] text-muted">
+            <div className="rounded-lg border border-dashed border-line bg-paper px-4 py-8 text-center text-[0.88rem] text-muted">
               Không tìm thấy từ phù hợp trong bộ này.
             </div>
           ) : (

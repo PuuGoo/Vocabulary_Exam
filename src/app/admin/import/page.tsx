@@ -149,7 +149,7 @@ export default function AdminImportPage() {
           : "Tải lên file .csv hoặc .xlsx để nhập nhanh từ vựng vào một bộ mới hoặc bộ đã có."}
       </div>
 
-      <div className="mb-3 grid gap-3 rounded-[14px] border border-line bg-[#FBFAFE] p-3 sm:grid-cols-2">
+      <div className="mb-3 grid gap-3 rounded-[14px] border border-line bg-paper/70 p-3 sm:grid-cols-2">
         <label>
           <span className={cx.label}>{target === "__new_language" ? "按分类筛选" : "Lọc theo danh mục"}</span>
           <select className={`${cx.input} !mb-0`} value={destinationCategory} onChange={(event) => setDestinationCategory(event.target.value)}>

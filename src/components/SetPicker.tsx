@@ -140,7 +140,7 @@ export default function SetPicker({
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   placeholder="Tìm bộ từ hoặc thư mục..."
-                  className="h-11 w-full rounded-[11px] border border-line bg-[#FBFAFE] pl-9 pr-9 text-sm outline-none transition focus:border-gold"
+                  className="h-11 w-full rounded-[11px] border border-line bg-paper/70 pl-9 pr-9 text-sm outline-none transition focus:border-gold"
                 />
                 {query && (
                   <button

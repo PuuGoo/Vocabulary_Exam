@@ -570,7 +570,7 @@ export default function BackupPage() {
                 event.preventDefault();
                 void inspectFile(event.dataTransfer.files?.[0]);
               }}
-              className="group flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed border-[#D9D5EC] bg-[#FAF9FD] px-4 text-center transition hover:border-[#8A79E7] hover:bg-[#F7F5FF]"
+              className="group flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-[14px] border-2 border-dashed border-[#D9D5EC] bg-paper px-4 text-center transition hover:border-[#8A79E7] hover:bg-[#F7F5FF]"
             >
               <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-white text-lg text-[#6550DB] shadow-sm transition group-hover:-translate-y-0.5">
                 ↥
@@ -665,7 +665,7 @@ export default function BackupPage() {
                 disabled={scheduleLoading}
               />
             </label>
-            <div className="rounded-[13px] border border-line bg-[#FAF9FD] p-4 text-sm leading-6">
+            <div className="rounded-[13px] border border-line bg-paper p-4 text-sm leading-6">
               <span className="block text-xs font-bold uppercase tracking-[0.12em] text-muted">
                 Giờ gửi cố định
               </span>
@@ -705,7 +705,7 @@ export default function BackupPage() {
               nhất (phù hợp giới hạn 2 cron/ngày của gói Hobby).
             </span>
           </div>
-          <details id="backup-diagnostics" className="mt-4 scroll-mt-24 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs">
+          <details id="backup-diagnostics" className="mt-4 scroll-mt-24 rounded-[13px] border border-line bg-paper p-3 text-xs">
             <summary className="cursor-pointer font-bold text-ink">Chẩn đoán kỹ thuật</summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <div>
@@ -745,7 +745,7 @@ export default function BackupPage() {
               Lỗi gần nhất: {emailSchedule.lastError}
             </p>
           ) : null}
-          <div className="mt-4 grid gap-2 rounded-[13px] border border-line bg-[#FAF9FD] p-3 text-xs sm:grid-cols-2">
+          <div className="mt-4 grid gap-2 rounded-[13px] border border-line bg-paper p-3 text-xs sm:grid-cols-2">
             <div>
               <span className="block text-muted">Vercel Cron gọi gần nhất</span>
               <b
@@ -836,7 +836,7 @@ export default function BackupPage() {
               nhập lại.
             </div>
           ) : null}
-          <div className="mt-6 rounded-[14px] border border-line bg-[#FAF9FD] p-4">
+          <div className="mt-6 rounded-[14px] border border-line bg-paper p-4">
             <label className="text-sm font-bold" htmlFor="restore-confirmation">
               Nhập{" "}
               <span className="font-mono text-[#6550DB]">{CONFIRMATION}</span>{" "}
