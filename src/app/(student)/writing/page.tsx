@@ -600,7 +600,7 @@ const nextSentence = useCallback(() => {
                 <button
                   key={cat.name}
                   onClick={() => selectCategory(cat)}
-                  className="flex min-h-[72px] flex-col gap-1.5 rounded-xl border border-line bg-white p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
+                  className="flex min-h-[72px] flex-col gap-1.5 rounded-xl border border-line bg-panel p-3 text-left transition hover:-translate-y-0.5 hover:border-[#CFC7FF] hover:shadow-sm"
                 >
                   <div className="flex items-center gap-3 w-full">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EFECFF] text-sm font-extrabold text-[#6550DB]" aria-hidden="true">Q</span>
@@ -697,15 +697,15 @@ const nextSentence = useCallback(() => {
               <div className="text-3xl font-bold text-golddark">{avg}%</div>
               <div className="text-xs text-muted mt-1">Điểm trung bình</div>
             </div>
-            <div className="rounded-2xl border border-line bg-white p-4 text-center">
+            <div className="rounded-2xl border border-line bg-panel p-4 text-center">
               <div className="text-2xl font-bold text-[#6550DB]">{bestScore}%</div>
               <div className="text-xs text-muted mt-1">Cao nhất</div>
             </div>
-            <div className="rounded-2xl border border-line bg-white p-4 text-center">
+            <div className="rounded-2xl border border-line bg-panel p-4 text-center">
               <div className="text-2xl font-bold text-emerald-600">{perfectCount}</div>
               <div className="text-xs text-muted mt-1">Hoàn hảo (100%)</div>
             </div>
-            <div className="rounded-2xl border border-line bg-white p-4 text-center">
+            <div className="rounded-2xl border border-line bg-panel p-4 text-center">
               <div className="text-2xl font-bold text-ink">{totalAtt}</div>
               <div className="text-xs text-muted mt-1">Lần kiểm tra</div>
             </div>
@@ -722,7 +722,7 @@ const nextSentence = useCallback(() => {
                       <span aria-hidden="true">{d === "easy" ? "1" : d === "medium" ? "2" : "3"}</span>
                       {meta.label}
                     </span>
-                    <div className="flex-1 h-2 rounded-full bg-white border border-line overflow-hidden">
+                    <div className="flex-1 h-2 rounded-full bg-panel border border-line overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${d === "easy" ? "bg-emerald-500" : d === "medium" ? "bg-amber-500" : "bg-rose-500"}`}
                         style={{ width: `${avgD ?? 0}%` }}
@@ -746,7 +746,7 @@ const nextSentence = useCallback(() => {
               <div className="text-lg font-bold text-rose-700">{retryNeeded}</div>
               <div className="text-[0.7rem] text-rose-700">Cần ôn (&lt;70%)</div>
             </div>
-            <div className="rounded-lg border border-line bg-white p-2.5">
+            <div className="rounded-lg border border-line bg-panel p-2.5">
               <div className="text-lg font-bold text-ink">{fmtTime(avgTimePerSentence)}</div>
               <div className="text-[0.7rem] text-muted">Trung bình/câu</div>
             </div>
@@ -849,7 +849,7 @@ const nextSentence = useCallback(() => {
                   );
                 })()}
                 {current?.fullQuestion && (
-                  <span className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-2 py-0.5 text-[0.7rem] font-bold text-muted">
+                  <span className="inline-flex items-center gap-1 rounded-full border border-line bg-panel px-2 py-0.5 text-[0.7rem] font-bold text-muted">
                     Câu {current.sentenceIndex + 1}/{splitSentences(current.fullAnswer).length}
                   </span>
                 )}
@@ -930,17 +930,17 @@ const nextSentence = useCallback(() => {
                     <span className={`text-lg font-bold ${textColor}`}>{Math.round(score * 100)}%</span>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-lg bg-white/60 p-3">
+                    <div className="rounded-lg bg-panel/60 p-3">
                       <span className="text-xs font-bold text-muted block mb-1">Bạn viết:</span>
                       <div className="text-sm leading-relaxed">{userTokens.length > 0 ? renderHighlightedTokens(userTokens) : <span className="italic">(trống)</span>}</div>
                     </div>
-                    <div className="rounded-lg bg-white/60 p-3">
+                    <div className="rounded-lg bg-panel/60 p-3">
                       <span className="text-xs font-bold text-muted block mb-1">Mẫu:</span>
                       <div className="text-sm leading-relaxed">{sampleTokens.length > 0 ? renderHighlightedTokens(sampleTokens) : <span className="italic">(trống)</span>}</div>
                     </div>
                   </div>
                   {missedWords.length > 0 && (
-                    <div className="mt-3 rounded-lg bg-white/60 p-3">
+                    <div className="mt-3 rounded-lg bg-panel/60 p-3">
                       <span className="text-xs font-bold text-muted block mb-1">Từ còn thiếu:</span>
                       <div className="flex flex-wrap gap-1">{missedWords.map((w, i) => <span key={i} className="rounded-md bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">{w}</span>)}</div>
                     </div>
@@ -997,7 +997,7 @@ const nextSentence = useCallback(() => {
             )}
 
             {current?.fullQuestion && (
-              <details className="rounded-xl border border-line bg-white">
+              <details className="rounded-xl border border-line bg-panel">
                 <summary className="cursor-pointer px-4 py-3 text-xs font-bold text-muted hover:text-ink">📝 Xem câu hỏi gốc</summary>
                 <div className="border-t border-line px-4 py-3 text-sm text-muted italic">{current.fullQuestion}</div>
               </details>
@@ -1010,5 +1010,5 @@ const nextSentence = useCallback(() => {
 }
 
 function SpellCheckToggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
-  return <button type="button" role="switch" aria-checked={enabled} onClick={() => onChange(!enabled)} className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 text-xs font-bold transition ${enabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-white text-muted"}`} title={enabled ? "Tắt gạch chân kiểm tra chính tả" : "Bật kiểm tra chính tả"}><span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-gray-300"}`} />Chính tả: {enabled ? "Bật" : "Tắt"}</button>;
+  return <button type="button" role="switch" aria-checked={enabled} onClick={() => onChange(!enabled)} className={`flex min-h-9 items-center gap-2 rounded-lg border px-2.5 text-xs font-bold transition ${enabled ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-line bg-panel text-muted"}`} title={enabled ? "Tắt gạch chân kiểm tra chính tả" : "Bật kiểm tra chính tả"}><span className={`h-2.5 w-2.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-gray-300"}`} />Chính tả: {enabled ? "Bật" : "Tắt"}</button>;
 }

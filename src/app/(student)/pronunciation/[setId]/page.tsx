@@ -310,7 +310,7 @@ export default function PronunciationPage() {
           <div className="text-4xl" aria-hidden="true">👏</div>
           <h3 className="mt-2 font-serif text-xl font-bold">Hoàn thành bài luyện</h3>
           <p className="mt-2 text-sm text-muted">Bạn tự đánh giá phát âm tốt {goodCount}/{ratings.length} từ.</p>
-          <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-gold" style={{ width: `${ratings.length ? goodCount / ratings.length * 100 : 0}%` }} /></div>
+          <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-panel"><div className="h-full rounded-full bg-gold" style={{ width: `${ratings.length ? goodCount / ratings.length * 100 : 0}%` }} /></div>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             {weakCount > 0 && <button disabled={saving} className={`${cx.btn} ${cx.btnGold}`} onClick={() => { const weakIds = new Set(ratings.filter((item) => !item.good).map((item) => item.wordId)); beginPractice(practiceWords.filter((item) => weakIds.has(item.id))); }}>Luyện lại {weakCount} từ chưa tốt</button>}
             <button disabled={saving} className={`${cx.btn} ${weakCount > 0 ? cx.btnGhost : cx.btnGold}`} onClick={() => beginPractice(set.words)}>Luyện lại toàn bộ</button>
@@ -322,7 +322,7 @@ export default function PronunciationPage() {
         <>
           <div className="mb-2 flex justify-between text-xs text-muted"><span>Từ {index + 1}/{practiceWords.length}</span><span>{goodCount} phát âm tốt</span></div>
           <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${index / practiceWords.length * 100}%` }} /></div>
-          <section className="rounded-2xl border border-line bg-white px-5 py-8 text-center">
+          <section className="rounded-2xl border border-line bg-panel px-5 py-8 text-center">
             <div className="text-xs uppercase tracking-widest text-muted">Đọc to từ sau</div>
             <div className="mt-3 font-serif text-3xl font-bold">{target}</div>
             {set.type === "irregular_verb" ? <VerbIpa ipaV1={word.ipaV1} ipaV2={word.ipaV2} ipaV3={word.ipaV3} className="mt-2 text-base" /> : (set.languageCode === "zh-CN" ? word.pronunciation : word.ipa) && <div className="mt-1 text-lg text-golddark">{set.languageCode === "zh-CN" ? word.pronunciation : word.ipa}</div>}

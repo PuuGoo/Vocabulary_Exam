@@ -315,7 +315,7 @@ export default function DictationPage() {
         ) : set.words.length === 0 ? (
           <div className={cx.empty}>Bộ từ chưa có nội dung phù hợp để luyện nghe.</div>
         ) : (
-          <div className="mx-auto max-w-md rounded-xl border border-line bg-white p-5">
+          <div className="mx-auto max-w-md rounded-xl border border-line bg-panel p-5">
             <label className={cx.label} htmlFor="dictation-count">Số từ trong lượt luyện</label>
             <select id="dictation-count" className={cx.input} value={countChoice} onChange={(event) => setCountChoice(event.target.value)}>
               <option value="10">10 từ</option>
@@ -367,7 +367,7 @@ export default function DictationPage() {
         <div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${((index + (checked ? 1 : 0)) / sessionWords.length) * 100}%` }} />
       </div>
 
-      <div className="mx-auto max-w-xl rounded-2xl border border-line bg-white p-5 text-center sm:p-8">
+      <div className="mx-auto max-w-xl rounded-2xl border border-line bg-panel p-5 text-center sm:p-8">
         <button type="button" className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border-2 border-gold bg-goldpale text-3xl hover:bg-gold/30" onClick={speak} aria-label="Nghe lại từ">🔊</button>
         <div className="mt-3 text-xs text-muted">Nghe lại: <kbd className="rounded border border-line px-1.5 py-0.5">Ctrl + Space</kbd></div>
         <div className="mt-5 text-sm"><span className="text-muted">Gợi ý nghĩa:</span> <b>{word.meaning}</b></div>

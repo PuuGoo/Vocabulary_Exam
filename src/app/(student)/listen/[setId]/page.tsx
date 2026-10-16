@@ -169,7 +169,7 @@ export default function ListenPage() {
       <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className={cx.desc}>Ứng dụng tự đọc lần lượt để bạn ôn từ mà không cần liên tục nhìn hoặc chạm màn hình.</div>
       {!speechSupported ? <div className={cx.empty}>Trình duyệt này chưa hỗ trợ đọc văn bản. Hãy dùng Chrome, Edge hoặc Safari phiên bản mới.</div> : set.words.length === 0 ? <div className={cx.empty}>Bộ từ chưa có nội dung phù hợp để nghe.</div> : (
-        <section className="mx-auto max-w-lg rounded-xl border border-line bg-white p-5">
+        <section className="mx-auto max-w-lg rounded-xl border border-line bg-panel p-5">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className={cx.label}>Số từ<select className={`${cx.input} mt-1`} value={countChoice} onChange={(event) => setCountChoice(event.target.value)}><option value="10">10 từ</option><option value="20">20 từ</option><option value="50">50 từ</option><option value="all">Toàn bộ ({set.words.length})</option></select></label>
             <label className={cx.label}>Tốc độ đọc<select className={`${cx.input} mt-1`} value={speed} onChange={(event) => setSpeed(event.target.value)}><option value="0.65">Chậm</option><option value="0.85">Vừa</option><option value="1">Tự nhiên</option></select></label>
@@ -203,7 +203,7 @@ export default function ListenPage() {
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className={cx.h2}>🎧 Nghe rảnh tay — {set.name}</h2><span className="text-sm text-muted">{index + 1}/{sessionWords.length}</span></div>
       <StudyModeNav setId={set.id} active="listen" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${(index + 1) / sessionWords.length * 100}%` }} /></div>
-      {word && <section {...listenSwipe.swipeProps} style={listenSwipe.swipeStyle} className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-line bg-white px-5 py-10 text-center">
+      {word && <section {...listenSwipe.swipeProps} style={listenSwipe.swipeStyle} className="relative mx-auto max-w-xl overflow-hidden rounded-2xl border border-line bg-panel px-5 py-10 text-center">
         <span className={`pointer-events-none absolute left-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>← Từ trước</span>
         <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-[#F0EDFF] px-3 py-1.5 text-xs font-bold text-[#6550DB] transition-opacity ${listenSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Từ sau →</span>
         <div className={`mx-auto flex h-24 w-24 items-center justify-center rounded-full text-4xl ${playing ? "animate-pulse bg-goldpale" : "bg-line/50"}`} aria-hidden="true">{playing ? "🔊" : "⏸"}</div>

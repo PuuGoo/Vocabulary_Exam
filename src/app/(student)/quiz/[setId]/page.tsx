@@ -919,9 +919,9 @@ function submitJumpQuestion() {
 
   return (
     <div className={cx.panel}>
-      <button type="button" aria-label="Mở menu chế độ học" aria-haspopup="menu" aria-expanded={menuOpen} aria-keyshortcuts="M ." onClick={() => setMenuOpen((open) => !open)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><kbd className="hidden rounded border bg-white px-1.5 py-0.5 text-[0.65rem] sm:inline">M</kbd></button>
+      <button type="button" aria-label="Mở menu chế độ học" aria-haspopup="menu" aria-expanded={menuOpen} aria-keyshortcuts="M ." onClick={() => setMenuOpen((open) => !open)} className="flashcard-dock-trigger"><span aria-hidden="true">⚡</span><kbd className="hidden rounded border bg-panel px-1.5 py-0.5 text-[0.65rem] sm:inline">M</kbd></button>
       {menuOpen && <button type="button" aria-label="Đóng menu chế độ học" className="fixed inset-0 z-[85] cursor-default" onClick={() => setMenuOpen(false)} />}
-      {menuOpen && <div ref={quizMenuRef} role="menu" aria-label="Chuyển chế độ học" className="flashcard-dock-panel max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-white p-3 shadow-xl">
+      {menuOpen && <div ref={quizMenuRef} role="menu" aria-label="Chuyển chế độ học" className="flashcard-dock-panel max-h-[calc(100dvh-90px)] w-[min(21rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-[#EBEAF2] bg-panel p-3 shadow-xl">
         <div className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted">Chuyển chế độ học</div>
         <div className="grid gap-1">
           <QuizMenuItem shortcut="H" onClick={() => navigateQuiz(`/learn/${set.id}`)}>Học bằng flashcard</QuizMenuItem>
@@ -977,7 +977,7 @@ function submitJumpQuestion() {
           <button
             type="button"
             aria-pressed={fillTarget === "term"}
-            className={`min-h-10 rounded-lg px-3 text-sm font-bold ${fillTarget === "term" ? "bg-white text-ink shadow-sm" : "text-muted hover:bg-white/70"}`}
+            className={`min-h-10 rounded-lg px-3 text-sm font-bold ${fillTarget === "term" ? "bg-panel text-ink shadow-sm" : "text-muted hover:bg-panel/70"}`}
             onClick={() => navigateQuiz(quizUrl({ target: null }))}
           >
             Chữ Hán
@@ -985,7 +985,7 @@ function submitJumpQuestion() {
           <button
             type="button"
             aria-pressed={fillTarget === "pronunciation"}
-            className={`min-h-10 rounded-lg px-3 text-sm font-bold ${fillTarget === "pronunciation" ? "bg-white text-ink shadow-sm" : "text-muted hover:bg-white/70"}`}
+            className={`min-h-10 rounded-lg px-3 text-sm font-bold ${fillTarget === "pronunciation" ? "bg-panel text-ink shadow-sm" : "text-muted hover:bg-panel/70"}`}
             onClick={() => navigateQuiz(quizUrl({ target: "pronunciation" }))}
           >
             Pinyin
@@ -995,10 +995,10 @@ function submitJumpQuestion() {
       )}
 
       {mode === "fill" && !isVerb && !timedMode && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-white p-2.5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel p-2.5">
           <div className="inline-flex rounded-lg bg-[#F4F2FA] p-1" aria-label="Mục tiêu phiên học">
-            <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${!isTestSession ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateQuiz(quizUrl({ session: null, view: "list" }))}>Luyện tập</button>
-            <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${isTestSession ? "bg-white text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateQuiz(quizUrl({ session: "test", view: "list" }))}>Kiểm tra</button>
+            <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${!isTestSession ? "bg-panel text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateQuiz(quizUrl({ session: null, view: "list" }))}>Luyện tập</button>
+            <button className={`min-h-10 rounded-md px-3 text-sm font-bold ${isTestSession ? "bg-panel text-ink shadow-sm" : "text-muted"}`} onClick={() => navigateQuiz(quizUrl({ session: "test", view: "list" }))}>Kiểm tra</button>
           </div>
           <div className="inline-flex rounded-lg border border-line p-1" aria-label="Cách hiển thị câu hỏi">
             <button className="min-h-10 rounded-md px-3 text-sm font-bold text-muted" onClick={() => navigateQuiz(quizUrl({ view: "focus" }))}>Focus</button>
@@ -1050,7 +1050,7 @@ function submitJumpQuestion() {
         if (!firstWithDepth) return null;
         const depth = (wordContent as Record<string, unknown>)[String(firstWithDepth.id)] as any;
         return (
-          <div className="mb-6 mt-4 rounded-xl border border-line bg-white p-4">
+          <div className="mb-6 mt-4 rounded-xl border border-line bg-panel p-4">
             <h4 className="mb-3 text-xs font-bold uppercase tracking-wide text-muted">Nội dung sâu cho “{firstWithDepth.term}”</h4>
             <WordDepthPanel content={depth} />
           </div>
@@ -1058,7 +1058,7 @@ function submitJumpQuestion() {
       })()}
 
       {!retest && !quickMode && (
-        <div className="mb-3 flex items-center justify-center gap-2 flex-wrap rounded-xl border border-line bg-white px-3 py-2.5" role="group" aria-label="Chọn phạm vi câu hỏi">
+        <div className="mb-3 flex items-center justify-center gap-2 flex-wrap rounded-xl border border-line bg-panel px-3 py-2.5" role="group" aria-label="Chọn phạm vi câu hỏi">
           <label className="text-[0.8rem] text-muted font-semibold">Phạm vi:</label>
           <span className="text-[0.8rem] text-muted">Từ câu</span>
           <input
@@ -1183,7 +1183,7 @@ function submitJumpQuestion() {
               ? "bg-bad text-white border-bad"
               : status === "answered"
               ? "bg-goldpale border-gold text-golddark"
-              : "bg-white border-line text-muted";
+              : "bg-panel border-line text-muted";
           return (
             <button
               key={w.id}
@@ -1221,7 +1221,7 @@ function submitJumpQuestion() {
                     <button
                       type="button"
                       onClick={() => toggleHint(w.id)}
-                      className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-white hover:bg-[#F0EDFF] transition"
+                      className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-panel hover:bg-[#F0EDFF] transition"
                       title={hintIds.has(w.id) ? "Ẩn gợi ý" : "Xem gợi ý"}
                     >
                       {hintIds.has(w.id) ? "Ẩn gợi ý" : "Gợi ý"}
@@ -1295,7 +1295,7 @@ function submitJumpQuestion() {
                     {!isTestSession && <button
                       type="button"
                       onClick={() => toggleHint(w.id)}
-                      className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-white hover:bg-[#F0EDFF] transition"
+                      className="text-xs font-bold text-[#6550DB] hover:underline px-2 py-1 rounded-md border border-[#CFC7FF] bg-panel hover:bg-[#F0EDFF] transition"
                       title={hintIds.has(w.id) ? "Ẩn gợi ý" : "Xem gợi ý"}
                     >
                       {hintIds.has(w.id) ? "Ẩn gợi ý" : "Gợi ý"}
@@ -1355,7 +1355,7 @@ function submitJumpQuestion() {
                   <div className="flex flex-col gap-1.5 mt-1">
                     {(mcOptions[w.id] || []).map((opt) => {
                       const chosen = answers[w.id]?.mc === opt;
-                      let cls = "border-line bg-white";
+                      let cls = "border-line bg-panel";
                       if (chosen) cls = "border-gold bg-goldpale font-semibold";
                       if (effectiveChecked) {
                         if (opt === w.meaning) cls = "border-ok bg-okbg text-ok";
@@ -1420,8 +1420,8 @@ function submitJumpQuestion() {
           )}
         </div>
       )}
-      <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : mode === "fill" && fillView === "list" ? "sticky bottom-3 z-20 mt-6 flex justify-center rounded-2xl border border-line bg-white/95 p-2 shadow-lg backdrop-blur" : "mt-6 flex justify-center border-t border-line pt-4"}>
-        <div className={timedMode ? "contents" : "flex w-full max-w-xl items-center gap-2 rounded-[18px] border border-line bg-white p-2 shadow-sm"}>
+      <div className={timedMode ? "mt-3.5 flex justify-between gap-3" : mode === "fill" && fillView === "list" ? "sticky bottom-3 z-20 mt-6 flex justify-center rounded-2xl border border-line bg-panel/95 p-2 shadow-lg backdrop-blur" : "mt-6 flex justify-center border-t border-line pt-4"}>
+        <div className={timedMode ? "contents" : "flex w-full max-w-xl items-center gap-2 rounded-[18px] border border-line bg-panel p-2 shadow-sm"}>
           <button type="button" className={`${cx.btn} ${cx.btnGhost} !min-h-12 !shrink-0 !px-3`} disabled={group === 0} onClick={() => goGroup(group - 1)} aria-label="Về nhóm trước" title="Phím tắt: Alt + ←">
             ◀ <span className="hidden sm:inline">Nhóm trước</span> <kbd className="hidden lg:inline rounded border border-line bg-[#F8F8FC] px-1.5 py-0.5 text-[0.62rem] font-bold text-muted">Alt+←</kbd>
           </button>
@@ -1432,7 +1432,7 @@ function submitJumpQuestion() {
           )}
           {!timedMode && effectiveChecked && group < totalGroups - 1 && (
             <button type="button" className={`${cx.btn} ${cx.btnGold} !min-h-12 !flex-1`} onClick={() => goGroup(group + 1)} title="Phím tắt: Alt + →">
-              Tiếp tục nhóm {group + 2} → <kbd className="hidden lg:inline rounded border border-white/40 bg-white/15 px-1.5 py-0.5 text-[0.62rem] font-bold">Alt+→</kbd>
+              Tiếp tục nhóm {group + 2} → <kbd className="hidden lg:inline rounded border border-white/40 bg-panel/15 px-1.5 py-0.5 text-[0.62rem] font-bold">Alt+→</kbd>
             </button>
           )}
           {!timedMode && effectiveChecked && group === totalGroups - 1 && (
@@ -1481,7 +1481,7 @@ function ListFillFeedback({ word, set, target, values }: { word: Word; set: SetD
   }
   if (grade.correct) return <span className="font-semibold text-ok">✔ Chính xác.</span>;
   const variants = expandAnswerVariants(word.term || "");
-  return <div className="rounded-lg border border-bad/30 bg-badbg/50 p-3"><div className="mb-1.5 flex items-center gap-2"><span className="font-bold text-bad">✘</span><span className="text-xs font-bold uppercase tracking-wider text-bad">Đáp án đúng</span></div><div className="flex flex-wrap items-center gap-2">{variants.length > 1 ? <div className="flex flex-wrap gap-1.5">{variants.map((variant) => <span key={variant} className="rounded-md border border-green-300 bg-white px-2.5 py-1 text-sm font-medium text-green-800">{variant}</span>)}<div className="mt-1 w-full text-xs italic text-muted">(Các đáp án đều được chấp nhận)</div></div> : <span className="text-sm font-semibold text-ink">{word.term}</span>}{word.ipa && <span className="text-sm text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div></div>;
+  return <div className="rounded-lg border border-bad/30 bg-badbg/50 p-3"><div className="mb-1.5 flex items-center gap-2"><span className="font-bold text-bad">✘</span><span className="text-xs font-bold uppercase tracking-wider text-bad">Đáp án đúng</span></div><div className="flex flex-wrap items-center gap-2">{variants.length > 1 ? <div className="flex flex-wrap gap-1.5">{variants.map((variant) => <span key={variant} className="rounded-md border border-green-300 bg-panel px-2.5 py-1 text-sm font-medium text-green-800">{variant}</span>)}<div className="mt-1 w-full text-xs italic text-muted">(Các đáp án đều được chấp nhận)</div></div> : <span className="text-sm font-semibold text-ink">{word.term}</span>}{word.ipa && <span className="text-sm text-golddark">{word.ipa}</span>}<SpeakButton text={word.term || ""} /></div></div>;
 }
 
 function QuizMenuItem({ children, shortcut, danger = false, onClick }: { children: React.ReactNode; shortcut: string; danger?: boolean; onClick: () => void }) {

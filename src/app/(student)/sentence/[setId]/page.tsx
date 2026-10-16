@@ -295,7 +295,7 @@ export default function SentencePage() {
         <>
           <div className="mb-2 flex justify-between text-xs text-muted"><span>Câu {index + 1}/{questions.length}</span><span>{results.filter((result) => result.perfect).length} câu hoàn hảo</span></div>
           <div className="mb-5 h-2 overflow-hidden rounded-full bg-line"><div className="h-full rounded-full bg-gold transition-[width]" style={{ width: `${index / questions.length * 100}%` }} /></div>
-          <section className="rounded-xl border border-line bg-white p-4 sm:p-5">
+          <section className="rounded-xl border border-line bg-panel p-4 sm:p-5">
             <div className="text-center">
               <div className="text-xs uppercase tracking-widest text-muted">Từ cần luyện</div>
               <div className="mt-2 flex flex-wrap items-center justify-center gap-2 font-serif text-2xl font-bold">{question.term}<SpeakButton text={question.term || ""} /></div>
@@ -310,7 +310,7 @@ export default function SentencePage() {
             </div>
 
             <div className="mt-4 flex min-h-16 flex-wrap content-start justify-center gap-2" aria-label="Các từ có thể chọn">
-              {available.map((token) => <button type="button" key={token.id} className="rounded-lg border border-line bg-white px-3 py-2 text-sm hover:border-gold hover:bg-goldpale/40" onClick={() => choose(token)}>{token.text}</button>)}
+              {available.map((token) => <button type="button" key={token.id} className="rounded-lg border border-line bg-panel px-3 py-2 text-sm hover:border-gold hover:bg-goldpale/40" onClick={() => choose(token)}>{token.text}</button>)}
             </div>
 
             {feedback === "correct" && <div className="mt-4 rounded-lg bg-okbg p-3 text-center text-sm font-medium text-ok">✓ Chính xác! {hints > 0 ? `Bạn đã dùng ${hints} gợi ý.` : "Bạn đã tự xếp đúng câu."}</div>}

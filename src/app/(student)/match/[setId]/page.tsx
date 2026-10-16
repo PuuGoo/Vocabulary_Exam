@@ -337,7 +337,7 @@ export default function MatchGamePage() {
     if (selected && feedback === "correct") return "border-ok bg-okbg text-ok";
     if (selected && feedback === "wrong") return "border-bad bg-badbg text-bad";
     if (selected) return "border-gold bg-goldpale text-golddark";
-    return "border-line bg-white hover:border-gold";
+    return "border-line bg-panel hover:border-gold";
   };
 
   return (
@@ -349,7 +349,7 @@ export default function MatchGamePage() {
       <StudyModeNav setId={set.id} active="match" isVerb={set.type === "irregular_verb"} languageCode={set.languageCode || "en"} availableModes={getAvailableModes(set)} />
       <div className={cx.desc}>Chọn một từ tiếng Anh và nghĩa tiếng Việt tương ứng. Bạn có thể chọn bên nào trước cũng được.</div>
 
-      <div className="mb-4 grid grid-cols-3 gap-2 rounded-lg border border-line bg-white p-3 text-center text-xs sm:max-w-md sm:mx-auto">
+      <div className="mb-4 grid grid-cols-3 gap-2 rounded-lg border border-line bg-panel p-3 text-center text-xs sm:max-w-md sm:mx-auto">
         <div><b className="block text-base">{roundIndex + 1}/{rounds.length}</b><span className="text-muted">Vòng</span></div>
         <div><b className="block text-base">{wrongCount}</b><span className="text-muted">Lần sai</span></div>
         <div><b className="block text-base">{formatTime(elapsed)}</b><span className="text-muted">Thời gian</span></div>
