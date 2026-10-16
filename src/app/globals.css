@@ -530,3 +530,63 @@ html.theme-dark nav[aria-label="Chuyển chế độ học"] [aria-current="page
   background-color: var(--bg-surface);
   border: 1px solid var(--border-line);
 }
+
+/* ==== Lexora Next-Gen UI/UX Overhaul ==== */
+[data-theme="saas"] {
+  --color-ink: 15 23 42;
+  --color-inksoft: 51 65 85;
+  --color-paper: 248 250 252;
+  --color-panel: 255 255 255;
+  --color-gold: 79 70 229;
+  --color-golddark: 67 56 202;
+  --color-goldpale: 238 242 255;
+  --color-line: 226 232 240;
+  --color-muted: 100 116 139;
+}
+
+[data-theme="dark"] {
+  --color-ink: 241 245 249;
+  --color-inksoft: 203 213 225;
+  --color-paper: 9 13 22;
+  --color-panel: 17 24 39;
+  --color-gold: 99 102 241;
+  --color-golddark: 129 140 248;
+  --color-goldpale: 30 41 59;
+  --color-line: 31 41 55;
+  --color-muted: 148 163 184;
+}
+
+.lexora-bento {
+  background: rgb(var(--color-panel));
+  border: 1px solid rgb(var(--color-line));
+  border-radius: 22px;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 12px 32px -8px rgba(15, 23, 42, 0.06);
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.lexora-bento:hover {
+  border-color: rgb(var(--color-gold) / 0.32);
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.04),
+    0 20px 44px -12px rgb(var(--color-gold) / 0.14);
+}
+
+.lexora-hero-mesh {
+  background:
+    radial-gradient(120% 120% at 90% 0%, rgba(129, 140, 248, 0.28) 0%, transparent 55%),
+    radial-gradient(100% 100% at 0% 100%, rgba(217, 119, 6, 0.18) 0%, transparent 50%),
+    linear-gradient(135deg, #1e1b4b 0%, #312e81 55%, #1e1b4b 100%);
+}
+
+.lexora-pill-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 12px;
+  padding: 0.5rem 0.95rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  transition: all 180ms ease;
+}

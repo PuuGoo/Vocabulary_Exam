@@ -204,7 +204,7 @@ export default function AppShell({
 
   return (
     <div className="min-h-screen bg-paper text-ink">
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[88px] flex-col border-r border-line bg-white px-3 py-5 md:flex lg:w-[264px] lg:px-5">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[88px] flex-col border-r border-line bg-panel/95 backdrop-blur-xl px-3 py-5 shadow-[4px_0_24px_-12px_rgba(15,23,42,0.06)] md:flex lg:w-[264px] lg:px-5">
         <Link href={home} className="mb-8 flex h-11 items-center gap-3 px-2">
           <span
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-gold text-lg font-extrabold text-white"
@@ -261,7 +261,7 @@ export default function AppShell({
         </div>
       )}
       <div className={isFillSessionPage ? "flex h-dvh flex-col overflow-hidden md:pl-[88px] lg:pl-[264px]" : "md:pl-[88px] lg:pl-[264px]"}>
-        <header className="sticky top-0 z-30 shrink-0 border-b border-line bg-paper/90 backdrop-blur-md">
+        <header className="lexora-header-glass sticky top-0 z-30 shrink-0 border-b border-line/80">
           <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-3 px-4 md:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
@@ -399,7 +399,7 @@ export default function AppShell({
       </div>
       <nav
         aria-label="Điều hướng di động"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-white/95 px-2 py-1.5 backdrop-blur-md md:hidden"
+        className="fixed inset-x-3 bottom-3 z-30 grid grid-cols-4 rounded-[20px] border border-line bg-panel/95 px-2 py-1.5 shadow-[0_12px_36px_rgba(15,23,42,0.16)] backdrop-blur-xl md:hidden"
       >
         {(isAdminMode ? items.slice(0, 4) : STUDENT_PRIMARY_NAV).map((item) => (
           <Link
