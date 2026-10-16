@@ -89,7 +89,7 @@ export default function Modal({
 
   return createPortal((
     <div
-      className="lexora-modal-backdrop fixed inset-0 bg-ink/50 z-50 flex items-center justify-center p-2 sm:p-4"
+      className="lexora-modal-backdrop fixed inset-0 bg-ink/45 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5"
       onMouseDown={(event) => {
         if (closeOnBackdrop && event.target === event.currentTarget) onCloseRef.current();
       }}
@@ -100,11 +100,11 @@ export default function Modal({
       <div
         ref={panelRef}
         tabIndex={-1}
-        className={`lexora-modal-panel bg-white text-ink rounded-[10px] w-full shadow-lg flex max-h-[calc(100dvh-1rem)] flex-col sm:max-h-[calc(100dvh-2rem)] ${fillViewport ? "h-[calc(100dvh-1rem)] sm:h-[calc(100dvh-2rem)]" : ""} ${wide ? fillViewport ? "max-w-[min(98vw,100rem)]" : "max-w-6xl" : "max-w-2xl"}`}
+        className={`lexora-modal-panel border border-line bg-panel text-ink rounded-[24px] w-full shadow-[0_28px_80px_-12px_rgba(15,23,42,0.28)] flex max-h-[calc(100dvh-1.5rem)] flex-col sm:max-h-[calc(100dvh-2.5rem)] ${fillViewport ? "h-[calc(100dvh-1rem)] sm:h-[calc(100dvh-2rem)]" : ""} ${wide ? fillViewport ? "max-w-[min(98vw,100rem)]" : "max-w-6xl" : "max-w-2xl"}`}
       >
         <div className={`flex shrink-0 items-center justify-between border-b border-line ${fillViewport ? "px-4 py-2.5" : "px-5 py-4"}`}>
-          <h3 id={titleId} className="font-serif text-[1.05rem]">{title}</h3>
-          <button type="button" onClick={() => onCloseRef.current()} className="text-muted hover:text-ink text-xl leading-none px-1" aria-label="Đóng">
+          <h3 id={titleId} className="font-serif text-[1.1rem] font-extrabold tracking-[-0.02em]">{title}</h3>
+          <button type="button" onClick={() => onCloseRef.current()} className="flex h-8 w-8 items-center justify-center rounded-full border border-line/80 bg-paper/60 text-muted transition hover:border-gold/40 hover:text-ink text-lg leading-none" aria-label="Đóng">
             ×
           </button>
         </div>

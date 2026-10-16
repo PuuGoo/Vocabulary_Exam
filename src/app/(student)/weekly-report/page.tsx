@@ -138,7 +138,7 @@ export default function WeeklyReportPage() {
         <h3 id="weekly-suggestions-title" className="font-semibold">Gợi ý cho tuần tiếp theo</h3>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {report.recommendations.map((item) => (
-            <div key={item.title} className="rounded-lg bg-white p-3">
+            <div key={item.title} className="rounded-lg bg-panel p-3">
               <div className="text-sm font-semibold">{item.title}</div>
               <div className="mt-1 text-xs text-muted">{item.detail}</div>
               <Link className="mt-2 inline-block text-xs font-medium text-golddark hover:underline print:hidden" href={item.href}>Thực hiện →</Link>

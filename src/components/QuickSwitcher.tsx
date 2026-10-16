@@ -106,7 +106,7 @@ export default function QuickSwitcher({
         type="search"
         autoFocus
         autoComplete="off"
-        className="mb-3 w-full rounded-lg border border-line bg-[#fffefb] px-3 py-3 text-base outline-none focus:border-gold"
+        className="mb-3.5 w-full rounded-[14px] border border-line bg-paper px-4 py-3 text-sm font-medium text-ink outline-none transition focus:border-gold focus:bg-panel focus:shadow-[0_0_0_4px_rgb(var(--color-gold)/0.12)]"
         placeholder={isAdmin ? "Gõ tên trang quản trị hoặc bộ từ..." : "Gõ tên chức năng hoặc bộ từ..."}
         value={query}
         role="combobox"
@@ -128,7 +128,7 @@ export default function QuickSwitcher({
         }}
       />
 
-      <div id="quick-switcher-results" role="listbox" className="max-h-[55vh] overflow-y-auto rounded-lg border border-line">
+      <div id="quick-switcher-results" role="listbox" className="max-h-[55vh] overflow-y-auto rounded-[16px] border border-line bg-panel divide-y divide-line/60">
         {commands.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-muted">{loadingSets ? "Đang tải bộ từ..." : "Không tìm thấy chức năng hoặc bộ từ phù hợp."}</div>
         ) : commands.map((command, index) => (
@@ -138,7 +138,7 @@ export default function QuickSwitcher({
             href={command.href}
             role="option"
             aria-selected={index === activeIndex}
-            className={`flex items-center justify-between gap-3 border-b border-line px-3 py-3 last:border-b-0 ${index === activeIndex ? "bg-goldpale" : "bg-white hover:bg-[#faf9f5]"}`}
+            className={`flex items-center justify-between gap-3 px-4 py-3 transition-colors ${index === activeIndex ? "bg-goldpale/80 text-golddark" : "bg-panel hover:bg-paper/70"}`}
             onMouseEnter={() => setActiveIndex(index)}
             onClick={onClose}
           >

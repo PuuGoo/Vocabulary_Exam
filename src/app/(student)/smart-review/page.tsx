@@ -184,7 +184,7 @@ export default function SmartReviewPage() {
       ) : words.length === 0 ? (
         <div className={cx.empty}>Bạn chưa có từ nào đến hạn ôn. Hãy học thêm từ mới hoặc quay lại sau.<div className="mt-3"><Link className={`${cx.btn} ${cx.btnGold}`} href="/study">Chọn bộ từ để học</Link></div></div>
       ) : finished ? (
-        <section className="mt-5 rounded-xl border border-gold bg-goldpale/40 p-6 text-center">
+        <section className="mt-5 rounded-[22px] border border-gold/30 bg-goldpale/35 p-6 text-center">
           <div className="text-4xl" aria-hidden="true">🎉</div>
           <h3 className="mt-2 font-serif text-xl font-bold">Hoàn thành lượt ôn!</h3>
           <p className="mt-2 text-sm text-muted">Đã nhớ {results.known} từ · Cần ôn lại {results.unknown} từ</p>
@@ -219,7 +219,7 @@ export default function SmartReviewPage() {
             {...reviewSwipe.swipeProps}
             style={reviewSwipe.swipeStyle}
             onClick={() => setFlipped((current) => !current)}
-            className="relative flex min-h-[250px] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-gold bg-white px-6 py-10 text-center hover:border-golddark"
+            className="relative flex min-h-[250px] w-full cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[24px] border-2 border-gold/45 bg-panel px-6 py-10 shadow-sm transition hover:border-gold hover:shadow-md text-center hover:border-golddark"
           >
             <span className={`pointer-events-none absolute left-4 top-4 rounded-full bg-okbg px-3 py-1.5 text-xs font-bold text-ok transition-opacity ${reviewSwipe.swipeOffset > 18 ? "opacity-100" : "opacity-0"}`}>✓ Đã nhớ</span>
             <span className={`pointer-events-none absolute right-4 top-4 rounded-full bg-badbg px-3 py-1.5 text-xs font-bold text-bad transition-opacity ${reviewSwipe.swipeOffset < -18 ? "opacity-100" : "opacity-0"}`}>Chưa nhớ ✕</span>
